@@ -1,0 +1,126 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		100000000000000000000010 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000011 /* Assets.xcassets */; };
+		100000000000000000000001 /* BermsApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000001 /* BermsApp.swift */; };
+		100000000000000000000002 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000002 /* Models.swift */; };
+		100000000000000000000003 /* RouteCodec.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000003 /* RouteCodec.swift */; };
+		100000000000000000000004 /* ParkLapDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000004 /* ParkLapDetector.swift */; };
+		100000000000000000000005 /* RideRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000005 /* RideRecorder.swift */; };
+		100000000000000000000006 /* TrackingServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000006 /* TrackingServices.swift */; };
+		100000000000000000000007 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000007 /* Theme.swift */; };
+		100000000000000000000008 /* Views.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000008 /* Views.swift */; };
+		100000000000000000000009 /* BermsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000009 /* BermsTests.swift */; };
+		100000000000000000000012 /* JumpDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000012 /* JumpDetector.swift */; };
+		100000000000000000000013 /* ParkDayTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000013 /* ParkDayTests.swift */; };
+		100000000000000000000014 /* DiagnosticLogReplayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000014 /* DiagnosticLogReplayer.swift */; };
+		100000000000000000000015 /* TrailMapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000015 /* TrailMapper.swift */; };
+		100000000000000000000016 /* RouteProcessing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000016 /* RouteProcessing.swift */; };
+		100000000000000000000017 /* LiftLearning.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000017 /* LiftLearning.swift */; };
+		100000000000000000000018 /* BermsActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000018 /* BermsActivityAttributes.swift */; };
+		100000000000000000000019 /* BermsLiveActivityCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000019 /* BermsLiveActivityCoordinator.swift */; };
+		100000000000000000000020 /* BermsLiveActivityIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000020 /* BermsLiveActivityIntent.swift */; };
+		100000000000000000000021 /* BermsActivityAttributes.swift in Widget Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000018 /* BermsActivityAttributes.swift */; };
+		100000000000000000000022 /* BermsLiveActivityIntent.swift in Widget Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000020 /* BermsLiveActivityIntent.swift */; };
+		100000000000000000000023 /* BermsLiveActivity.swift in Widget Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000021 /* BermsLiveActivity.swift */; };
+		100000000000000000000024 /* BermsLiveActivity.appex in Embed Extensions */ = {isa = PBXBuildFile; fileRef = 300000000000000000000003 /* BermsLiveActivity.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		200000000000000000000001 /* BermsApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BermsApp.swift; sourceTree = "<group>"; };
+		200000000000000000000002 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		200000000000000000000003 /* RouteCodec.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteCodec.swift; sourceTree = "<group>"; };
+		200000000000000000000004 /* ParkLapDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParkLapDetector.swift; sourceTree = "<group>"; };
+		200000000000000000000005 /* RideRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RideRecorder.swift; sourceTree = "<group>"; };
+		200000000000000000000006 /* TrackingServices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackingServices.swift; sourceTree = "<group>"; };
+		200000000000000000000007 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		200000000000000000000008 /* Views.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views.swift; sourceTree = "<group>"; };
+		200000000000000000000009 /* BermsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BermsTests.swift; sourceTree = "<group>"; };
+		200000000000000000000010 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		200000000000000000000011 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		200000000000000000000012 /* JumpDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JumpDetector.swift; sourceTree = "<group>"; };
+		200000000000000000000014 /* DiagnosticLogReplayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticLogReplayer.swift; sourceTree = "<group>"; };
+		200000000000000000000015 /* TrailMapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrailMapper.swift; sourceTree = "<group>"; };
+		200000000000000000000016 /* RouteProcessing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteProcessing.swift; sourceTree = "<group>"; };
+		200000000000000000000017 /* LiftLearning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiftLearning.swift; sourceTree = "<group>"; };
+		200000000000000000000018 /* BermsActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BermsActivityAttributes.swift; sourceTree = "<group>"; };
+		200000000000000000000019 /* BermsLiveActivityCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BermsLiveActivityCoordinator.swift; sourceTree = "<group>"; };
+		200000000000000000000020 /* BermsLiveActivityIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BermsLiveActivityIntent.swift; sourceTree = "<group>"; };
+		200000000000000000000021 /* BermsLiveActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BermsLiveActivity.swift; sourceTree = "<group>"; };
+		300000000000000000000003 /* BermsLiveActivity.appex */ = {isa = PBXFileReference; explicitFileType = wrapper.app-extension; includeInIndex = 0; path = BermsLiveActivity.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		300000000000000000000001 /* Berms.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Berms.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		300000000000000000000002 /* BermsTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BermsTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		200000000000000000000013 /* ParkDayTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParkDayTests.swift; sourceTree = "<group>"; };
+		200000000000000000000022 /* Widget Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		400000000000000000000001 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		400000000000000000000002 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		400000000000000000000006 /* Widget Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (100000000000000000000021, 100000000000000000000022, 100000000000000000000023); runOnlyForDeploymentPostprocessing = 0; };
+		400000000000000000000007 /* Widget Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		400000000000000000000008 /* Widget Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		400000000000000000000009 /* Embed Extensions */ = {isa = PBXCopyFilesBuildPhase; buildActionMask = 2147483647; dstPath = ""; dstSubfolderSpec = 13; files = (100000000000000000000024); name = "Embed Extensions"; runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		500000000000000000000001 = {isa = PBXGroup; children = (500000000000000000000002 /* Berms */, 500000000000000000000003 /* BermsTests */, 500000000000000000000005 /* BermsLiveActivity */, 500000000000000000000004 /* Products */); sourceTree = "<group>"; };
+		500000000000000000000002 /* Berms */ = {isa = PBXGroup; children = (200000000000000000000001 /* BermsApp.swift */, 200000000000000000000002 /* Models.swift */, 200000000000000000000003 /* RouteCodec.swift */, 200000000000000000000004 /* ParkLapDetector.swift */, 200000000000000000000005 /* RideRecorder.swift */, 200000000000000000000006 /* TrackingServices.swift */, 200000000000000000000007 /* Theme.swift */, 200000000000000000000008 /* Views.swift */, 200000000000000000000012 /* JumpDetector.swift */, 200000000000000000000014 /* DiagnosticLogReplayer.swift */, 200000000000000000000015 /* TrailMapper.swift */, 200000000000000000000016 /* RouteProcessing.swift */, 200000000000000000000017 /* LiftLearning.swift */, 200000000000000000000018 /* BermsActivityAttributes.swift */, 200000000000000000000019 /* BermsLiveActivityCoordinator.swift */, 200000000000000000000020 /* BermsLiveActivityIntent.swift */, 200000000000000000000010 /* Info.plist */, 200000000000000000000011 /* Assets.xcassets */); path = Berms; sourceTree = "<group>"; };
+		500000000000000000000003 /* BermsTests */ = {isa = PBXGroup; children = (200000000000000000000009 /* BermsTests.swift */, 200000000000000000000013 /* ParkDayTests.swift */); path = BermsTests; sourceTree = "<group>"; };
+		500000000000000000000005 /* BermsLiveActivity */ = {isa = PBXGroup; children = (200000000000000000000021 /* BermsLiveActivity.swift */, 200000000000000000000022 /* Widget Info.plist */); path = BermsLiveActivity; sourceTree = "<group>"; };
+		500000000000000000000004 /* Products */ = {isa = PBXGroup; children = (300000000000000000000001 /* Berms.app */, 300000000000000000000002 /* BermsTests.xctest */, 300000000000000000000003 /* BermsLiveActivity.appex */); name = Products; sourceTree = "<group>"; };
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		600000000000000000000001 /* Berms */ = {isa = PBXNativeTarget; buildConfigurationList = 700000000000000000000001 /* Build configuration list for PBXNativeTarget "Berms" */; buildPhases = (400000000000000000000003 /* Sources */, 400000000000000000000004 /* Resources */, 400000000000000000000001 /* Frameworks */, 400000000000000000000009 /* Embed Extensions */); buildRules = (); dependencies = (); name = Berms; productName = Berms; productReference = 300000000000000000000001 /* Berms.app */; productType = "com.apple.product-type.application"; };
+		600000000000000000000003 /* BermsLiveActivity */ = {isa = PBXNativeTarget; buildConfigurationList = 700000000000000000000004 /* Build configuration list for PBXNativeTarget "BermsLiveActivity" */; buildPhases = (400000000000000000000006 /* Widget Sources */, 400000000000000000000007 /* Widget Resources */, 400000000000000000000008 /* Widget Frameworks */); buildRules = (); dependencies = (); name = BermsLiveActivity; productName = BermsLiveActivity; productReference = 300000000000000000000003 /* BermsLiveActivity.appex */; productType = "com.apple.product-type.app-extension"; };
+		600000000000000000000002 /* BermsTests */ = {isa = PBXNativeTarget; buildConfigurationList = 700000000000000000000002 /* Build configuration list for PBXNativeTarget "BermsTests" */; buildPhases = (400000000000000000000005 /* Sources */, 400000000000000000000002 /* Frameworks */); buildRules = (); dependencies = (800000000000000000000001 /* PBXTargetDependency */); name = BermsTests; productName = BermsTests; productReference = 300000000000000000000002 /* BermsTests.xctest */; productType = "com.apple.product-type.bundle.unit-test"; };
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		900000000000000000000001 /* Project object */ = {isa = PBXProject; attributes = {BuildIndependentTargetsInParallel = YES; LastUpgradeCheck = 2700; TargetAttributes = {600000000000000000000001 = {DevelopmentTeam = SAQUMQUCR6; ProvisioningStyle = Automatic;}; 600000000000000000000002 = {DevelopmentTeam = SAQUMQUCR6; ProvisioningStyle = Automatic;}; 600000000000000000000003 = {DevelopmentTeam = SAQUMQUCR6; ProvisioningStyle = Automatic;};};}; buildConfigurationList = 700000000000000000000003 /* Build configuration list for PBXProject "Berms" */; compatibilityVersion = "Xcode 16.0"; developmentRegion = en; hasScannedForEncodings = 0; knownRegions = (en, Base); mainGroup = 500000000000000000000001; minimizedProjectReferenceProxies = 1; productRefGroup = 500000000000000000000004 /* Products */; projectDirPath = ""; projectRoot = ""; targets = (600000000000000000000001 /* Berms */, 600000000000000000000002 /* BermsTests */, 600000000000000000000003 /* BermsLiveActivity */); };
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		400000000000000000000004 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (100000000000000000000010 /* Assets.xcassets in Resources */); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		400000000000000000000003 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (100000000000000000000001, 100000000000000000000002, 100000000000000000000003, 100000000000000000000004, 100000000000000000000005, 100000000000000000000006, 100000000000000000000007, 100000000000000000000008, 100000000000000000000012, 100000000000000000000014, 100000000000000000000015, 100000000000000000000016, 100000000000000000000017, 100000000000000000000018, 100000000000000000000019, 100000000000000000000020); runOnlyForDeploymentPostprocessing = 0; };
+		400000000000000000000005 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (100000000000000000000009, 100000000000000000000013); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		800000000000000000000001 /* PBXTargetDependency */ = {isa = PBXTargetDependency; target = 600000000000000000000001 /* Berms */; targetProxy = 810000000000000000000001 /* PBXContainerItemProxy */; };
+/* End PBXTargetDependency section */
+
+/* Begin PBXContainerItemProxy section */
+		810000000000000000000001 /* PBXContainerItemProxy */ = {isa = PBXContainerItemProxy; containerPortal = 900000000000000000000001 /* Project object */; proxyType = 1; remoteGlobalIDString = 600000000000000000000001; remoteInfo = Berms; };
+/* End PBXContainerItemProxy section */
+
+/* Begin XCBuildConfiguration section */
+		A00000000000000000000001 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {ALWAYS_SEARCH_USER_PATHS = NO; ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon; CLANG_ENABLE_MODULES = YES; CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = 1; DEVELOPMENT_TEAM = SAQUMQUCR6; ENABLE_TESTABILITY = YES; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = Berms/Info.plist; IPHONEOS_DEPLOYMENT_TARGET = 27.0; PRODUCT_BUNDLE_IDENTIFIER = com.addis.berms; PRODUCT_NAME = Berms; SDKROOT = iphoneos; SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG; SWIFT_VERSION = 6.0; TARGETED_DEVICE_FAMILY = 1;}; name = Debug; };
+		A00000000000000000000002 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {ALWAYS_SEARCH_USER_PATHS = NO; ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon; CLANG_ENABLE_MODULES = YES; CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = 1; DEVELOPMENT_TEAM = SAQUMQUCR6; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = Berms/Info.plist; IPHONEOS_DEPLOYMENT_TARGET = 27.0; PRODUCT_BUNDLE_IDENTIFIER = com.addis.berms; PRODUCT_NAME = Berms; SDKROOT = iphoneos; SWIFT_VERSION = 6.0; TARGETED_DEVICE_FAMILY = 1;}; name = Release; };
+		A00000000000000000000003 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {BUNDLE_LOADER = "$(TEST_HOST)"; CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = 1; DEVELOPMENT_TEAM = SAQUMQUCR6; GENERATE_INFOPLIST_FILE = YES; IPHONEOS_DEPLOYMENT_TARGET = 27.0; PRODUCT_BUNDLE_IDENTIFIER = com.addis.berms.tests; PRODUCT_NAME = BermsTests; SDKROOT = iphonesimulator; SWIFT_VERSION = 6.0; TARGETED_DEVICE_FAMILY = 1; TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Berms.app/Berms";}; name = Debug; };
+		A00000000000000000000004 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {BUNDLE_LOADER = "$(TEST_HOST)"; CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = 1; DEVELOPMENT_TEAM = SAQUMQUCR6; GENERATE_INFOPLIST_FILE = YES; IPHONEOS_DEPLOYMENT_TARGET = 27.0; PRODUCT_BUNDLE_IDENTIFIER = com.addis.berms.tests; PRODUCT_NAME = BermsTests; SDKROOT = iphonesimulator; SWIFT_VERSION = 6.0; TARGETED_DEVICE_FAMILY = 1; TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Berms.app/Berms";}; name = Release; };
+		A00000000000000000000005 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {CLANG_ENABLE_MODULES = YES; CODE_SIGN_STYLE = Automatic; DEVELOPMENT_TEAM = SAQUMQUCR6; IPHONEOS_DEPLOYMENT_TARGET = 27.0; SDKROOT = iphoneos; SWIFT_VERSION = 6.0;}; name = Debug; };
+		A00000000000000000000006 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {CLANG_ENABLE_MODULES = YES; CODE_SIGN_STYLE = Automatic; DEVELOPMENT_TEAM = SAQUMQUCR6; IPHONEOS_DEPLOYMENT_TARGET = 27.0; SDKROOT = iphoneos; SWIFT_VERSION = 6.0;}; name = Release; };
+		A00000000000000000000007 /* Widget Debug */ = {isa = XCBuildConfiguration; buildSettings = {CLANG_ENABLE_MODULES = YES; CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = 1; DEVELOPMENT_TEAM = SAQUMQUCR6; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = BermsLiveActivity/Info.plist; IPHONEOS_DEPLOYMENT_TARGET = 27.0; PRODUCT_BUNDLE_IDENTIFIER = com.addis.berms.liveactivity; PRODUCT_NAME = BermsLiveActivity; SDKROOT = iphoneos; SKIP_INSTALL = YES; SWIFT_VERSION = 6.0; TARGETED_DEVICE_FAMILY = 1;}; name = Debug; };
+		A00000000000000000000008 /* Widget Release */ = {isa = XCBuildConfiguration; buildSettings = {CLANG_ENABLE_MODULES = YES; CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = 1; DEVELOPMENT_TEAM = SAQUMQUCR6; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = BermsLiveActivity/Info.plist; IPHONEOS_DEPLOYMENT_TARGET = 27.0; PRODUCT_BUNDLE_IDENTIFIER = com.addis.berms.liveactivity; PRODUCT_NAME = BermsLiveActivity; SDKROOT = iphoneos; SKIP_INSTALL = YES; SWIFT_VERSION = 6.0; TARGETED_DEVICE_FAMILY = 1;}; name = Release; };
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		700000000000000000000001 /* Build configuration list for PBXNativeTarget "Berms" */ = {isa = XCConfigurationList; buildConfigurations = (A00000000000000000000001, A00000000000000000000002); defaultConfigurationIsVisible = 0; defaultConfigurationName = Debug; };
+		700000000000000000000002 /* Build configuration list for PBXNativeTarget "BermsTests" */ = {isa = XCConfigurationList; buildConfigurations = (A00000000000000000000003, A00000000000000000000004); defaultConfigurationIsVisible = 0; defaultConfigurationName = Debug; };
+		700000000000000000000003 /* Build configuration list for PBXProject "Berms" */ = {isa = XCConfigurationList; buildConfigurations = (A00000000000000000000005, A00000000000000000000006); defaultConfigurationIsVisible = 0; defaultConfigurationName = Debug; };
+		700000000000000000000004 /* Build configuration list for PBXNativeTarget "BermsLiveActivity" */ = {isa = XCConfigurationList; buildConfigurations = (A00000000000000000000007, A00000000000000000000008); defaultConfigurationIsVisible = 0; defaultConfigurationName = Debug; };
+/* End XCConfigurationList section */
+	};
+	rootObject = 900000000000000000000001 /* Project object */;
+}

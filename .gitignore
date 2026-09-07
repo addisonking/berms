@@ -1,0 +1,24 @@
+# macOS
+.DS_Store
+
+# Xcode user state and build products
+DerivedData/
+build/
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+*.xccurrentversion
+*.xcresult/
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# Generated local knowledge graph
+graphify-out/
+
+# Local environment and logs
+.env
+.env.*
+!.env.example
+*.log

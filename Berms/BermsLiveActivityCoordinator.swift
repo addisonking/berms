@@ -1,0 +1,112 @@
+import ActivityKit
+import Foundation
+
+private final class BermsActivityHandle: @unchecked Sendable {
+    let activity: Activity<BermsActivityAttributes>
+
+    init(_ activity: Activity<BermsActivityAttributes>) {
+        self.activity = activity
+    }
+}
+
+@MainActor
+final class BermsLiveActivityCoordinator {
+    static let shared = BermsLiveActivityCoordinator()
+    static let togglePauseNotification = Notification.Name("berms.liveActivity.togglePause")
+
+    private var activity: BermsActivityHandle?
+    private var lastUpdate = Date.distantPast
+    private var isEndingAllActivities = false
+
+    private init() {}
+
+    func start(rideID: UUID, startedAt: Date) {
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+        if let existing = Activity<BermsActivityAttributes>.activities.first(where: {
+            $0.attributes.rideID == rideID.uuidString
+        }) {
+            activity = BermsActivityHandle(existing)
+            lastUpdate = .distantPast
+            return
+        }
+        let attributes = BermsActivityAttributes(rideID: rideID)
+        let state = BermsActivityAttributes.ContentState(
+            phase: DetectorPhase.idle.rawValue,
+            isPaused: false,
+            runCount: 0,
+            startedAt: startedAt,
+            elapsedSeconds: 0,
+            distanceMeters: 0,
+            descentMeters: 0,
+            speedMetersPerSecond: 0
+        )
+        do {
+            let requested = try Activity.request(
+                attributes: attributes,
+                content: ActivityContent(state: state, staleDate: nil),
+                pushType: nil
+            )
+            activity = BermsActivityHandle(requested)
+            lastUpdate = .distantPast
+        } catch {
+            activity = nil
+        }
+    }
+
+    func update(phase: DetectorPhase, isPaused: Bool, runCount: Int, startedAt: Date,
+                elapsed: TimeInterval, distance: Double, descent: Double, speed: Double,
+                force: Bool = false) {
+        guard let handle = activity,
+              force || Date.now.timeIntervalSince(lastUpdate) >= 10 else { return }
+        lastUpdate = .now
+        let state = BermsActivityAttributes.ContentState(
+            phase: isPaused ? "paused" : phase.rawValue,
+            isPaused: isPaused,
+            runCount: runCount,
+            startedAt: startedAt,
+            elapsedSeconds: elapsed,
+            distanceMeters: distance,
+            descentMeters: descent,
+            speedMetersPerSecond: speed
+        )
+        let content = ActivityContent(state: state, staleDate: .now.addingTimeInterval(30))
+        Task.detached {
+            await handle.activity.update(content)
+        }
+    }
+
+    func end() {
+        guard let handle = activity else { return }
+        activity = nil
+        Task.detached {
+            await handle.activity.end(nil, dismissalPolicy: .immediate)
+        }
+    }
+
+    func endAll() {
+        activity = nil
+        lastUpdate = .distantPast
+        isEndingAllActivities = true
+        Task { @MainActor [weak self] in
+            let activities = Activity<BermsActivityAttributes>.activities
+            for activity in activities {
+                await activity.end(nil, dismissalPolicy: .immediate)
+            }
+            self?.isEndingAllActivities = false
+        }
+    }
+
+    func reconcile() {
+        guard !isEndingAllActivities else { return }
+        let activities = Activity<BermsActivityAttributes>.activities
+        activity = activities.first.map(BermsActivityHandle.init)
+        if activities.count > 1 {
+            for stale in activities.dropFirst() {
+                let handle = BermsActivityHandle(stale)
+                Task.detached {
+                    await handle.activity.end(nil, dismissalPolicy: .immediate)
+                }
+            }
+        }
+    }
+}
