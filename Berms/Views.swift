@@ -3,6 +3,16 @@ import SwiftData
 import SwiftUI
 import UIKit
 
+private extension MapStyle {
+    // Keep the system basemap subdued so route and trail overlays stay legible.
+    static var bermsMonochrome: MapStyle {
+        .standard(elevation: .flat,
+                  emphasis: .muted,
+                  pointsOfInterest: .excludingAll,
+                  showsTraffic: false)
+    }
+}
+
 @MainActor
 final class MapLayerPreferences: ObservableObject {
     private enum Key {
@@ -102,6 +112,75 @@ private func trailCoordinates(for points: [RoutePoint]) -> [CLLocationCoordinate
     }
 }
 
+@MainActor
+private struct ProjectedTrailLine: View {
+    let coordinates: [CLLocationCoordinate2D]
+    let proxy: MapProxy
+    let color: Color
+    let lineWidth: CGFloat
+    let refreshID: Int
+
+    init(coordinates: [CLLocationCoordinate2D], proxy: MapProxy, color: Color,
+         lineWidth: CGFloat, refreshID: Int = 0) {
+        self.coordinates = coordinates
+        self.proxy = proxy
+        self.color = color
+        self.lineWidth = lineWidth
+        self.refreshID = refreshID
+    }
+
+    var body: some View {
+        GeometryReader { _ in
+            Canvas { context, _ in
+                let path = projectedPath
+                context.stroke(
+                    path,
+                    with: .color(Color(uiColor: .systemBackground).opacity(0.85)),
+                    style: StrokeStyle(
+                        lineWidth: max(5, lineWidth + 2),
+                        lineCap: .round,
+                        lineJoin: .round,
+                        dash: [7, 5]
+                    )
+                )
+                context.stroke(
+                    path,
+                    with: .color(color),
+                    style: StrokeStyle(
+                        lineWidth: lineWidth,
+                        lineCap: .round,
+                        lineJoin: .round,
+                        dash: [7, 5]
+                    )
+                )
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .id(refreshID)
+        .allowsHitTesting(false)
+    }
+
+    private var projectedPath: Path {
+        var path = Path()
+        var hasPoint = false
+
+        for coordinate in coordinates {
+            guard let point = proxy.convert(coordinate, to: .local) else {
+                hasPoint = false
+                continue
+            }
+            if hasPoint {
+                path.addLine(to: point)
+            } else {
+                path.move(to: point)
+                hasPoint = true
+            }
+        }
+
+        return path
+    }
+}
+
 private func trailDistance(from coordinate: Coordinate, to points: [RoutePoint]) -> Double {
     guard points.count >= 2 else {
         guard let point = points.first else { return .greatestFiniteMagnitude }
@@ -127,20 +206,6 @@ private func trailDistance(from coordinate: Coordinate, to points: [RoutePoint])
             : 0
         return hypot(origin.x - (a.x + dx * fraction), origin.y - (a.y + dy * fraction))
     }.min() ?? .greatestFiniteMagnitude
-}
-
-@MainActor
-private func trailPathKeyline(for coordinates: [CLLocationCoordinate2D]) -> some MapContent {
-    MapPolyline(coordinates: coordinates)
-        .stroke(Color(uiColor: .systemBackground).opacity(0.85), lineWidth: 5)
-}
-
-@MainActor
-private func trailPath(for overlay: TrailMapOverlay) -> some MapContent {
-    MapPolyline(coordinates: overlay.coordinates)
-        .stroke(overlay.color.opacity(0.9), style: StrokeStyle(
-            lineWidth: 2.5, lineCap: .round, lineJoin: .round, dash: [7, 5]
-        ))
 }
 
 struct RootView: View {
@@ -466,40 +531,46 @@ struct TrackView: View {
                 .background(Color.black.opacity(0.35))
                 .foregroundStyle(.white)
             } else {
-                Map(position: $mapPosition) {
-                    UserAnnotation()
-                    if mapLayerPreferences.showsActualTrails {
-                        ForEach(nearbyTrails) { trail in
-                            trailPathKeyline(for: trailCoordinates(for: trail))
-                            MapPolyline(coordinates: trailCoordinates(for: trail))
-                                .stroke(Color.bermsDifficulty(trail.difficulty).opacity(0.55), style: StrokeStyle(
-                                    lineWidth: 2.5, lineCap: .round, lineJoin: .round, dash: [7, 5]
-                                ))
+                MapReader { proxy in
+                    ZStack {
+                        Map(position: $mapPosition) {
+                            UserAnnotation()
+                            if mapLayerPreferences.showsRidePath {
+                                ForEach(recorder.activeDay?.segments ?? []) { segment in
+                                    MapPolyline(coordinates: segment.points.map {
+                                        CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
+                                    })
+                                    .stroke(segment.kind == .run ? Color.bermsTrail : Color.bermsLift, lineWidth: 4)
+                                }
+                                if !recorder.currentMapPoints.isEmpty {
+                                    MapPolyline(coordinates: recorder.currentMapPoints.map {
+                                        CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
+                                    })
+                                    .stroke(recorder.activeSegmentKind == .lift ? Color.bermsLift : Color.bermsTrail, lineWidth: 5)
+                                }
+                            }
                         }
-                    }
-                    if mapLayerPreferences.showsRidePath {
-                        ForEach(recorder.activeDay?.segments ?? []) { segment in
-                            MapPolyline(coordinates: segment.points.map {
-                                CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
-                            })
-                            .stroke(segment.kind == .run ? Color.bermsTrail : Color.bermsLift, lineWidth: 4)
+                        .mapStyle(.bermsMonochrome)
+                        .saturation(0)
+                        .mapControls {
+                            MapCompass()
                         }
-                        if !recorder.currentMapPoints.isEmpty {
-                            MapPolyline(coordinates: recorder.currentMapPoints.map {
-                                CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
-                            })
-                            .stroke(recorder.activeSegmentKind == .lift ? Color.bermsLift : Color.bermsTrail, lineWidth: 5)
+                        .onChange(of: mapPosition) { _, position in
+                            if position.positionedByUser {
+                                isFollowing = false
+                            }
                         }
-                    }
-                }
-                .mapStyle(.standard)
-                .saturation(mapLayerPreferences.showsActualTrails ? 1 : 0)
-                .mapControls {
-                    MapCompass()
-                }
-                .onChange(of: mapPosition) { _, position in
-                    if position.positionedByUser {
-                        isFollowing = false
+
+                        if mapLayerPreferences.showsActualTrails {
+                            ForEach(nearbyTrails) { trail in
+                                ProjectedTrailLine(
+                                    coordinates: trailCoordinates(for: trail),
+                                    proxy: proxy,
+                                    color: Color.bermsDifficulty(trail.difficulty).opacity(0.55),
+                                    lineWidth: 2.5
+                                )
+                            }
+                        }
                     }
                 }
 
@@ -550,6 +621,7 @@ struct TrailMappingView: View {
     @ObservedObject var recorder: RideRecorder
     @EnvironmentObject private var mapLayerPreferences: MapLayerPreferences
     @State private var mapPosition: MapCameraPosition = .automatic
+    @State private var mapProjectionRevision = 0
     @State private var showingStartSheet = false
     @State private var showingDiscardConfirmation = false
 
@@ -630,26 +702,36 @@ struct TrailMappingView: View {
     private var mappingContent: some View {
         VStack(spacing: 12) {
             ZStack(alignment: .topTrailing) {
-                Map(position: $mapPosition, bounds: activeMapConfiguration?.bounds,
-                    interactionModes: [.pan, .zoom]) {
-                    if mapLayerPreferences.showsActualTrails,
-                       mapper.activeTrailPoints.count > 1 {
-                        let coordinates = trailCoordinates(for: mapper.activeTrailPoints)
-                        trailPathKeyline(for: coordinates)
-                        MapPolyline(coordinates: coordinates)
-                            .stroke(Color.bermsDifficulty(mapper.activeDifficulty).opacity(0.55), style: StrokeStyle(
-                                lineWidth: 2.5, lineCap: .round, lineJoin: .round, dash: [7, 5]
-                            ))
-                    }
-                    if mapLayerPreferences.showsRidePath, mapper.activeRoutePoints.count > 1 {
-                        MapPolyline(coordinates: mapper.activeRoutePoints.map {
-                            CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
-                        })
-                        .stroke(Color.bermsTrail, lineWidth: 5)
+                MapReader { proxy in
+                    ZStack {
+                        Map(position: $mapPosition, bounds: activeMapConfiguration?.bounds,
+                            interactionModes: [.pan, .zoom]) {
+                            if mapLayerPreferences.showsRidePath, mapper.activeRoutePoints.count > 1 {
+                                MapPolyline(coordinates: mapper.activeRoutePoints.map {
+                                    CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
+                                })
+                                .stroke(Color.bermsTrail, lineWidth: 5)
+                            }
+                        }
+                        .mapStyle(.bermsMonochrome)
+                        .saturation(0)
+                        .onMapCameraChange(frequency: .continuous) { _ in
+                            mapProjectionRevision &+= 1
+                        }
+
+                        if mapLayerPreferences.showsActualTrails,
+                           mapper.activeTrailPoints.count > 1 {
+                            ProjectedTrailLine(
+                                coordinates: trailCoordinates(for: mapper.activeTrailPoints),
+                                proxy: proxy,
+                                color: Color.bermsDifficulty(mapper.activeDifficulty).opacity(0.55),
+                                lineWidth: 2.5,
+                                refreshID: mapProjectionRevision
+                            )
+                        }
                     }
                 }
-                .mapStyle(.standard)
-                .saturation(mapLayerPreferences.showsActualTrails ? 1 : 0)
+                .frame(maxWidth: .infinity, minHeight: 300)
                 VStack(spacing: 8) {
                     MapLayersMenu(preferences: mapLayerPreferences,
                                   showsJumpsControl: false,
@@ -716,34 +798,41 @@ struct TrailMappingView: View {
             .background(Color.bermsCard)
         } else {
             ZStack(alignment: .topTrailing) {
-                Map(position: $mapPosition, bounds: authoredMapConfiguration?.bounds,
-                    interactionModes: [.pan, .zoom]) {
-                    if mapLayerPreferences.showsActualTrails {
-                        ForEach(trails) { trail in
-                            if trail.points.count > 1 {
-                                let coordinates = trailCoordinates(for: trail)
-                                trailPathKeyline(for: coordinates)
-                                MapPolyline(coordinates: coordinates)
-                                    .stroke(color(for: trail.difficulty).opacity(0.9), style: StrokeStyle(
-                                        lineWidth: 3, lineCap: .round, lineJoin: .round, dash: [7, 5]
-                                    ))
-                            }
-                            if let point = labelPoint(for: trail) {
-                                // Keep the custom label as the only visible trail title.
-                                // A non-empty Annotation title makes MapKit render a second
-                                // subtitle below the custom content.
-                                Annotation("", coordinate: CLLocationCoordinate2D(
-                                    latitude: point.latitude, longitude: point.longitude
-                                )) {
+                MapReader { proxy in
+                    ZStack {
+                        Map(position: $mapPosition, bounds: authoredMapConfiguration?.bounds,
+                            interactionModes: [.pan, .zoom]) { }
+                        .mapStyle(.bermsMonochrome)
+                        .saturation(0)
+                        .onMapCameraChange(frequency: .continuous) { _ in
+                            mapProjectionRevision &+= 1
+                        }
+
+                        if mapLayerPreferences.showsActualTrails {
+                            ForEach(trails) { trail in
+                                if trail.points.count > 1 {
+                                    ProjectedTrailLine(
+                                        coordinates: trailCoordinates(for: trail),
+                                        proxy: proxy,
+                                        color: color(for: trail.difficulty).opacity(0.9),
+                                        lineWidth: 3,
+                                        refreshID: mapProjectionRevision
+                                    )
+                                }
+                                if let point = labelPoint(for: trail),
+                                   let screenPoint = proxy.convert(
+                                       CLLocationCoordinate2D(latitude: point.latitude, longitude: point.longitude),
+                                       to: .local
+                                   ) {
                                     TrailMapLabel(name: trail.name,
                                                   difficulty: trail.difficulty,
                                                   color: color(for: trail.difficulty))
+                                        .position(screenPoint)
                                 }
                             }
                         }
                     }
                 }
-                .mapStyle(.standard)
                 VStack(spacing: 8) {
                     MapLayersMenu(preferences: mapLayerPreferences,
                                   showsRidePathControl: false,
@@ -753,6 +842,7 @@ struct TrailMappingView: View {
                 }
                 .padding(12)
             }
+            .onAppear { recenterAuthoredMap() }
         }
     }
 
@@ -1156,39 +1246,48 @@ struct DayDetailView: View {
             .background(Color.bermsCard, in: RoundedRectangle(cornerRadius: 22))
         } else {
             ZStack(alignment: .topTrailing) {
-                Map(position: $mapPosition, bounds: mapConfiguration?.bounds,
-                    interactionModes: [.pan, .zoom], selection: $selectedSegmentID) {
-                    if mapLayerPreferences.showsActualTrails {
-                        ForEach(day.segments) { segment in
-                            ForEach(trailOverlays(for: segment, trails: trails)) { overlay in
-                                trailPathKeyline(for: overlay.coordinates)
-                                trailPath(for: overlay)
+                MapReader { proxy in
+                    ZStack {
+                        Map(position: $mapPosition, bounds: mapConfiguration?.bounds,
+                            interactionModes: [.pan, .zoom], selection: $selectedSegmentID) {
+                            if mapLayerPreferences.showsRidePath {
+                                ForEach(day.segments) { segment in
+                                    MapPolyline(coordinates: coordinates(for: segment))
+                                        .stroke(segment.kind == .run ? Color.bermsTrail : Color.bermsLift, lineWidth: 4)
+                                        .tag(segment.id)
+                                }
+                            }
+                            if mapLayerPreferences.showsJumps {
+                                ForEach(summaryMapJumps(for: day.segments)) { marker in
+                                    Annotation("", coordinate: marker.coordinate) {
+                                        Circle()
+                                            .fill(.orange)
+                                            .frame(width: 12, height: 12)
+                                            .overlay(Circle().stroke(.white, lineWidth: 2))
+                                            .accessibilityLabel("\(marker.label), \(BermsFormat.airtime(marker.airtime))")
+                                    }
+                                }
+                            }
+                        }
+                        .mapStyle(.bermsMonochrome)
+                        .saturation(0)
+                        .mapControls {
+                            MapCompass()
+                        }
+
+                        if mapLayerPreferences.showsActualTrails {
+                            ForEach(day.segments) { segment in
+                                ForEach(trailOverlays(for: segment, trails: trails)) { overlay in
+                                    ProjectedTrailLine(
+                                        coordinates: overlay.coordinates,
+                                        proxy: proxy,
+                                        color: overlay.color,
+                                        lineWidth: 2.5
+                                    )
+                                }
                             }
                         }
                     }
-                    if mapLayerPreferences.showsRidePath {
-                        ForEach(day.segments) { segment in
-                            MapPolyline(coordinates: coordinates(for: segment))
-                                .stroke(segment.kind == .run ? Color.bermsTrail : Color.bermsLift, lineWidth: 4)
-                                .tag(segment.id)
-                        }
-                    }
-                    if mapLayerPreferences.showsJumps {
-                        ForEach(summaryMapJumps(for: day.segments)) { marker in
-                            Annotation("", coordinate: marker.coordinate) {
-                                Circle()
-                                    .fill(.orange)
-                                    .frame(width: 12, height: 12)
-                                    .overlay(Circle().stroke(.white, lineWidth: 2))
-                                    .accessibilityLabel("\(marker.label), \(BermsFormat.airtime(marker.airtime))")
-                            }
-                        }
-                    }
-                }
-                .mapStyle(.standard)
-                .saturation(mapLayerPreferences.showsActualTrails ? 1 : 0)
-                .mapControls {
-                    MapCompass()
                 }
                 VStack(spacing: 8) {
                     MapLayersMenu(preferences: mapLayerPreferences,
@@ -1279,49 +1378,58 @@ struct FullScreenSummaryMap: View {
     var body: some View {
         NavigationStack {
             ZStack(alignment: .topTrailing) {
-                Map(position: $mapPosition, bounds: mapConfiguration?.bounds,
-                    interactionModes: [.pan, .zoom]) {
-                    if mapLayerPreferences.showsActualTrails {
-                        ForEach(visibleSegments) { segment in
-                            ForEach(trailOverlays(for: segment, trails: trails)) { overlay in
-                                trailPathKeyline(for: overlay.coordinates)
-                                trailPath(for: overlay)
-                                if focusedSegmentID != nil,
-                                   let coordinate = coordinate(for: overlay) {
-                                    Annotation("", coordinate: coordinate) {
+                MapReader { proxy in
+                    ZStack {
+                        Map(position: $mapPosition, bounds: mapConfiguration?.bounds,
+                            interactionModes: [.pan, .zoom]) {
+                            if mapLayerPreferences.showsRidePath {
+                                ForEach(visibleSegments) { segment in
+                                    if segment.points.count > 1 {
+                                        MapPolyline(coordinates: segment.points.map {
+                                            CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
+                                        })
+                                        .stroke(segment.kind == .run ? Color.bermsTrail : Color.bermsLift, lineWidth: 5)
+                                    }
+                                }
+                            }
+                            if mapLayerPreferences.showsJumps {
+                                ForEach(jumpMarkers) { marker in
+                                    Annotation("", coordinate: marker.coordinate) {
+                                        Circle()
+                                            .fill(.orange)
+                                            .frame(width: 14, height: 14)
+                                            .overlay(Circle().stroke(.white, lineWidth: 2))
+                                            .accessibilityLabel("\(marker.label), \(BermsFormat.airtime(marker.airtime))")
+                                    }
+                                }
+                            }
+                        }
+                        .mapStyle(.bermsMonochrome)
+                        .saturation(0)
+                        .mapControls { MapCompass() }
+
+                        if mapLayerPreferences.showsActualTrails {
+                            ForEach(visibleSegments) { segment in
+                                ForEach(trailOverlays(for: segment, trails: trails)) { overlay in
+                                    ProjectedTrailLine(
+                                        coordinates: overlay.coordinates,
+                                        proxy: proxy,
+                                        color: overlay.color,
+                                        lineWidth: 2.5
+                                    )
+                                    if focusedSegmentID != nil,
+                                       let coordinate = coordinate(for: overlay),
+                                       let screenPoint = proxy.convert(coordinate, to: .local) {
                                         TrailMapLabel(name: overlay.name,
                                                       difficulty: overlay.difficulty,
                                                       color: overlay.color)
+                                            .position(screenPoint)
                                     }
                                 }
                             }
                         }
                     }
-                    if mapLayerPreferences.showsRidePath {
-                        ForEach(visibleSegments) { segment in
-                            if segment.points.count > 1 {
-                                MapPolyline(coordinates: segment.points.map {
-                                    CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
-                                })
-                                .stroke(segment.kind == .run ? Color.bermsTrail : Color.bermsLift, lineWidth: 5)
-                            }
-                        }
-                    }
-                    if mapLayerPreferences.showsJumps {
-                        ForEach(jumpMarkers) { marker in
-                            Annotation("", coordinate: marker.coordinate) {
-                                Circle()
-                                    .fill(.orange)
-                                    .frame(width: 14, height: 14)
-                                    .overlay(Circle().stroke(.white, lineWidth: 2))
-                                    .accessibilityLabel("\(marker.label), \(BermsFormat.airtime(marker.airtime))")
-                            }
-                        }
-                    }
                 }
-                .mapStyle(.standard)
-                .saturation(mapLayerPreferences.showsActualTrails || focusedSegmentID != nil ? 1 : 0)
-                .mapControls { MapCompass() }
                 VStack(spacing: 8) {
                     MapLayersMenu(preferences: mapLayerPreferences,
                                   hasActualTrails: hasTrailOverlays)
@@ -1495,44 +1603,53 @@ struct RunMapView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ZStack(alignment: .topTrailing) {
-                    Map(position: $mapPosition, bounds: mapConfiguration?.bounds,
-                        interactionModes: [.pan, .zoom]) {
-                        if mapLayerPreferences.showsActualTrails {
-                            ForEach(matchedOverlays) { overlay in
-                                trailPathKeyline(for: overlay.coordinates)
-                                trailPath(for: overlay)
-                                if let coordinate = coordinate(for: overlay) {
-                                    Annotation("", coordinate: coordinate) {
+                    MapReader { proxy in
+                        ZStack {
+                            Map(position: $mapPosition, bounds: mapConfiguration?.bounds,
+                                interactionModes: [.pan, .zoom]) {
+                                if mapLayerPreferences.showsRidePath {
+                                    MapPolyline(coordinates: routePoints.map {
+                                        CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
+                                    })
+                                    .stroke(Color.bermsTrail, lineWidth: 5)
+                                }
+
+                                if mapLayerPreferences.showsJumps {
+                                    ForEach(jumpMarkers) { marker in
+                                        Annotation("", coordinate: marker.coordinate) {
+                                            Circle()
+                                                .fill(.orange)
+                                                .frame(width: 12, height: 12)
+                                                .overlay(Circle().stroke(.white, lineWidth: 2))
+                                                .accessibilityLabel("Jump \(marker.number), \(BermsFormat.airtime(marker.airtime))")
+                                        }
+                                    }
+                                }
+                            }
+                            .mapStyle(.bermsMonochrome)
+                            .saturation(0)
+                            .mapControls {
+                                MapCompass()
+                            }
+
+                            if mapLayerPreferences.showsActualTrails {
+                                ForEach(matchedOverlays) { overlay in
+                                    ProjectedTrailLine(
+                                        coordinates: overlay.coordinates,
+                                        proxy: proxy,
+                                        color: overlay.color,
+                                        lineWidth: 2.5
+                                    )
+                                    if let coordinate = coordinate(for: overlay),
+                                       let screenPoint = proxy.convert(coordinate, to: .local) {
                                         TrailMapLabel(name: overlay.name,
                                                       difficulty: overlay.difficulty,
                                                       color: overlay.color)
+                                            .position(screenPoint)
                                     }
                                 }
                             }
                         }
-
-                        if mapLayerPreferences.showsRidePath {
-                            MapPolyline(coordinates: routePoints.map {
-                                CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
-                            })
-                            .stroke(Color.bermsTrail, lineWidth: 5)
-                        }
-
-                        if mapLayerPreferences.showsJumps {
-                            ForEach(jumpMarkers) { marker in
-                                Annotation("", coordinate: marker.coordinate) {
-                                    Circle()
-                                        .fill(.orange)
-                                        .frame(width: 12, height: 12)
-                                        .overlay(Circle().stroke(.white, lineWidth: 2))
-                                        .accessibilityLabel("Jump \(marker.number), \(BermsFormat.airtime(marker.airtime))")
-                                }
-                            }
-                        }
-                    }
-                    .mapStyle(.standard)
-                    .mapControls {
-                        MapCompass()
                     }
                     if !matchedOverlays.isEmpty, mapLayerPreferences.showsActualTrails {
                         trailLegend
