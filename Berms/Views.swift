@@ -90,11 +90,9 @@ private struct MapLayersMenu: View {
             Label("Layers", systemImage: "square.3.layers.3d")
                 .labelStyle(.iconOnly)
                 .font(.headline)
-                .frame(width: 42, height: 42)
+                .frame(minWidth: 44, minHeight: 44)
         }
-        .buttonStyle(.borderedProminent)
-        .tint(.black.opacity(0.7))
-        .foregroundStyle(.white)
+        .buttonStyle(.glass)
         .accessibilityLabel("Map layers")
     }
 }
@@ -390,6 +388,7 @@ struct TrackView: View {
     @State private var mapPosition: MapCameraPosition = .automatic
     @State private var isFollowing = true
     @State private var lastFollowedCoordinate: Coordinate?
+    @State private var liveStatsHeight: CGFloat = 320
     @State private var showingStopConfirmation = false
     @State private var showingSettings = false
     let onDayFinished: (RideDay) -> Void
@@ -401,17 +400,20 @@ struct TrackView: View {
                 if recorder.isRecording {
                     recordingContent
                         .transition(.opacity)
-                        .ignoresSafeArea(edges: .top)
                 } else {
                     readyContent
                         .transition(.opacity)
                 }
             }
-            .overlay(alignment: .top) {
-                trackHeader
+            .navigationTitle(recorder.isRecording ? "" : "Berms")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.hidden, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    settingsButton
+                }
             }
             .animation(reduceMotion ? nil : BermsMotion.content, value: recorder.isRecording)
-            .toolbar(.hidden, for: .navigationBar)
         }
         .sheet(isPresented: $showingSettings) {
             SettingsView(recorder: recorder)
@@ -461,96 +463,66 @@ struct TrackView: View {
         }
     }
 
-    private var trackHeader: some View {
-        HStack(alignment: .center) {
-            if !recorder.isRecording {
-                Text("Berms")
-                    .font(.largeTitle.bold())
-                    .accessibilityAddTraits(.isHeader)
-                    .transition(.opacity)
-            }
-            Spacer(minLength: 16)
-            settingsButton
-        }
-        .foregroundStyle(Color.bermsTrail)
-        .padding(.leading, 20)
-        .padding(.trailing, 12)
-        .padding(.top, 8)
-        .padding(.bottom, 8)
-        .safeAreaPadding(.top)
-        .background(alignment: .top) {
-            if recorder.isRecording {
-                ZStack {
-                    Rectangle().fill(.ultraThinMaterial)
-                    LinearGradient(
-                        colors: [
-                            Color.black.opacity(0.62),
-                            Color.black.opacity(0.28),
-                            Color.clear
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                }
-                .mask {
-                    LinearGradient(
-                        colors: [.black, .black.opacity(0.82), .clear],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                }
-                .frame(maxWidth: .infinity)
-                .frame(height: 170)
-                .ignoresSafeArea(edges: .top)
-            } else {
-                Color.bermsInk
-                    .ignoresSafeArea(edges: .top)
-            }
-        }
-    }
-
     private var readyContent: some View {
-        VStack(spacing: 28) {
-            Spacer()
-            Image(systemName: "mountain.2.fill")
-                .font(.system(size: 52, weight: .bold))
-                .foregroundStyle(Color.bermsTrail)
-            Text("Track runs, lifts, jumps, and your route throughout the day.")
-                .font(.subheadline)
-                .foregroundStyle(Color.bermsMuted)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 280)
-            startButton
-            Text("Berms uses location only while you are recording.")
-                .font(.caption)
-                .foregroundStyle(Color.bermsMuted)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 280)
-            if recorder.isRestoring {
-                ProgressView("Restoring…")
-            }
-            if recorder.locationAuthorization == .denied || recorder.locationAuthorization == .restricted {
-                Button("Open Settings") {
-                    guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
-                    UIApplication.shared.open(url)
+        GeometryReader { geometry in
+            ScrollView {
+                VStack(spacing: 24) {
+                    Image(systemName: "mountain.2.fill")
+                        .font(.largeTitle)
+                        .foregroundStyle(Color.bermsTrail)
+                    Text("Track runs, lifts, jumps, and your route throughout the day.")
+                        .font(.subheadline)
+                        .foregroundStyle(Color.bermsMuted)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 300)
+                    startButton
+                    Text("Berms uses location only while you are recording.")
+                        .font(.caption)
+                        .foregroundStyle(Color.bermsMuted)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 300)
+                    if recorder.isRestoring {
+                        ProgressView("Restoring…")
+                    }
+                    if recorder.locationAuthorization == .denied || recorder.locationAuthorization == .restricted {
+                        Button("Open Settings") {
+                            guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+                            UIApplication.shared.open(url)
+                        }
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Color.bermsMuted)
+                    }
                 }
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(Color.bermsMuted)
+                .padding(24)
+                .frame(maxWidth: .infinity)
+                .frame(minHeight: geometry.size.height)
             }
-            Spacer()
+            .scrollBounceBehavior(.basedOnSize)
         }
-        .padding(24)
     }
 
     private var recordingContent: some View {
-        ZStack(alignment: .bottom) {
-            liveMap
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .ignoresSafeArea(edges: .bottom)
+        GeometryReader { geometry in
+            ZStack(alignment: .bottom) {
+                liveMap
 
-            liveStatsOverlay
+                // Fit the panel to its content. Scroll only when large text or
+                // landscape leaves too little room for all the metrics.
+                ScrollView {
+                    liveStatsOverlay
+                        .onGeometryChange(for: CGFloat.self) { proxy in
+                            proxy.size.height
+                        } action: { height in
+                            liveStatsHeight = height
+                        }
+                }
+                .scrollBounceBehavior(.basedOnSize)
+                .frame(height: min(liveStatsHeight, max(0, geometry.size.height * 0.65)))
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 30, style: .continuous))
+                .padding(.horizontal, 12)
+                .padding(.bottom, 12)
+            }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var liveStatsOverlay: some View {
@@ -574,14 +546,14 @@ struct TrackView: View {
             }
 
             VStack(spacing: 10) {
-                HStack(spacing: 12) {
+                AdaptiveStatRow {
                     SummaryStat(animatesValue: true, numericValue: true, label: "Runs", value: "\(recorder.completedRunCount)", tint: .bermsTrail)
                     SummaryStat(animatesValue: true, numericValue: true, label: "Jumps", value: "\(recorder.activeJumpCount)", tint: .bermsTrail)
                     SummaryStat(animatesValue: true, label: "Mode", value: liveModeTitle,
                                 tint: recorder.activeSegmentKind == .lift ? .bermsLift : .bermsTrail)
                 }
 
-                HStack(spacing: 12) {
+                AdaptiveStatRow {
                     SummaryStat(label: "Speed", value: BermsFormat.speed(recorder.currentSpeed))
                     SummaryStat(label: "Altitude", value: BermsFormat.elevation(recorder.currentAltitude))
                 }
@@ -603,7 +575,7 @@ struct TrackView: View {
                 }
             }
 
-            HStack(spacing: 10) {
+            AdaptiveStatRow {
                 Button {
                     if recorder.isPaused {
                         if recorder.resume() { BermsMotion.recordingFeedback() }
@@ -634,14 +606,7 @@ struct TrackView: View {
         .padding(.horizontal, 16)
         .padding(.top, 16)
         .padding(.bottom, 16)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 30, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 30, style: .continuous)
-                .stroke(.white.opacity(0.2), lineWidth: 1)
-        }
-        .shadow(color: .black.opacity(0.25), radius: 18, y: 8)
-        .padding(.horizontal, 10)
-        .padding(.bottom, 12)
+
     }
 
     private var liveModeTitle: String {
@@ -726,6 +691,7 @@ struct TrackView: View {
                         }
                     }
                     .mapStyle(.bermsMonochrome)
+                    .ignoresSafeArea()
                     .onChange(of: mapPosition) { _, position in
                         if position.positionedByUser {
                             isFollowing = false
@@ -773,7 +739,7 @@ struct TrackView: View {
                         .frame(width: 44, height: 44)
                         .contentShape(Circle())
                 }
-                .buttonStyle(BermsPressStyle())
+                .buttonStyle(.plain)
                 .foregroundStyle(.primary)
                 .accessibilityLabel(isFollowing ? "Following GPS" : "Center GPS")
             }
@@ -782,23 +748,14 @@ struct TrackView: View {
             .glassEffect(.regular, in: .capsule)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-        .padding(.top, 166)
+        .padding(.top, 12)
         .padding(.trailing, 12)
     }
 
     private var settingsButton: some View {
-        Button {
+        Button("Settings", systemImage: "gearshape") {
             showingSettings = true
-        } label: {
-            Image(systemName: "gearshape")
-                .font(.system(size: 19, weight: .semibold))
-                .frame(width: 44, height: 44)
         }
-        .buttonStyle(BermsPressStyle())
-        .frame(width: liveControlWidth, height: liveControlWidth)
-        .contentShape(Circle())
-        .glassEffect(.regular, in: .circle)
-        .accessibilityLabel("Settings")
         .accessibilityIdentifier("settingsButton")
     }
 
@@ -952,7 +909,7 @@ struct TrailLibraryView: View {
                                 ProductionTrailLibraryRow(trail: trail,
                                                           isSelected: selectedTrailID == trail.id)
                             }
-                            .buttonStyle(BermsPressStyle())
+                            .buttonStyle(.plain)
                             .accessibilityHint("Highlights this trail on the map")
                         }
                     }
@@ -1028,7 +985,7 @@ struct TrailLibraryView: View {
                     } label: {
                         Image(systemName: "scope")
                             .font(.headline)
-                            .frame(width: 42, height: 42)
+                            .frame(minWidth: 44, minHeight: 44)
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(.black.opacity(0.7))
@@ -1200,11 +1157,8 @@ struct TrailMappingView: View {
                     Label("Start trail segment", systemImage: "plus")
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(BermsPressStyle())
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
-                .background(Color.bermsTrail, in: RoundedRectangle(cornerRadius: 14))
-                .foregroundStyle(Color.bermsOnAccent)
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
 
                 Text("Authored trails · \(activeCatalog.resortName)")
                     .font(.title3.weight(.bold))
@@ -1223,7 +1177,7 @@ struct TrailMappingView: View {
                         } label: {
                             TrailLibraryRow(trail: trail)
                         }
-                        .buttonStyle(BermsPressStyle())
+                        .buttonStyle(.plain)
                         .accessibilityHint("Edit, delete, or record a pass for this trail")
                     }
                 }
@@ -1408,7 +1362,7 @@ struct TrailMappingView: View {
         Button(action: action) {
             Image(systemName: "scope")
                 .font(.headline)
-                .frame(width: 42, height: 42)
+                .frame(minWidth: 44, minHeight: 44)
         }
         .buttonStyle(.borderedProminent)
         .tint(.black.opacity(0.7))
@@ -1725,11 +1679,8 @@ private struct TrailStartSheet: View {
                                                    resortOverride: resortOverride)
                         if started { dismiss() }
                     }
-                    .buttonStyle(BermsPressStyle())
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(Color.bermsTrail, in: RoundedRectangle(cornerRadius: 14))
-                    .foregroundStyle(Color.bermsOnAccent)
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
                     .disabled(selectedTrail == nil && name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
@@ -1922,30 +1873,28 @@ struct DayDetailView: View {
     }
 
     var body: some View {
-        ZStack {
-            BermsBackground()
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    summary
-                    dayMap
-                    Text("Runs")
-                        .font(.title3.weight(.bold))
-                    if runs.isEmpty {
-                        Text("No runs")
-                            .foregroundStyle(Color.bermsMuted)
-                    } else {
-                        ForEach(Array(runs.enumerated()), id: \.element.id) { index, segment in
-                            NavigationLink {
-                                RunMapView(number: index + 1, segment: segment)
-                            } label: {
-                                SegmentRow(number: index + 1, segment: segment,
-                                           trailName: trailSequence(for: segment))
-                            }
-                            .buttonStyle(BermsPressStyle())
+        List {
+            Section {
+                summary
+            }
+            Section {
+                dayMap
+                    .listRowInsets(EdgeInsets())
+            }
+            Section("Runs") {
+                if runs.isEmpty {
+                    Text("No runs")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(Array(runs.enumerated()), id: \.element.id) { index, segment in
+                        NavigationLink {
+                            RunMapView(number: index + 1, segment: segment)
+                        } label: {
+                            SegmentRow(number: index + 1, segment: segment,
+                                       trailName: trailSequence(for: segment))
                         }
                     }
                 }
-                .padding(16)
             }
         }
         .navigationTitle(day.startedAt.formatted(date: .abbreviated, time: .omitted))
@@ -1992,29 +1941,27 @@ struct DayDetailView: View {
 
     private var summary: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Today’s Stats")
+            Text("Day summary")
                 .font(.title2.weight(.bold))
 
             VStack(spacing: 16) {
-                HStack(spacing: 16) {
+                AdaptiveStatRow {
                     SummaryStat(label: "Time", value: BermsFormat.duration(day.duration), tint: .primary)
                     SummaryStat(label: "Runs", value: "\(runs.count)", tint: .primary)
                 }
-                HStack(spacing: 16) {
+                AdaptiveStatRow {
                     SummaryStat(label: "Descent", value: BermsFormat.elevation(day.descentMeters), tint: .primary)
                     SummaryStat(label: "Distance", value: BermsFormat.distance(day.distanceMeters))
                 }
-                HStack(spacing: 16) {
+                AdaptiveStatRow {
                     SummaryStat(label: "Riding time", value: BermsFormat.duration(day.activeSeconds))
                     SummaryStat(label: "Lift time", value: BermsFormat.duration(day.liftSeconds))
                 }
-                HStack(spacing: 16) {
+                AdaptiveStatRow {
                     SummaryStat(label: "Top speed", value: BermsFormat.speed(day.maximumSpeedMetersPerSecond))
                     SummaryStat(label: "Jumps", value: "\(day.jumpCount)", tint: .primary)
                 }
             }
-            .padding(16)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22))
         }
     }
 
@@ -2103,7 +2050,7 @@ struct DayDetailView: View {
                     Button { showingFullScreenMap = true } label: {
                         Image(systemName: "arrow.up.left.and.arrow.down.right")
                             .font(.headline)
-                            .frame(width: 42, height: 42)
+                            .frame(minWidth: 44, minHeight: 44)
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(.black.opacity(0.7))
@@ -2154,7 +2101,7 @@ struct DayDetailView: View {
         } label: {
             Image(systemName: "scope")
                 .font(.headline)
-                .frame(width: 42, height: 42)
+                .frame(minWidth: 44, minHeight: 44)
         }
         .buttonStyle(.borderedProminent)
         .tint(.black.opacity(0.7))
@@ -2296,7 +2243,7 @@ struct FullScreenSummaryMap: View {
                     } label: {
                         Image(systemName: "scope")
                             .font(.headline)
-                            .frame(width: 42, height: 42)
+                            .frame(minWidth: 44, minHeight: 44)
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(.black.opacity(0.7))
@@ -2533,7 +2480,7 @@ struct RunMapView: View {
                             Button { showingFullScreenMap = true } label: {
                                 Image(systemName: "arrow.up.left.and.arrow.down.right")
                                     .font(.headline)
-                                    .frame(width: 42, height: 42)
+                                    .frame(minWidth: 44, minHeight: 44)
                             }
                             .buttonStyle(.borderedProminent)
                             .tint(.black.opacity(0.7))
@@ -2581,7 +2528,7 @@ struct RunMapView: View {
         } label: {
             Image(systemName: "scope")
                 .font(.headline)
-                .frame(width: 42, height: 42)
+                .frame(minWidth: 44, minHeight: 44)
         }
         .buttonStyle(.borderedProminent)
         .tint(.black.opacity(0.7))
@@ -2595,13 +2542,14 @@ struct RunMapView: View {
 }
 
 private struct RunStatsCard: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let segment: RideSegment
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Run stats")
                 .font(.headline)
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 14) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: dynamicTypeSize.isAccessibilitySize ? 1 : 2), alignment: .leading, spacing: 14) {
                 SummaryStat(label: "Duration", value: BermsFormat.duration(segment.duration))
                 SummaryStat(label: "Distance", value: BermsFormat.distance(segment.distanceMeters))
                 SummaryStat(label: "Descent", value: BermsFormat.elevation(segment.verticalMeters))
@@ -2613,7 +2561,6 @@ private struct RunStatsCard: View {
             }
         }
         .padding(16)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22))
         .accessibilityElement(children: .contain)
     }
 }
@@ -2680,7 +2627,7 @@ private struct TrailSequenceCard: View {
         VStack(alignment: .leading, spacing: 5) {
             Text(sequence)
                 .font(.headline)
-                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
             Text(sequence == "Trail not identified"
                  ? "Run \(runNumber) · GPS route only"
                  : "Run \(runNumber)")
@@ -2707,11 +2654,10 @@ struct SegmentRow: View {
     }
 
     var body: some View {
-        HStack(spacing: 12) {
+        AdaptiveStatRow {
             Text("\(number)")
                 .font(.headline.monospacedDigit())
-                .frame(width: 28, height: 28)
-                .background(Color.bermsInset, in: Circle())
+                .accessibilityLabel("Run \(number)")
             VStack(alignment: .leading, spacing: 3) {
                 Text(trailName ?? "Trail not identified")
                     .font(.headline)
@@ -2731,12 +2677,8 @@ struct SegmentRow: View {
             Text(BermsFormat.speed(segment.maximumSpeedMetersPerSecond))
                 .font(.subheadline.weight(.semibold))
                 .monospacedDigit()
-            Image(systemName: "chevron.right")
-                .font(.caption.weight(.bold))
-                .foregroundStyle(Color.bermsMuted)
         }
-        .padding(12)
-        .background(Color.bermsCard, in: RoundedRectangle(cornerRadius: 16))
+        .padding(.vertical, 4)
     }
 }
 

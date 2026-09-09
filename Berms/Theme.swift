@@ -42,16 +42,18 @@ struct SummaryStat: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(value)
                 .bermsValueMotion(value, numeric: numericValue, enabled: animatesValue)
-                .font(.system(.title3, design: .rounded, weight: .bold))
+                .font(.title3.weight(.semibold))
                 .foregroundStyle(tint)
                 .monospacedDigit()
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
+                .fixedSize(horizontal: false, vertical: true)
             Text(label)
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(label)
+        .accessibilityValue(value)
     }
 }
 
@@ -63,17 +65,18 @@ struct MetricTile: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             Text(value)
-                .font(.system(.title3, design: .rounded, weight: .bold))
+                .font(.title3.weight(.semibold))
                 .foregroundStyle(tint)
                 .monospacedDigit()
-            Text(label.uppercased())
-                .font(.caption2.weight(.semibold))
+            Text(label)
+                .font(.caption)
                 .foregroundStyle(Color.bermsMuted)
-                .tracking(0.8)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(label)
+        .accessibilityValue(value)
         .padding(14)
-        .background(Color.bermsCard, in: RoundedRectangle(cornerRadius: 16))
     }
 }
 
@@ -89,14 +92,16 @@ enum BermsMotion {
     }
 }
 
-struct BermsPressStyle: ButtonStyle {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+/// Preserve readable metrics at accessibility sizes without limiting Dynamic Type.
+struct AdaptiveStatRow<Content: View>: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ViewBuilder let content: Content
 
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.98 : 1)
-            .opacity(configuration.isPressed ? 0.82 : 1)
-            .animation(reduceMotion ? nil : BermsMotion.press, value: configuration.isPressed)
+    var body: some View {
+        let layout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 16))
+            : AnyLayout(HStackLayout(alignment: .top, spacing: 16))
+        layout { content }
     }
 }
 
