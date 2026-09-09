@@ -40,15 +40,18 @@ final class BermsTests: XCTestCase {
         XCTAssertTrue(preferences.showsRidePath)
         XCTAssertTrue(preferences.showsActualTrails)
         XCTAssertTrue(preferences.showsJumps)
+        XCTAssertTrue(preferences.showsLiftPaths)
 
         preferences.showsRidePath = false
         preferences.showsActualTrails = false
         preferences.showsJumps = false
+        preferences.showsLiftPaths = false
 
         let restored = MapLayerPreferences(defaults: defaults)
         XCTAssertFalse(restored.showsRidePath)
         XCTAssertFalse(restored.showsActualTrails)
         XCTAssertFalse(restored.showsJumps)
+        XCTAssertFalse(restored.showsLiftPaths)
     }
 
     @MainActor
@@ -100,6 +103,83 @@ final class BermsTests: XCTestCase {
         let secondID = TrailCatalogImporter.stableID(for: "shared", catalog: secondCatalog)
         XCTAssertNotEqual(firstID, secondID)
         XCTAssertEqual(try context.fetch(FetchDescriptor<Trail>()).count, 1)
+    }
+
+    @MainActor
+    func testMountainCreekCatalogAppliesOfficialDifficultyCorrectionsAndMergesDuplicates() throws {
+        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try ModelContainer(for: Trail.self, TrailPass.self,
+                                            configurations: configuration)
+        let context = container.mainContext
+        let suiteName = "BermsTests.mountainCreekCorrections.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let canonicalSlug = "lower-asylum-1f4u6s"
+        let retiredSlug = "lower-asylum-196712"
+        let duplicate = Trail(name: "Lower Asylum", difficulty: .black,
+                              resort: TrailCatalogRegistry.mountainCreek.resortName)
+        duplicate.id = TrailCatalogImporter.stableID(for: retiredSlug,
+                                                      catalog: TrailCatalogRegistry.mountainCreek)
+        let duplicatePass = TrailPass(routePoints: [
+            RoutePoint(latitude: 41.1854, longitude: -74.5022, altitude: 0, speed: 0,
+                       timestamp: .now),
+            RoutePoint(latitude: 41.1867, longitude: -74.5027,
+                       altitude: 0, speed: 0, timestamp: .now.addingTimeInterval(1))
+        ])
+        duplicatePass.trail = duplicate
+        duplicate.passes.append(duplicatePass)
+        context.insert(duplicate)
+        context.insert(duplicatePass)
+        try context.save()
+
+        let data = Data("""
+        {"type":"FeatureCollection","features":[
+          {"type":"Feature","properties":{"name":"Lower Asylum","slug":"\(canonicalSlug)","difficulty":"black"},"geometry":{"type":"LineString","coordinates":[[-74.5022,41.1854],[-74.5027,41.1867]]}},
+          {"type":"Feature","properties":{"name":"Lower Asylum","slug":"\(retiredSlug)","difficulty":"black"},"geometry":{"type":"LineString","coordinates":[[-74.5022,41.1854],[-74.5027,41.1867]]}},
+          {"type":"Feature","properties":{"name":"Progression Drops","slug":"progression-drops","difficulty":"blue"},"geometry":{"type":"LineString","coordinates":[[-74.50,41.18],[-74.501,41.181]]}},
+          {"type":"Feature","properties":{"name":"Deviant","slug":"deviant-kg9399","difficulty":"blue"},"geometry":{"type":"LineString","coordinates":[[-74.50,41.18],[-74.501,41.181]]}},
+          {"type":"Feature","properties":{"name":"Pipeline","slug":"pipeline-5y2v8p","difficulty":"doubleBlack"},"geometry":{"type":"LineString","coordinates":[[-74.50,41.18],[-74.501,41.181]]}},
+          {"type":"Feature","properties":{"name":"Ripper","slug":"ripper-5ashmy","difficulty":"black"},"geometry":{"type":"LineString","coordinates":[[-74.50,41.18],[-74.501,41.181]]}},
+          {"type":"Feature","properties":{"name":"The Pit","slug":"the-pit","difficulty":"black"},"geometry":{"type":"LineString","coordinates":[[-74.50,41.18],[-74.501,41.181]]}}
+        ]}
+        """.utf8)
+
+        _ = try TrailCatalogImporter.import(data: data, into: context,
+                                            defaults: defaults,
+                                            catalog: TrailCatalogRegistry.mountainCreek,
+                                            version: "mountain-creek-ridepal-v3")
+
+        let trails = try context.fetch(FetchDescriptor<Trail>())
+        XCTAssertEqual(trails.count, 6)
+        XCTAssertNil(trails.first { $0.id == TrailCatalogImporter.stableID(
+            for: retiredSlug, catalog: TrailCatalogRegistry.mountainCreek) })
+        XCTAssertEqual(trails.first { $0.name == "Progression Drops" }?.difficulty, .green)
+        XCTAssertEqual(trails.first { $0.name == "Deviant" }?.difficulty, .green)
+        XCTAssertEqual(trails.first { $0.name == "Pipeline" }?.difficulty, .black)
+        XCTAssertEqual(trails.first { $0.name == "Ripper" }?.difficulty, .doubleBlack)
+        XCTAssertEqual(trails.first { $0.name == "The Pit" }?.difficulty, .doubleBlack)
+        XCTAssertEqual(trails.first { $0.name == "Lower Asylum" }?.passCount, 2)
+    }
+
+    @MainActor
+    func testManualTrailCatalogSelectionShowsTheSelectedResortAwayFromGPS() {
+        let suiteName = "BermsTests.catalogSelection.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let selection = TrailCatalogSelection(defaults: defaults)
+        selection.setSelectionID(TrailCatalogRegistry.mountainCreek.id)
+
+        let creekTrail = Trail(name: "Creek trail", difficulty: .green,
+                               resort: TrailCatalogRegistry.mountainCreek.resortName)
+        let otherTrail = Trail(name: "Other trail", difficulty: .blue, resort: "Other Resort")
+        let visible = selection.trails(
+            [creekTrail, otherTrail],
+            near: Coordinate(latitude: 40.7128, longitude: -74.0060)
+        )
+
+        XCTAssertEqual(visible.map(\.name), ["Creek trail"])
     }
 
     @MainActor
@@ -254,6 +334,53 @@ final class BermsTests: XCTestCase {
         let match = TrailRouteMatcher().bestMatch(for: partialRoute, trails: [trail])
 
         XCTAssertEqual(match?.trailID, trail.id)
+    }
+
+    func testTrailMatcherAcceptsATrailRecordedInTheOppositeDirection() {
+        let base = Date(timeIntervalSince1970: 1_260)
+        let route = (0...10).map { index in
+            RoutePoint(latitude: 40 + Double(index) * 0.0001, longitude: -105,
+                       altitude: 100 - Double(index), speed: 8,
+                       timestamp: base.addingTimeInterval(Double(index)))
+        }
+        let trail = Trail(name: "Reverse pass", difficulty: .blue, resort: "Test")
+        let pass = TrailPass(routePoints: Array(route.reversed()))
+        pass.trail = trail
+        trail.passes.append(pass)
+
+        let match = TrailRouteMatcher().bestMatch(for: route, trails: [trail])
+        let section = TrailRouteMatcher().matchingSections(for: route, trails: [trail]).first
+
+        XCTAssertEqual(match?.trailID, trail.id)
+        XCTAssertEqual(section?.trailProgress.lowerBound ?? .nan, 0, accuracy: 0.03)
+        XCTAssertEqual(section?.trailProgress.upperBound ?? .nan, 1, accuracy: 0.03)
+    }
+
+    func testTrailMatcherDoesNotCountAPerpendicularPassByAsRidingTheTrail() {
+        let base = Date(timeIntervalSince1970: 1_265)
+        let passBy = (0...20).map { index in
+            RoutePoint(latitude: 40.0005,
+                       longitude: -105 + Double(index - 10) * 0.0001,
+                       altitude: 100,
+                       speed: 8,
+                       timestamp: base.addingTimeInterval(Double(index)))
+        }
+        let trailPoints = (0...10).map { index in
+            RoutePoint(latitude: 40 + Double(index) * 0.0001,
+                       longitude: -105,
+                       altitude: 100,
+                       speed: 8,
+                       timestamp: base.addingTimeInterval(Double(index)))
+        }
+        let trail = Trail(name: "Crossing trail", difficulty: .black, resort: "Test")
+        let pass = TrailPass(routePoints: trailPoints)
+        pass.trail = trail
+        trail.passes.append(pass)
+
+        let matcher = TrailRouteMatcher()
+
+        XCTAssertNil(matcher.bestMatch(for: passBy, trails: [trail]))
+        XCTAssertTrue(matcher.matchingSections(for: passBy, trails: [trail]).isEmpty)
     }
 
     func testTrailMatcherReturnsTrailProgressForPartialRide() {

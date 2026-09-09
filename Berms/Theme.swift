@@ -15,9 +15,12 @@ extension Color {
         switch difficulty {
         case .green: .green
         case .blue: .blue
-        case .black: .bermsTrail
-        case .doubleBlack: .red
+        case .black, .doubleBlack: .black
         }
+    }
+
+    static func bermsDifficultyAccent(_ difficulty: TrailDifficulty) -> Color? {
+        difficulty == .doubleBlack ? .red : nil
     }
 }
 

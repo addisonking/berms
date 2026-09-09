@@ -210,8 +210,11 @@ struct TrailMatchSection: Identifiable, Sendable {
 }
 
 struct TrailRouteMatcher: Sendable {
-    var maximumDistance: Double = 75
-    var minimumScore: Double = 0.55
+    // A wide proximity radius can make a ride on a neighboring connector look
+    // like a trail match. Keep enough room for normal phone GPS drift, but make
+    // the score depend on progress along the trail too.
+    var maximumDistance: Double = 50
+    var minimumScore: Double = 0.58
     var minimumWinningMargin: Double = 0.08
 
     private struct ScoredSection: Sendable {
@@ -222,6 +225,11 @@ struct TrailRouteMatcher: Sendable {
         let averageDistance: Double
     }
 
+    private struct TrailProjection: Sendable {
+        let distance: Double
+        let progress: Double
+    }
+
     func matchingSections(for route: [RoutePoint], trails: [Trail]) -> [TrailMatchSection] {
         guard route.count >= 2 else { return [] }
 
@@ -230,7 +238,12 @@ struct TrailRouteMatcher: Sendable {
             candidateRoutes.append(contentsOf: trail.passes.map(\.points))
             let scoredRoutes = candidateRoutes
                 .filter { $0.count >= 2 }
-                .compactMap { score(route: route, against: $0) }
+                .flatMap { candidate in
+                    [
+                        score(route: route, against: candidate, isReversed: false),
+                        score(route: route, against: Array(candidate.reversed()), isReversed: true)
+                    ].compactMap { $0 }
+                }
             let best = scoredRoutes.max { $0.score < $1.score }
             guard let best, best.score >= minimumScore else { return nil }
             return TrailMatchSection(trailID: trail.id,
@@ -265,7 +278,12 @@ struct TrailRouteMatcher: Sendable {
             let candidateRoutes = [trail.points] + trail.passes.map(\.points)
             let scores = candidateRoutes
                 .filter { candidate in candidate.count >= 2 }
-                .compactMap { candidate in self.score(route: route, against: candidate) }
+                .flatMap { candidate in
+                    [
+                        self.score(route: route, against: candidate, isReversed: false),
+                        self.score(route: route, against: Array(candidate.reversed()), isReversed: true)
+                    ].compactMap { $0 }
+                }
             guard let score = scores.max(by: { left, right in left.score < right.score }) else {
                 return nil
             }
@@ -279,27 +297,50 @@ struct TrailRouteMatcher: Sendable {
         return winner
     }
 
-    private func score(route: [RoutePoint], against trail: [RoutePoint]) -> ScoredSection? {
-        let distances = route.map { nearestDistance(from: $0, to: trail) }
+    private func score(
+        route: [RoutePoint],
+        against trail: [RoutePoint],
+        isReversed: Bool
+    ) -> ScoredSection? {
+        let cumulativeTrailDistances = cumulativeDistances(for: trail)
+        let trailLength = cumulativeTrailDistances.last ?? 0
+        let projections = route.map {
+            nearestProjection(to: $0, in: trail,
+                              cumulativeDistances: cumulativeTrailDistances,
+                              totalLength: trailLength)
+        }
+        let distances = projections.map(\.distance)
         guard let range = bestContiguousMatchRange(in: route, distances: distances) else { return nil }
         let matchedRoute = Array(route[range])
         let matchedDistances = Array(distances[range])
-        let trailLength = RouteMetrics.distance(of: trail)
         let matchedLength = RouteMetrics.distance(of: matchedRoute)
         let minimumOverlap = min(250, max(40, trailLength * 0.4))
         guard matchedLength >= minimumOverlap else { return nil }
 
-        let overlapScore = min(1, matchedLength / max(trailLength, 1))
+        let matchedProgresses = projections[range].map(\.progress)
+        guard let firstProgress = matchedProgresses.first,
+              let lastProgress = matchedProgresses.last,
+              let minimumProgress = matchedProgresses.min(),
+              let maximumProgress = matchedProgresses.max() else {
+            return nil
+        }
+        let trailProgressSpan = maximumProgress - minimumProgress
+        // Travel distance alone cannot distinguish riding a trail from
+        // crossing it or running along a nearby connector. Require meaningful
+        // progress along the trail centerline in the match score.
+        let overlapScore = min(1, trailProgressSpan)
         let routeCoverage = Double(matchedRoute.count) / Double(route.count)
         let averageDistance = matchedDistances.reduce(0, +) / Double(matchedDistances.count)
         let distanceScore = max(0, 1 - averageDistance / (maximumDistance * 2))
-        let endpoint = endpointScore(route: matchedRoute, trail: trail)
+        let endpoint = endpointScore(projections: Array(projections[range]))
         guard endpoint.directionIsCompatible else { return nil }
         let lengthScore = 1 - min(1, abs(matchedLength - trailLength) / max(trailLength, 1))
+        let canonicalStart = isReversed ? 1 - firstProgress : firstProgress
+        let canonicalEnd = isReversed ? 1 - lastProgress : lastProgress
         return ScoredSection(
             range: range,
-            trailStartProgress: progress(at: endpoint.firstIndex, in: trail),
-            trailEndProgress: progress(at: endpoint.lastIndex, in: trail),
+            trailStartProgress: canonicalStart,
+            trailEndProgress: canonicalEnd,
             score: overlapScore * 0.45 + routeCoverage * 0.1 + distanceScore * 0.2
                 + endpoint.score * 0.15 + lengthScore * 0.1,
             averageDistance: averageDistance
@@ -334,43 +375,41 @@ struct TrailRouteMatcher: Sendable {
         return best
     }
 
-    private func endpointScore(route: [RoutePoint], trail: [RoutePoint]) -> (
+    private func endpointScore(projections: [TrailProjection]) -> (
         score: Double,
         directionIsCompatible: Bool,
-        firstIndex: Int,
-        lastIndex: Int
+        firstProgress: Double,
+        lastProgress: Double
     ) {
-        guard let first = route.first, let last = route.last,
-              !trail.isEmpty,
-              let firstIndex = nearestPointIndex(to: first, in: trail),
-              let lastIndex = nearestPointIndex(to: last, in: trail) else {
+        guard let first = projections.first, let last = projections.last else {
             return (0, false, 0, 0)
         }
-        let firstDistance = nearestDistance(from: first, to: trail)
-        let lastDistance = nearestDistance(from: last, to: trail)
-        let endpointDistance = (firstDistance + lastDistance) / 2
-        let compatible = lastIndex >= firstIndex
+        let endpointDistance = (first.distance + last.distance) / 2
+        let compatible = last.progress >= first.progress
         return (max(0, 1 - endpointDistance / (maximumDistance * 2)), compatible,
-                firstIndex, lastIndex)
+                first.progress, last.progress)
     }
 
-    private func nearestPointIndex(to point: RoutePoint, in route: [RoutePoint]) -> Int? {
-        guard !route.isEmpty else { return nil }
-        let pointCoordinate = coordinate(for: point)
-        return route.indices.min { left, right in
-            pointCoordinate.distance(to: coordinate(for: route[left]))
-                < pointCoordinate.distance(to: coordinate(for: route[right]))
-        }
-    }
-
-    private func nearestDistance(from point: RoutePoint, to route: [RoutePoint]) -> Double {
+    private func nearestProjection(
+        to point: RoutePoint,
+        in route: [RoutePoint],
+        cumulativeDistances: [Double],
+        totalLength: Double
+    ) -> TrailProjection {
         guard route.count >= 2 else {
-            return route.first.map { coordinate(for: point).distance(to: coordinate(for: $0)) }
-                ?? .greatestFiniteMagnitude
+            return TrailProjection(
+                distance: route.first.map { coordinate(for: point).distance(to: coordinate(for: $0)) }
+                    ?? .greatestFiniteMagnitude,
+                progress: 0
+            )
         }
+
         let origin = coordinate(for: point)
         let projectedPoint = project(origin, relativeTo: origin)
-        return zip(route, route.dropFirst()).map { start, end in
+        var best = TrailProjection(distance: .greatestFiniteMagnitude, progress: 0)
+        for (index, pair) in zip(route, route.dropFirst()).enumerated() {
+            let start = pair.0
+            let end = pair.1
             let a = project(coordinate(for: start), relativeTo: origin)
             let b = project(coordinate(for: end), relativeTo: origin)
             let dx = b.x - a.x
@@ -381,8 +420,26 @@ struct TrailRouteMatcher: Sendable {
                 : 0
             let closestX = a.x + dx * fraction
             let closestY = a.y + dy * fraction
-            return hypot(projectedPoint.x - closestX, projectedPoint.y - closestY)
-        }.min() ?? .greatestFiniteMagnitude
+            let distance = hypot(projectedPoint.x - closestX, projectedPoint.y - closestY)
+            guard distance < best.distance else { continue }
+            let segmentLength = cumulativeDistances[index + 1] - cumulativeDistances[index]
+            let distanceAlongTrail = cumulativeDistances[index] + segmentLength * fraction
+            best = TrailProjection(
+                distance: distance,
+                progress: totalLength > 0 ? distanceAlongTrail / totalLength : 0
+            )
+        }
+        return best
+    }
+
+    private func cumulativeDistances(for route: [RoutePoint]) -> [Double] {
+        var cumulative = [0.0]
+        cumulative.reserveCapacity(route.count)
+        for pair in zip(route, route.dropFirst()) {
+            cumulative.append(cumulative.last! + coordinate(for: pair.0)
+                .distance(to: coordinate(for: pair.1)))
+        }
+        return cumulative
     }
 
     private func project(_ coordinate: Coordinate, relativeTo origin: Coordinate) -> (x: Double, y: Double) {
@@ -397,20 +454,6 @@ struct TrailRouteMatcher: Sendable {
         Coordinate(latitude: point.latitude, longitude: point.longitude)
     }
 
-    private func progress(at index: Int, in route: [RoutePoint]) -> Double {
-        guard route.count >= 2 else { return 0 }
-        let clampedIndex = min(max(index, 0), route.count - 1)
-        let total = RouteMetrics.distance(of: route)
-        guard total > 0 else {
-            return Double(clampedIndex) / Double(route.count - 1)
-        }
-        let distance = zip(route, route.dropFirst())
-            .prefix(clampedIndex)
-            .reduce(0) { total, pair in
-                total + coordinate(for: pair.0).distance(to: coordinate(for: pair.1))
-            }
-        return max(0, min(1, distance / total))
-    }
 }
 
 struct TrailRouteSlice {

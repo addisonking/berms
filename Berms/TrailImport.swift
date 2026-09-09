@@ -25,7 +25,7 @@ enum TrailCatalogRegistry {
         id: "mountain-creek-resort",
         resortName: "Mountain Creek Resort",
         bundledResourceName: "mountain-creek-ridepal-trails-with-metadata",
-        importVersion: "mountain-creek-ridepal-v1",
+        importVersion: "mountain-creek-ridepal-v3",
         locationAnchor: Coordinate(latitude: 41.2505, longitude: -74.5012),
         stableIDNamespace: "berms:ridepal",
         legacyImportVersionKeys: ["berms.trailSeedImport.version"]
@@ -192,11 +192,18 @@ enum TrailCatalogImporter {
         var passesCreated = 0
         var existingTrailsSkipped = 0
         var invalidFeaturesSkipped = 0
+        let retiredSlugs = retiredTrailSlugs(for: catalog)
 
         for feature in collection.features {
             guard let slug = feature.properties.slug?.trimmedNonEmpty,
-                  let name = feature.properties.name?.trimmedNonEmpty,
-                  let difficulty = difficulty(from: feature.properties),
+                  let name = feature.properties.name?.trimmedNonEmpty else {
+                invalidFeaturesSkipped += 1
+                continue
+            }
+            if retiredSlugs.contains(slug) {
+                continue
+            }
+            guard let difficulty = difficulty(from: feature.properties, catalog: catalog),
                   let points = feature.geometry.routePoints(referenceDate: now),
                   points.count >= 2 else {
                 invalidFeaturesSkipped += 1
@@ -207,6 +214,11 @@ enum TrailCatalogImporter {
             let trail: Trail
             if let existing = trailsByID[id] {
                 trail = existing
+                if existing.name != name || existing.difficultyRawValue != difficulty.rawValue {
+                    existing.name = name
+                    existing.difficultyRawValue = difficulty.rawValue
+                    existing.updatedAt = now
+                }
                 guard existing.passes.isEmpty else {
                     existingTrailsSkipped += 1
                     continue
@@ -227,6 +239,7 @@ enum TrailCatalogImporter {
             passesCreated += 1
         }
 
+        reconcileRetiredTrails(for: catalog, trailsByID: trailsByID, context: context)
         try context.save()
         let importVersion = version ?? catalog.importVersion
         defaults.set(importVersion, forKey: versionKey(for: catalog))
@@ -241,7 +254,14 @@ enum TrailCatalogImporter {
         )
     }
 
-    private static func difficulty(from properties: GeoJSONProperties) -> TrailDifficulty? {
+    private static func difficulty(from properties: GeoJSONProperties,
+                                   catalog: TrailCatalogDescriptor) -> TrailDifficulty? {
+        if catalog.id == TrailCatalogRegistry.mountainCreek.id,
+           let slug = properties.slug?.trimmedNonEmpty,
+           let officialDifficulty = mountainCreekOfficialDifficultyBySlug[slug] {
+            return officialDifficulty
+        }
+
         if let rawValue = properties.difficulty,
            let difficulty = TrailDifficulty(rawValue: rawValue) {
             return difficulty
@@ -253,6 +273,64 @@ enum TrailCatalogImporter {
         case "Black Diamond": TrailDifficulty.black
         case "Double Black Diamond": TrailDifficulty.doubleBlack
         default: nil
+        }
+    }
+
+    // These corrections follow the supplied Mountain Creek Bike Park map.
+    // Its PRO LINE and EXPERT routes are represented as Double Black in
+    // Berms. ADVANCED routes remain regular Black.
+    private static let mountainCreekOfficialDifficultyBySlug: [String: TrailDifficulty] = [
+        "progression-drops": .green,
+        "deviant-kg9399": .green,
+        "fat-lip-rf8hz9": .blue,
+        "ripper-5ashmy": .doubleBlack,
+        "dmlh-abz5gf": .doubleBlack,
+        "utah": .doubleBlack,
+        "flipper-bfr3vr": .doubleBlack,
+        "pipeline-5y2v8p": .black,
+        "the-pit": .doubleBlack,
+        "covenant-d2z0pq": .doubleBlack,
+        "anthem-2cky0y": .doubleBlack,
+        "phantom-drop": .doubleBlack
+    ]
+
+    // RidePal published the same Lower Asylum centerline three times. Keep
+    // the first stable ID as the canonical record and merge old records into
+    // it during the v2 catalog migration.
+    private static let mountainCreekRetiredTrailSlugs: [String: String] = [
+        "lower-asylum-196712": "lower-asylum-1f4u6s",
+        "lower-asylum-dud3va": "lower-asylum-1f4u6s"
+    ]
+
+    private static func retiredTrailSlugs(for catalog: TrailCatalogDescriptor) -> Set<String> {
+        guard catalog.id == TrailCatalogRegistry.mountainCreek.id else { return [] }
+        return Set(mountainCreekRetiredTrailSlugs.keys)
+    }
+
+    private static func reconcileRetiredTrails(for catalog: TrailCatalogDescriptor,
+                                               trailsByID: [UUID: Trail],
+                                               context: ModelContext) {
+        guard catalog.id == TrailCatalogRegistry.mountainCreek.id else { return }
+
+        for (retiredSlug, canonicalSlug) in mountainCreekRetiredTrailSlugs {
+            let retiredID = stableID(for: retiredSlug, catalog: catalog)
+            let canonicalID = stableID(for: canonicalSlug, catalog: catalog)
+            guard let retiredTrail = trailsByID[retiredID],
+                  let canonicalTrail = trailsByID[canonicalID],
+                  retiredTrail.id != canonicalTrail.id else {
+                continue
+            }
+
+            let retiredPasses = retiredTrail.passes
+            retiredTrail.passes.removeAll()
+            for pass in retiredPasses {
+                pass.trail = canonicalTrail
+                if !canonicalTrail.passes.contains(where: { $0.id == pass.id }) {
+                    canonicalTrail.passes.append(pass)
+                }
+            }
+            canonicalTrail.recalculateAverage()
+            context.delete(retiredTrail)
         }
     }
 
