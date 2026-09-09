@@ -55,7 +55,11 @@ final class MapLayerPreferences: ObservableObject {
     }
 }
 
-private let liveControlWidth: CGFloat = 56
+// Match the standard circular Settings toolbar control.
+private let liveControlWidth: CGFloat = 44
+// The map content's trailing edge sits inside the navigation toolbar's
+// trailing edge. This inset keeps the two controls on the same center line.
+private let liveControlsTrailingInset: CGFloat = 20
 
 private struct MapLayersMenu: View {
     @ObservedObject var preferences: MapLayerPreferences
@@ -707,49 +711,49 @@ struct TrackView: View {
 
     private var liveMapControls: some View {
         GlassEffectContainer(spacing: 8) {
-            VStack(spacing: 0) {
-                Menu {
-                    Toggle("Ride path", isOn: $mapLayerPreferences.showsRidePath)
-                    Toggle("Actual trails", isOn: $mapLayerPreferences.showsActualTrails)
-                        .disabled(nearbyTrails.isEmpty)
-                    Toggle("Previous runs", isOn: $mapLayerPreferences.showsPreviousRunsInLiveMap)
-                } label: {
-                    Image(systemName: "square.3.layers.3d")
-                        .font(.headline)
-                        .frame(width: 44, height: 44)
-                        .contentShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.primary)
-                .accessibilityLabel("Map layers")
-
-                Divider()
-                    .frame(width: 28)
-                    .overlay(.primary.opacity(0.18))
-                    .accessibilityHidden(true)
-
-                Button {
-                    isFollowing = true
-                    withAnimation(reduceMotion ? nil : BermsMotion.recenter) {
-                        centerOnLastSampleIfNeeded(force: true)
+                VStack(spacing: 0) {
+                    Menu {
+                        Toggle("Ride path", isOn: $mapLayerPreferences.showsRidePath)
+                        Toggle("Actual trails", isOn: $mapLayerPreferences.showsActualTrails)
+                            .disabled(nearbyTrails.isEmpty)
+                        Toggle("Previous runs", isOn: $mapLayerPreferences.showsPreviousRunsInLiveMap)
+                    } label: {
+                        Image(systemName: "square.3.layers.3d")
+                            .font(.headline)
+                            .frame(width: liveControlWidth, height: liveControlWidth)
+                            .contentShape(Circle())
                     }
-                } label: {
-                    Image(systemName: isFollowing ? "location.fill" : "location")
-                        .font(.headline)
-                        .frame(width: 44, height: 44)
-                        .contentShape(Circle())
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.primary)
+                    .accessibilityLabel("Map layers")
+
+                    Divider()
+                        .frame(width: 28)
+                        .overlay(.primary.opacity(0.18))
+                        .accessibilityHidden(true)
+
+                    Button {
+                        isFollowing = true
+                        withAnimation(reduceMotion ? nil : BermsMotion.recenter) {
+                            centerOnLastSampleIfNeeded(force: true)
+                        }
+                    } label: {
+                        Image(systemName: isFollowing ? "location.fill" : "location")
+                            .font(.headline)
+                            .frame(width: liveControlWidth, height: liveControlWidth)
+                            .contentShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.primary)
+                    .accessibilityLabel(isFollowing ? "Following GPS" : "Center GPS")
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(.primary)
-                .accessibilityLabel(isFollowing ? "Following GPS" : "Center GPS")
+                .padding(.vertical, 4)
+                .frame(width: liveControlWidth)
+                .glassEffect(.regular, in: .capsule)
             }
-            .padding(4)
-            .frame(width: liveControlWidth)
-            .glassEffect(.regular, in: .capsule)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-        .padding(.top, 12)
-        .padding(.trailing, 12)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+            .padding(.top, 12)
+            .padding(.trailing, liveControlsTrailingInset)
     }
 
     private var settingsButton: some View {
