@@ -1,6 +1,19 @@
 import SwiftUI
 import UIKit
 
+/// Shared layout rhythm for production screens.
+///
+/// Native List/Form margins remain system-owned. These values are used where
+/// Berms owns the surrounding layout, so adjacent screens share one rhythm.
+enum BermsSpacing {
+    static let compact: CGFloat = 8
+    static let control: CGFloat = 12
+    static let content: CGFloat = 16
+    static let section: CGFloat = 24
+    static let major: CGFloat = 32
+    static let target: CGFloat = 44
+}
+
 extension Color {
     // Resolve against the current appearance, including sheets and system controls.
     static let bermsInk = Color(uiColor: .systemGroupedBackground)
@@ -76,7 +89,7 @@ struct MetricTile: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(label)
         .accessibilityValue(value)
-        .padding(14)
+        .padding(BermsSpacing.control)
     }
 }
 
@@ -99,8 +112,8 @@ struct AdaptiveStatRow<Content: View>: View {
 
     var body: some View {
         let layout = dynamicTypeSize.isAccessibilitySize
-            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 16))
-            : AnyLayout(HStackLayout(alignment: .top, spacing: 16))
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: BermsSpacing.content))
+            : AnyLayout(HStackLayout(alignment: .top, spacing: BermsSpacing.content))
         layout { content }
     }
 }

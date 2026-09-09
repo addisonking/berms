@@ -94,7 +94,7 @@ private struct MapLayersMenu: View {
             Label("Layers", systemImage: "square.3.layers.3d")
                 .labelStyle(.iconOnly)
                 .font(.headline)
-                .frame(minWidth: 44, minHeight: 44)
+                .frame(minWidth: BermsSpacing.target, minHeight: BermsSpacing.target)
         }
         .buttonStyle(.glass)
         .accessibilityLabel("Map layers")
@@ -470,7 +470,7 @@ struct TrackView: View {
     private var readyContent: some View {
         GeometryReader { geometry in
             ScrollView {
-                VStack(spacing: 24) {
+                VStack(spacing: BermsSpacing.section) {
                     Image(systemName: "mountain.2.fill")
                         .font(.largeTitle)
                         .foregroundStyle(Color.bermsTrail)
@@ -497,11 +497,12 @@ struct TrackView: View {
                         .foregroundStyle(Color.bermsMuted)
                     }
                 }
-                .padding(24)
+                .padding(.vertical, BermsSpacing.section)
                 .frame(maxWidth: .infinity)
                 .frame(minHeight: geometry.size.height)
             }
             .scrollBounceBehavior(.basedOnSize)
+            .contentMargins(.horizontal, BermsSpacing.content, for: .scrollContent)
         }
     }
 
@@ -523,16 +524,16 @@ struct TrackView: View {
                 .scrollBounceBehavior(.basedOnSize)
                 .frame(height: min(liveStatsHeight, max(0, geometry.size.height * 0.65)))
                 .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 30, style: .continuous))
-                .padding(.horizontal, 12)
-                .padding(.bottom, 12)
+                .padding(.horizontal, BermsSpacing.content)
+                .padding(.bottom, BermsSpacing.content)
             }
         }
     }
 
     private var liveStatsOverlay: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: BermsSpacing.control) {
             HStack {
-                HStack(spacing: 8) {
+                HStack(spacing: BermsSpacing.compact) {
                     Circle()
                         .fill(recorder.isPaused ? Color.bermsMuted : Color.bermsTrail)
                         .frame(width: 9, height: 9)
@@ -549,7 +550,7 @@ struct TrackView: View {
                 }
             }
 
-            VStack(spacing: 10) {
+            VStack(spacing: BermsSpacing.control) {
                 AdaptiveStatRow {
                     SummaryStat(animatesValue: true, numericValue: true, label: "Runs", value: "\(recorder.completedRunCount)", tint: .bermsTrail)
                     SummaryStat(animatesValue: true, numericValue: true, label: "Jumps", value: "\(recorder.activeJumpCount)", tint: .bermsTrail)
@@ -607,9 +608,8 @@ struct TrackView: View {
                 .foregroundStyle(Color.bermsOnAccent)
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 16)
-        .padding(.bottom, 16)
+        .padding(.horizontal, BermsSpacing.content)
+        .padding(.vertical, BermsSpacing.content)
 
     }
 
@@ -652,7 +652,7 @@ struct TrackView: View {
     private var liveMap: some View {
         ZStack {
             if recorder.lastSample == nil {
-                VStack(spacing: 10) {
+                VStack(spacing: BermsSpacing.control) {
                     Image(systemName: "location.slash")
                         .font(.title2)
                     Text(gpsEmptyTitle)
@@ -710,8 +710,8 @@ struct TrackView: View {
     }
 
     private var liveMapControls: some View {
-        GlassEffectContainer(spacing: 8) {
-                VStack(spacing: 0) {
+        GlassEffectContainer(spacing: BermsSpacing.compact) {
+            VStack(spacing: 0) {
                     Menu {
                         Toggle("Ride path", isOn: $mapLayerPreferences.showsRidePath)
                         Toggle("Actual trails", isOn: $mapLayerPreferences.showsActualTrails)
@@ -884,11 +884,11 @@ struct TrailLibraryView: View {
             libraryMap
                 .frame(height: 350)
                 .clipShape(RoundedRectangle(cornerRadius: 22))
-                .padding(.horizontal, 16)
-                .padding(.top, 16)
+                .padding(.horizontal, BermsSpacing.content)
+                .padding(.top, BermsSpacing.content)
 
             ScrollView(.vertical) {
-                VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: BermsSpacing.section) {
                     difficultyFilters
 
                     HStack(alignment: .firstTextBaseline) {
@@ -918,9 +918,10 @@ struct TrailLibraryView: View {
                         }
                     }
                 }
-                .padding(16)
             }
             .scrollIndicators(.hidden)
+            .contentMargins(.horizontal, BermsSpacing.content, for: .scrollContent)
+            .contentMargins(.vertical, BermsSpacing.content, for: .scrollContent)
         }
         .background(BermsBackground())
         .navigationTitle("Trail Library")
@@ -931,7 +932,7 @@ struct TrailLibraryView: View {
     @ViewBuilder
     private var libraryMap: some View {
         if visibleTrails.flatMap(\.points).isEmpty {
-            VStack(spacing: 8) {
+            VStack(spacing: BermsSpacing.compact) {
                 Image(systemName: "map")
                     .font(.title2)
                 Text("No trail geometry")
@@ -978,7 +979,7 @@ struct TrailLibraryView: View {
 
                 }
 
-                VStack(spacing: 8) {
+                VStack(spacing: BermsSpacing.compact) {
                     MapLayersMenu(preferences: mapLayerPreferences,
                                   showsRidePathControl: false,
                                   showsActualTrailsControl: true,
@@ -989,14 +990,14 @@ struct TrailLibraryView: View {
                     } label: {
                         Image(systemName: "scope")
                             .font(.headline)
-                            .frame(minWidth: 44, minHeight: 44)
+                            .frame(minWidth: BermsSpacing.target, minHeight: BermsSpacing.target)
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(.black.opacity(0.7))
                     .foregroundStyle(.white)
                     .accessibilityLabel("Recenter map")
                 }
-                .padding(12)
+                .padding(BermsSpacing.control)
             }
             .onAppear { recenterMap() }
         }
@@ -1004,7 +1005,7 @@ struct TrailLibraryView: View {
 
     private var difficultyFilters: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
+            HStack(spacing: BermsSpacing.compact) {
                 difficultyFilter("All", difficulty: nil)
                 ForEach(TrailDifficulty.allCases) { difficulty in
                     difficultyFilter(difficulty.title, difficulty: difficulty)
@@ -1050,7 +1051,7 @@ private struct ProductionTrailLibraryRow: View {
     let isSelected: Bool
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: BermsSpacing.control) {
             TrailRatingBadge(difficulty: trail.difficulty, size: 12)
             VStack(alignment: .leading, spacing: 3) {
                 Text(trail.name)
@@ -1064,7 +1065,7 @@ private struct ProductionTrailLibraryRow: View {
                 .foregroundStyle(isSelected ? Color.bermsTrail : Color.bermsMuted)
                 .accessibilityHidden(true)
         }
-        .padding(12)
+        .padding(BermsSpacing.control)
         .background(isSelected ? Color.bermsInset : Color.bermsCard,
                     in: RoundedRectangle(cornerRadius: 16))
         .overlay {
@@ -1726,7 +1727,7 @@ struct DaysView: View {
             ZStack {
                 BermsBackground()
                 if days.isEmpty {
-                    VStack(spacing: 14) {
+                    VStack(spacing: BermsSpacing.section) {
                         ContentUnavailableView(
                             "No days",
                             systemImage: "mountain.2",
@@ -1817,7 +1818,7 @@ struct DayRow: View {
     let day: RideDay
 
     var body: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: BermsSpacing.control) {
             VStack(alignment: .leading, spacing: 5) {
                 Text(day.startedAt.formatted(date: .abbreviated, time: .shortened))
                     .font(.headline)
@@ -1831,7 +1832,6 @@ struct DayRow: View {
                 .monospacedDigit()
                 .foregroundStyle(Color.bermsTrail)
         }
-        .padding(.vertical, 8)
     }
 }
 
@@ -1944,11 +1944,11 @@ struct DayDetailView: View {
     }
 
     private var summary: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: BermsSpacing.control) {
             Text("Day summary")
                 .font(.title2.weight(.bold))
 
-            VStack(spacing: 16) {
+            VStack(spacing: BermsSpacing.content) {
                 AdaptiveStatRow {
                     SummaryStat(label: "Time", value: BermsFormat.duration(day.duration), tint: .primary)
                     SummaryStat(label: "Runs", value: "\(runs.count)", tint: .primary)
@@ -1972,7 +1972,7 @@ struct DayDetailView: View {
     @ViewBuilder
     private var dayMap: some View {
         if runs.isEmpty {
-            VStack(spacing: 8) {
+            VStack(spacing: BermsSpacing.compact) {
                 Image(systemName: "map")
                     .font(.title2)
                 Text("No route")
@@ -2043,7 +2043,7 @@ struct DayDetailView: View {
                     .mapControls { MapCompass() }
 
                 }
-                VStack(spacing: 8) {
+                VStack(spacing: BermsSpacing.compact) {
                     MapLayersMenu(preferences: mapLayerPreferences,
                                   showsActualTrailsControl: true,
                                   actualTrailsAvailable: hasMatchedTrailOverlays,
@@ -2054,14 +2054,14 @@ struct DayDetailView: View {
                     Button { showingFullScreenMap = true } label: {
                         Image(systemName: "arrow.up.left.and.arrow.down.right")
                             .font(.headline)
-                            .frame(minWidth: 44, minHeight: 44)
+                            .frame(minWidth: BermsSpacing.target, minHeight: BermsSpacing.target)
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(.black.opacity(0.7))
                     .foregroundStyle(.white)
                     .accessibilityLabel("Open full-screen ride map")
                 }
-                .padding(12)
+                .padding(BermsSpacing.control)
             }
             .frame(height: 280)
             .clipShape(RoundedRectangle(cornerRadius: 22))
@@ -2105,7 +2105,7 @@ struct DayDetailView: View {
         } label: {
             Image(systemName: "scope")
                 .font(.headline)
-                .frame(minWidth: 44, minHeight: 44)
+                .frame(minWidth: BermsSpacing.target, minHeight: BermsSpacing.target)
         }
         .buttonStyle(.borderedProminent)
         .tint(.black.opacity(0.7))
@@ -2235,7 +2235,7 @@ struct FullScreenSummaryMap: View {
                     .mapControls { MapCompass() }
 
                 }
-                VStack(spacing: 8) {
+                VStack(spacing: BermsSpacing.compact) {
                     MapLayersMenu(preferences: mapLayerPreferences,
                                   showsActualTrailsControl: true,
                                   actualTrailsAvailable: hasMatchedTrailOverlays,
@@ -2247,14 +2247,14 @@ struct FullScreenSummaryMap: View {
                     } label: {
                         Image(systemName: "scope")
                             .font(.headline)
-                            .frame(minWidth: 44, minHeight: 44)
+                            .frame(minWidth: BermsSpacing.target, minHeight: BermsSpacing.target)
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(.black.opacity(0.7))
                     .foregroundStyle(.white)
                     .accessibilityLabel("Recenter map")
                 }
-                .padding(12)
+                .padding(BermsSpacing.control)
             }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -2424,7 +2424,7 @@ struct RunMapView: View {
         ZStack {
             BermsBackground()
             if routePoints.isEmpty {
-                VStack(spacing: 8) {
+                VStack(spacing: BermsSpacing.compact) {
                     Image(systemName: "map")
                         .font(.title2)
                     Text("No route")
@@ -2433,7 +2433,7 @@ struct RunMapView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView(.vertical) {
-                    VStack(spacing: 12) {
+                    VStack(spacing: BermsSpacing.content) {
                     ZStack(alignment: .topTrailing) {
                         ZStack {
                             Map(position: $mapPosition, bounds: mapConfiguration?.bounds,
@@ -2475,7 +2475,7 @@ struct RunMapView: View {
                             .mapControls { MapCompass() }
 
                         }
-                        VStack(spacing: 8) {
+                        VStack(spacing: BermsSpacing.compact) {
                             MapLayersMenu(preferences: mapLayerPreferences,
                                           showsActualTrailsControl: true,
                                           actualTrailsAvailable: !matchedTrailOverlays.isEmpty,
@@ -2484,28 +2484,25 @@ struct RunMapView: View {
                             Button { showingFullScreenMap = true } label: {
                                 Image(systemName: "arrow.up.left.and.arrow.down.right")
                                     .font(.headline)
-                                    .frame(minWidth: 44, minHeight: 44)
+                                    .frame(minWidth: BermsSpacing.target, minHeight: BermsSpacing.target)
                             }
                             .buttonStyle(.borderedProminent)
                             .tint(.black.opacity(0.7))
                             .foregroundStyle(.white)
                             .accessibilityLabel("Open full-screen run map")
                         }
-                        .padding(12)
+                        .padding(BermsSpacing.control)
                     }
                     .frame(minHeight: 380, idealHeight: 460, maxHeight: 560)
                     .clipShape(RoundedRectangle(cornerRadius: 22))
-                    .padding(.horizontal, 10)
-
                     RunStatsCard(segment: segment)
-                        .padding(.horizontal, 16)
 
                     TrailSequenceCard(sequence: trailSequence, runNumber: number)
-                        .padding(.horizontal, 16)
-                        .padding(.bottom, 10)
                     }
                 }
                 .scrollIndicators(.hidden)
+                .contentMargins(.horizontal, BermsSpacing.content, for: .scrollContent)
+                .contentMargins(.vertical, BermsSpacing.content, for: .scrollContent)
                 .fullScreenCover(isPresented: $showingFullScreenMap) {
                     FullScreenSummaryMap(title: trailSequence, segments: [segment],
                                          trails: trails, focusedSegmentID: segment.id,
@@ -2532,7 +2529,7 @@ struct RunMapView: View {
         } label: {
             Image(systemName: "scope")
                 .font(.headline)
-                .frame(minWidth: 44, minHeight: 44)
+                .frame(minWidth: BermsSpacing.target, minHeight: BermsSpacing.target)
         }
         .buttonStyle(.borderedProminent)
         .tint(.black.opacity(0.7))
@@ -2550,10 +2547,10 @@ private struct RunStatsCard: View {
     let segment: RideSegment
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: BermsSpacing.control) {
             Text("Run stats")
                 .font(.headline)
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: dynamicTypeSize.isAccessibilitySize ? 1 : 2), alignment: .leading, spacing: 14) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: dynamicTypeSize.isAccessibilitySize ? 1 : 2), alignment: .leading, spacing: BermsSpacing.content) {
                 SummaryStat(label: "Duration", value: BermsFormat.duration(segment.duration))
                 SummaryStat(label: "Distance", value: BermsFormat.distance(segment.distanceMeters))
                 SummaryStat(label: "Descent", value: BermsFormat.elevation(segment.verticalMeters))
@@ -2564,7 +2561,7 @@ private struct RunStatsCard: View {
                             : BermsFormat.airtime(segment.jumps.map(\.airtime).max() ?? 0))
             }
         }
-        .padding(16)
+        .padding(BermsSpacing.content)
         .accessibilityElement(children: .contain)
     }
 }
@@ -2628,7 +2625,7 @@ private struct TrailSequenceCard: View {
     let runNumber: Int
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: BermsSpacing.compact) {
             Text(sequence)
                 .font(.headline)
                 .fixedSize(horizontal: false, vertical: true)
@@ -2639,7 +2636,7 @@ private struct TrailSequenceCard: View {
                 .foregroundStyle(Color.bermsMuted)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
+        .padding(BermsSpacing.control)
         .background(Color.bermsCard, in: RoundedRectangle(cornerRadius: 16))
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(sequence), Run \(runNumber)")
@@ -2682,7 +2679,6 @@ struct SegmentRow: View {
                 .font(.subheadline.weight(.semibold))
                 .monospacedDigit()
         }
-        .padding(.vertical, 4)
     }
 }
 
