@@ -382,6 +382,7 @@ struct SettingsView: View {
 }
 
 struct TrackView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject var recorder: RideRecorder
     @Query private var trails: [Trail]
     @EnvironmentObject private var mapLayerPreferences: MapLayerPreferences
@@ -391,7 +392,6 @@ struct TrackView: View {
     @State private var lastFollowedCoordinate: Coordinate?
     @State private var showingStopConfirmation = false
     @State private var showingSettings = false
-    @State private var liveOverlayVisible = false
     let onDayFinished: (RideDay) -> Void
 
     var body: some View {
@@ -400,17 +400,17 @@ struct TrackView: View {
                 BermsBackground()
                 if recorder.isRecording {
                     recordingContent
-                        .transition(.opacity.combined(with: .move(edge: .bottom)))
+                        .transition(.opacity)
                         .ignoresSafeArea(edges: .top)
                 } else {
                     readyContent
-                        .transition(.opacity.combined(with: .move(edge: .top)))
+                        .transition(.opacity)
                 }
             }
-            .animation(.easeInOut(duration: 0.4), value: recorder.isRecording)
             .overlay(alignment: .top) {
                 trackHeader
             }
+            .animation(reduceMotion ? nil : BermsMotion.content, value: recorder.isRecording)
             .toolbar(.hidden, for: .navigationBar)
         }
         .sheet(isPresented: $showingSettings) {
@@ -420,6 +420,7 @@ struct TrackView: View {
             Button("Cancel", role: .cancel) {}
             Button("Finish", role: .destructive) {
                 guard let finishedDay = recorder.stop() else { return }
+                BermsMotion.recordingFeedback()
                 onDayFinished(finishedDay)
             }
         }
@@ -441,7 +442,6 @@ struct TrackView: View {
             Text(recorder.errorMessage ?? "")
         }
         .onAppear {
-            liveOverlayVisible = recorder.isRecording
             centerOnLastSampleIfNeeded(force: true)
         }
         .onChange(of: recorder.lastSample?.timestamp) { _, _ in
@@ -451,19 +451,12 @@ struct TrackView: View {
         }
         .onChange(of: recorder.isRecording) { _, recording in
             if recording {
-                liveOverlayVisible = false
                 isFollowing = true
                 mapPosition = .automatic
                 lastFollowedCoordinate = nil
                 centerOnLastSampleIfNeeded(force: true)
-                withAnimation(.easeOut(duration: 0.45).delay(0.05)) {
-                    liveOverlayVisible = true
-                }
             } else {
                 lastFollowedCoordinate = nil
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    liveOverlayVisible = false
-                }
             }
         }
     }
@@ -474,7 +467,7 @@ struct TrackView: View {
                 Text("Berms")
                     .font(.largeTitle.bold())
                     .accessibilityAddTraits(.isHeader)
-                    .transition(.opacity.combined(with: .move(edge: .leading)))
+                    .transition(.opacity)
             }
             Spacer(minLength: 16)
             settingsButton
@@ -568,6 +561,7 @@ struct TrackView: View {
                         .fill(recorder.isPaused ? Color.bermsMuted : Color.bermsTrail)
                         .frame(width: 9, height: 9)
                     Text(recorder.isPaused ? "PAUSED" : "REC")
+                        .bermsValueMotion(recorder.isPaused ? "PAUSED" : "REC")
                         .font(.caption.weight(.heavy))
                         .tracking(1.2)
                 }
@@ -581,9 +575,9 @@ struct TrackView: View {
 
             VStack(spacing: 10) {
                 HStack(spacing: 12) {
-                    SummaryStat(label: "Runs", value: "\(recorder.completedRunCount)", tint: .bermsTrail)
-                    SummaryStat(label: "Jumps", value: "\(recorder.activeJumpCount)", tint: .bermsTrail)
-                    SummaryStat(label: "Mode", value: liveModeTitle,
+                    SummaryStat(animatesValue: true, numericValue: true, label: "Runs", value: "\(recorder.completedRunCount)", tint: .bermsTrail)
+                    SummaryStat(animatesValue: true, numericValue: true, label: "Jumps", value: "\(recorder.activeJumpCount)", tint: .bermsTrail)
+                    SummaryStat(animatesValue: true, label: "Mode", value: liveModeTitle,
                                 tint: recorder.activeSegmentKind == .lift ? .bermsLift : .bermsTrail)
                 }
 
@@ -592,9 +586,6 @@ struct TrackView: View {
                     SummaryStat(label: "Altitude", value: BermsFormat.elevation(recorder.currentAltitude))
                 }
             }
-            .opacity(liveOverlayVisible ? 1 : 0)
-            .offset(y: liveOverlayVisible ? 0 : -8)
-            .animation(.easeOut(duration: 0.32).delay(0.08), value: liveOverlayVisible)
 
             HStack {
                 TimelineView(.periodic(from: .now, by: 1)) { timeline in
@@ -615,13 +606,14 @@ struct TrackView: View {
             HStack(spacing: 10) {
                 Button {
                     if recorder.isPaused {
-                        recorder.resume()
+                        if recorder.resume() { BermsMotion.recordingFeedback() }
                     } else {
-                        recorder.pause()
+                        if recorder.pause() { BermsMotion.recordingFeedback() }
                     }
                 } label: {
                     Label(recorder.isPaused ? "Resume" : "Pause",
                           systemImage: recorder.isPaused ? "play.fill" : "pause.fill")
+                        .bermsValueMotion(recorder.isPaused ? "Resume" : "Pause")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
@@ -638,16 +630,10 @@ struct TrackView: View {
                 .tint(.bermsTrail)
                 .foregroundStyle(Color.bermsOnAccent)
             }
-            .opacity(liveOverlayVisible ? 1 : 0)
-            .offset(y: liveOverlayVisible ? 0 : 8)
-            .animation(.easeOut(duration: 0.32).delay(0.16), value: liveOverlayVisible)
         }
         .padding(.horizontal, 16)
         .padding(.top, 16)
         .padding(.bottom, 16)
-        .opacity(liveOverlayVisible ? 1 : 0)
-        .offset(y: liveOverlayVisible ? 0 : 24)
-        .animation(.easeOut(duration: 0.42), value: liveOverlayVisible)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 30, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 30, style: .continuous)
@@ -679,7 +665,7 @@ struct TrackView: View {
 
     private var startButton: some View {
         Button {
-            recorder.start()
+            if recorder.start() { BermsMotion.recordingFeedback() }
         } label: {
             Label("Start", systemImage: "play.fill")
                 .foregroundStyle(Color.bermsOnAccent)
@@ -778,14 +764,16 @@ struct TrackView: View {
 
                 Button {
                     isFollowing = true
-                    centerOnLastSampleIfNeeded(force: true)
+                    withAnimation(reduceMotion ? nil : BermsMotion.recenter) {
+                        centerOnLastSampleIfNeeded(force: true)
+                    }
                 } label: {
                     Image(systemName: isFollowing ? "location.fill" : "location")
                         .font(.headline)
                         .frame(width: 44, height: 44)
                         .contentShape(Circle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(BermsPressStyle())
                 .foregroundStyle(.primary)
                 .accessibilityLabel(isFollowing ? "Following GPS" : "Center GPS")
             }
@@ -806,7 +794,7 @@ struct TrackView: View {
                 .font(.system(size: 19, weight: .semibold))
                 .frame(width: 44, height: 44)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(BermsPressStyle())
         .frame(width: liveControlWidth, height: liveControlWidth)
         .contentShape(Circle())
         .glassEffect(.regular, in: .circle)
@@ -901,6 +889,7 @@ struct TrackView: View {
 }
 
 struct TrailLibraryView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Query(sort: \Trail.updatedAt, order: .reverse) private var trails: [Trail]
     @EnvironmentObject private var mapLayerPreferences: MapLayerPreferences
     @EnvironmentObject private var trailCatalogSelection: TrailCatalogSelection
@@ -963,7 +952,7 @@ struct TrailLibraryView: View {
                                 ProductionTrailLibraryRow(trail: trail,
                                                           isSelected: selectedTrailID == trail.id)
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(BermsPressStyle())
                             .accessibilityHint("Highlights this trail on the map")
                         }
                     }
@@ -1034,7 +1023,9 @@ struct TrailLibraryView: View {
                                   showsActualTrailsControl: true,
                                   actualTrailsAvailable: !visibleTrails.isEmpty,
                                   showsJumpsControl: false)
-                    Button(action: recenterMap) {
+                    Button {
+                        withAnimation(reduceMotion ? nil : BermsMotion.recenter) { recenterMap() }
+                    } label: {
                         Image(systemName: "scope")
                             .font(.headline)
                             .frame(width: 42, height: 42)
@@ -1137,6 +1128,7 @@ private struct ProductionTrailLibraryRow: View {
 
 #if DEBUG
 struct TrailMappingView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Query(sort: \Trail.updatedAt, order: .reverse) private var trails: [Trail]
     @ObservedObject var mapper: TrailMapper
     @ObservedObject var recorder: RideRecorder
@@ -1208,7 +1200,7 @@ struct TrailMappingView: View {
                     Label("Start trail segment", systemImage: "plus")
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(BermsPressStyle())
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 12)
                 .background(Color.bermsTrail, in: RoundedRectangle(cornerRadius: 14))
@@ -1231,7 +1223,7 @@ struct TrailMappingView: View {
                         } label: {
                             TrailLibraryRow(trail: trail)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(BermsPressStyle())
                         .accessibilityHint("Edit, delete, or record a pass for this trail")
                     }
                 }
@@ -1264,7 +1256,9 @@ struct TrailMappingView: View {
                                   showsActualTrailsControl: true,
                                   actualTrailsAvailable: mapper.activeTrailPoints.count > 1,
                                   showsJumpsControl: false)
-                    recenterButton(action: recenterActiveMap)
+                    recenterButton {
+                        withAnimation(reduceMotion ? nil : BermsMotion.recenter) { recenterActiveMap() }
+                    }
                 }
                 .padding(12)
             }
@@ -1357,7 +1351,9 @@ struct TrailMappingView: View {
                                   showsRidePathControl: false,
                                   showsActualTrailsControl: true,
                                   showsJumpsControl: false)
-                    recenterButton(action: recenterAuthoredMap)
+                    recenterButton {
+                        withAnimation(reduceMotion ? nil : BermsMotion.recenter) { recenterAuthoredMap() }
+                    }
                 }
                 .padding(12)
             }
@@ -1729,7 +1725,7 @@ private struct TrailStartSheet: View {
                                                    resortOverride: resortOverride)
                         if started { dismiss() }
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(BermsPressStyle())
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
                     .background(Color.bermsTrail, in: RoundedRectangle(cornerRadius: 14))
@@ -1756,6 +1752,7 @@ struct RunMapDestination: Hashable {
 }
 
 struct DaysView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \RideDay.startedAt, order: .reverse) private var days: [RideDay]
     @Binding private var pendingDayID: UUID?
@@ -1786,6 +1783,7 @@ struct DaysView: View {
                             .foregroundStyle(Color.bermsOnAccent)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .transition(.opacity)
                 } else {
                     List {
                         ForEach(days) { day in
@@ -1810,8 +1808,11 @@ struct DaysView: View {
                         }
                     }
                     .scrollContentBackground(.hidden)
+                    .animation(reduceMotion ? nil : BermsMotion.content, value: days.map(\.id))
+                    .transition(.opacity)
                 }
             }
+            .animation(reduceMotion ? nil : BermsMotion.content, value: days.isEmpty)
             .navigationTitle("Days")
             .navigationDestination(for: UUID.self) { dayID in
                 if let day = days.first(where: { $0.id == dayID }) {
@@ -1880,6 +1881,7 @@ struct DayRow: View {
 }
 
 struct DayDetailView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let day: RideDay
     let onRunSelected: (RunMapDestination) -> Void
     @Environment(\.dismiss) private var dismiss
@@ -1939,7 +1941,7 @@ struct DayDetailView: View {
                                 SegmentRow(number: index + 1, segment: segment,
                                            trailName: trailSequence(for: segment))
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(BermsPressStyle())
                         }
                     }
                 }
@@ -2147,7 +2149,9 @@ struct DayDetailView: View {
     }
 
     private var recenterButton: some View {
-        Button(action: recenterMap) {
+        Button {
+            withAnimation(reduceMotion ? nil : BermsMotion.recenter) { recenterMap() }
+        } label: {
             Image(systemName: "scope")
                 .font(.headline)
                 .frame(width: 42, height: 42)
@@ -2164,6 +2168,7 @@ struct DayDetailView: View {
 }
 
 struct FullScreenSummaryMap: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let title: String
     let segments: [RideSegment]
     let trails: [Trail]
@@ -2286,7 +2291,9 @@ struct FullScreenSummaryMap: View {
                                   showsJumpsControl: !jumpMarkers.isEmpty,
                                   showsLiftPathsControl: focusedSegmentID == nil,
                                   liftPathsAvailable: segments.contains { $0.kind == .lift })
-                    Button { recenterMap() } label: {
+                    Button {
+                        withAnimation(reduceMotion ? nil : BermsMotion.recenter) { recenterMap() }
+                    } label: {
                         Image(systemName: "scope")
                             .font(.headline)
                             .frame(width: 42, height: 42)
@@ -2421,6 +2428,7 @@ private func summaryMapJumps(for segments: [RideSegment]) -> [SummaryMapJump] {
 }
 
 struct RunMapView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let number: Int
     let segment: RideSegment
     @Query private var trails: [Trail]
@@ -2568,7 +2576,9 @@ struct RunMapView: View {
     }
 
     private var recenterButton: some View {
-        Button(action: recenterMap) {
+        Button {
+            withAnimation(reduceMotion ? nil : BermsMotion.recenter) { recenterMap() }
+        } label: {
             Image(systemName: "scope")
                 .font(.headline)
                 .frame(width: 42, height: 42)
