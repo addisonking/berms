@@ -153,6 +153,17 @@ final class PersistenceController {
             let schema = Schema([RideDay.self, RideSegment.self, Trail.self, TrailPass.self, LearnedLift.self])
             let configuration = ModelConfiguration("Berms", schema: schema, isStoredInMemoryOnly: false)
             container = try ModelContainer(for: schema, configurations: [configuration])
+            do {
+                for result in try TrailCatalogImporter.importCatalogsIfNeeded(
+                    into: container.mainContext
+                ) {
+                    print("Imported \(result.catalog.resortName) trails: "
+                        + "\(result.summary.trailsCreated) trails, "
+                        + "\(result.summary.passesCreated) passes")
+                }
+            } catch {
+                print("Trail catalog import skipped: \(error.localizedDescription)")
+            }
         } catch {
             fatalError("Could not create Berms storage: \(error)")
         }

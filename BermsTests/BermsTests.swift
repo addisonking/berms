@@ -51,6 +51,123 @@ final class BermsTests: XCTestCase {
         XCTAssertFalse(restored.showsJumps)
     }
 
+    @MainActor
+    func testPreviousRunsPreferenceDefaultsOffAndPersists() {
+        let suiteName = "BermsTests.previousRuns.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let preferences = MapLayerPreferences(defaults: defaults)
+        XCTAssertFalse(preferences.showsPreviousRunsInLiveMap)
+
+        preferences.showsPreviousRunsInLiveMap = true
+        let restored = MapLayerPreferences(defaults: defaults)
+        XCTAssertTrue(restored.showsPreviousRunsInLiveMap)
+    }
+
+    @MainActor
+    func testTrailCatalogImportIsIdempotentAndNamespacesIDs() throws {
+        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try ModelContainer(for: Trail.self, TrailPass.self,
+                                            configurations: configuration)
+        let context = container.mainContext
+        let suiteName = "BermsTests.catalogImport.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let firstCatalog = TrailCatalogDescriptor(
+            id: "catalog-a", resortName: "Resort A", bundledResourceName: "a",
+            importVersion: "a-v1", locationAnchor: Coordinate(latitude: 40, longitude: -105),
+            stableIDNamespace: "berms:catalog-a", legacyImportVersionKeys: [])
+        let secondCatalog = TrailCatalogDescriptor(
+            id: "catalog-b", resortName: "Resort B", bundledResourceName: "b",
+            importVersion: "b-v1", locationAnchor: Coordinate(latitude: 41, longitude: -106),
+            stableIDNamespace: "berms:catalog-b", legacyImportVersionKeys: [])
+        let data = Data("""
+        {"type":"FeatureCollection","features":[{"type":"Feature","properties":{"name":"Shared name","slug":"shared","difficulty":"green"},"geometry":{"type":"LineString","coordinates":[[-105,40],[-105,40.001]]}}]}
+        """.utf8)
+
+        let first = try TrailCatalogImporter.import(data: data, into: context,
+                                                     defaults: defaults, catalog: firstCatalog)
+        let second = try TrailCatalogImporter.import(data: data, into: context,
+                                                      defaults: defaults, catalog: firstCatalog)
+        XCTAssertEqual(first.trailsCreated, 1)
+        XCTAssertEqual(first.passesCreated, 1)
+        XCTAssertEqual(second.trailsCreated, 0)
+        XCTAssertEqual(second.passesCreated, 0)
+
+        let firstID = TrailCatalogImporter.stableID(for: "shared", catalog: firstCatalog)
+        let secondID = TrailCatalogImporter.stableID(for: "shared", catalog: secondCatalog)
+        XCTAssertNotEqual(firstID, secondID)
+        XCTAssertEqual(try context.fetch(FetchDescriptor<Trail>()).count, 1)
+    }
+
+    @MainActor
+    func testTrailSequenceResolverPreservesRideOrderAndFallsBack() throws {
+        let base = Date(timeIntervalSince1970: 10_000)
+        let route = (0...20).map { index in
+            RoutePoint(latitude: 40 + Double(index) * 0.0001, longitude: -105,
+                       altitude: 100 - Double(index), speed: 8,
+                       timestamp: base.addingTimeInterval(Double(index)))
+        }
+        let firstTrail = Trail(name: "First", difficulty: .green, resort: "Test")
+        let firstPass = TrailPass(routePoints: Array(route[0...10]))
+        firstPass.trail = firstTrail
+        firstTrail.passes.append(firstPass)
+        let secondTrail = Trail(name: "Second", difficulty: .blue, resort: "Test")
+        let secondPass = TrailPass(routePoints: Array(route[10...20]))
+        secondPass.trail = secondTrail
+        secondTrail.passes.append(secondPass)
+        let segment = RideSegment(kind: .run, startedAt: base, endedAt: base.addingTimeInterval(20),
+                                  routeData: try RouteCodec.encode(route))
+
+        TrailRouteMatchCache.shared.invalidate()
+        XCTAssertEqual(TrailSequenceResolver.names(for: segment,
+                                                   trails: [firstTrail, secondTrail]),
+                       ["First", "Second"])
+        XCTAssertEqual(TrailSequenceResolver.title(for: segment,
+                                                    trails: [firstTrail, secondTrail]),
+                       "First → Second")
+        XCTAssertNil(TrailSequenceResolver.title(for: segment, trails: []))
+        TrailRouteMatchCache.shared.invalidate()
+    }
+
+    func testLiveMapPresentationSelectsOnlyTheRelevantPath() {
+        let point = RoutePoint(latitude: 40, longitude: -105, altitude: 100, speed: 8,
+                               timestamp: Date(timeIntervalSince1970: 1))
+        let current = [point, RoutePoint(latitude: 40.001, longitude: -105, altitude: 90,
+                                         speed: 8, timestamp: Date(timeIntervalSince1970: 2))]
+        let older = [point, RoutePoint(latitude: 40.002, longitude: -105, altitude: 80,
+                                       speed: 8, timestamp: Date(timeIntervalSince1970: 3))]
+        let latest = [point, RoutePoint(latitude: 40.003, longitude: -105, altitude: 70,
+                                        speed: 8, timestamp: Date(timeIntervalSince1970: 4))]
+
+        XCTAssertEqual(RideMapPresentation.livePaths(activeKind: .run, currentPath: current,
+                                                     completedRunPaths: [older, latest],
+                                                     showsPreviousRuns: false).map(\.role),
+                       [.activeSegment])
+        XCTAssertEqual(RideMapPresentation.livePaths(activeKind: .lift, currentPath: current,
+                                                     completedRunPaths: [older, latest],
+                                                     showsPreviousRuns: false).map(\.role),
+                       [.latestCompletedRun])
+        XCTAssertEqual(RideMapPresentation.livePaths(activeKind: .lift, currentPath: current,
+                                                     completedRunPaths: [],
+                                                     showsPreviousRuns: false).map(\.role),
+                       [.activeSegment])
+        XCTAssertEqual(RideMapPresentation.livePaths(activeKind: .run, currentPath: current,
+                                                     completedRunPaths: [older, latest],
+                                                     showsPreviousRuns: true).map(\.role),
+                       [.previousRun, .previousRun, .activeSegment])
+    }
+
+    func testSummaryRunOpacityGetsDarkerChronologically() {
+        let opacities = (0..<4).map {
+            RideMapPresentation.summaryRunOpacity(index: $0, count: 4)
+        }
+        XCTAssertEqual(opacities, opacities.sorted())
+        XCTAssertLessThan(opacities[0], opacities[3])
+    }
+
     func testLiftThenRunTransitionsWithoutKeepingIdle() {
         let detector = ParkLapDetector()
         let base = Date(timeIntervalSince1970: 1_000)

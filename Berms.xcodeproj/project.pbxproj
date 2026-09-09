@@ -30,6 +30,8 @@
 		100000000000000000000022 /* BermsLiveActivityIntent.swift in Widget Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000020 /* BermsLiveActivityIntent.swift */; };
 		100000000000000000000023 /* BermsLiveActivity.swift in Widget Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000021 /* BermsLiveActivity.swift */; };
 		100000000000000000000024 /* BermsLiveActivity.appex in Embed Extensions */ = {isa = PBXBuildFile; fileRef = 300000000000000000000003 /* BermsLiveActivity.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		100000000000000000000025 /* mountain-creek-ridepal-trails-with-metadata.geojson in Resources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000023 /* mountain-creek-ridepal-trails-with-metadata.geojson */; };
+		100000000000000000000026 /* TrailImport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000024 /* TrailImport.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -58,6 +60,8 @@
 		300000000000000000000002 /* BermsTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BermsTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		200000000000000000000013 /* ParkDayTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParkDayTests.swift; sourceTree = "<group>"; };
 		200000000000000000000022 /* Widget Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		200000000000000000000023 /* mountain-creek-ridepal-trails-with-metadata.geojson */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = mountain-creek-ridepal-trails-with-metadata.geojson; sourceTree = "<group>"; };
+		200000000000000000000024 /* TrailImport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrailImport.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -71,7 +75,7 @@
 
 /* Begin PBXGroup section */
 		500000000000000000000001 = {isa = PBXGroup; children = (500000000000000000000002 /* Berms */, 500000000000000000000003 /* BermsTests */, 500000000000000000000005 /* BermsLiveActivity */, 500000000000000000000004 /* Products */); sourceTree = "<group>"; };
-		500000000000000000000002 /* Berms */ = {isa = PBXGroup; children = (200000000000000000000001 /* BermsApp.swift */, 200000000000000000000002 /* Models.swift */, 200000000000000000000003 /* RouteCodec.swift */, 200000000000000000000004 /* ParkLapDetector.swift */, 200000000000000000000005 /* RideRecorder.swift */, 200000000000000000000006 /* TrackingServices.swift */, 200000000000000000000007 /* Theme.swift */, 200000000000000000000008 /* Views.swift */, 200000000000000000000012 /* JumpDetector.swift */, 200000000000000000000014 /* DiagnosticLogReplayer.swift */, 200000000000000000000015 /* TrailMapper.swift */, 200000000000000000000016 /* RouteProcessing.swift */, 200000000000000000000017 /* LiftLearning.swift */, 200000000000000000000018 /* BermsActivityAttributes.swift */, 200000000000000000000019 /* BermsLiveActivityCoordinator.swift */, 200000000000000000000020 /* BermsLiveActivityIntent.swift */, 200000000000000000000010 /* Info.plist */, 200000000000000000000011 /* Assets.xcassets */); path = Berms; sourceTree = "<group>"; };
+		500000000000000000000002 /* Berms */ = {isa = PBXGroup; children = (200000000000000000000001 /* BermsApp.swift */, 200000000000000000000002 /* Models.swift */, 200000000000000000000003 /* RouteCodec.swift */, 200000000000000000000004 /* ParkLapDetector.swift */, 200000000000000000000005 /* RideRecorder.swift */, 200000000000000000000006 /* TrackingServices.swift */, 200000000000000000000007 /* Theme.swift */, 200000000000000000000008 /* Views.swift */, 200000000000000000000012 /* JumpDetector.swift */, 200000000000000000000014 /* DiagnosticLogReplayer.swift */, 200000000000000000000015 /* TrailMapper.swift */, 200000000000000000000016 /* RouteProcessing.swift */, 200000000000000000000017 /* LiftLearning.swift */, 200000000000000000000018 /* BermsActivityAttributes.swift */, 200000000000000000000019 /* BermsLiveActivityCoordinator.swift */, 200000000000000000000020 /* BermsLiveActivityIntent.swift */, 200000000000000000000010 /* Info.plist */, 200000000000000000000011 /* Assets.xcassets */, 200000000000000000000023 /* mountain-creek-ridepal-trails-with-metadata.geojson */, 200000000000000000000024 /* TrailImport.swift */); path = Berms; sourceTree = "<group>"; };
 		500000000000000000000003 /* BermsTests */ = {isa = PBXGroup; children = (200000000000000000000009 /* BermsTests.swift */, 200000000000000000000013 /* ParkDayTests.swift */); path = BermsTests; sourceTree = "<group>"; };
 		500000000000000000000005 /* BermsLiveActivity */ = {isa = PBXGroup; children = (200000000000000000000021 /* BermsLiveActivity.swift */, 200000000000000000000022 /* Widget Info.plist */); path = BermsLiveActivity; sourceTree = "<group>"; };
 		500000000000000000000004 /* Products */ = {isa = PBXGroup; children = (300000000000000000000001 /* Berms.app */, 300000000000000000000002 /* BermsTests.xctest */, 300000000000000000000003 /* BermsLiveActivity.appex */); name = Products; sourceTree = "<group>"; };
@@ -88,11 +92,11 @@
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		400000000000000000000004 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (100000000000000000000010 /* Assets.xcassets in Resources */); runOnlyForDeploymentPostprocessing = 0; };
+		400000000000000000000004 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (100000000000000000000010 /* Assets.xcassets in Resources */, 100000000000000000000025 /* mountain-creek-ridepal-trails-with-metadata.geojson in Resources */); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		400000000000000000000003 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (100000000000000000000001, 100000000000000000000002, 100000000000000000000003, 100000000000000000000004, 100000000000000000000005, 100000000000000000000006, 100000000000000000000007, 100000000000000000000008, 100000000000000000000012, 100000000000000000000014, 100000000000000000000015, 100000000000000000000016, 100000000000000000000017, 100000000000000000000018, 100000000000000000000019, 100000000000000000000020); runOnlyForDeploymentPostprocessing = 0; };
+		400000000000000000000003 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (100000000000000000000001, 100000000000000000000002, 100000000000000000000003, 100000000000000000000004, 100000000000000000000005, 100000000000000000000006, 100000000000000000000007, 100000000000000000000008, 100000000000000000000012, 100000000000000000000014, 100000000000000000000015, 100000000000000000000016, 100000000000000000000017, 100000000000000000000018, 100000000000000000000019, 100000000000000000000020, 100000000000000000000026); runOnlyForDeploymentPostprocessing = 0; };
 		400000000000000000000005 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (100000000000000000000009, 100000000000000000000013); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXSourcesBuildPhase section */
 

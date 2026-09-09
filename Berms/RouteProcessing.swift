@@ -523,3 +523,73 @@ final class TrailRouteMatchCache {
         }
     }
 }
+
+@MainActor
+enum TrailSequenceResolver {
+    static func matchedTrails(for segment: RideSegment, trails: [Trail]) -> [Trail] {
+        let trailsByID = Dictionary(uniqueKeysWithValues: trails.map { ($0.id, $0) })
+        return TrailRouteMatchCache.shared
+            .matchingSections(for: segment, trails: trails)
+            .compactMap { trailsByID[$0.trailID] }
+    }
+
+    static func names(for segment: RideSegment, trails: [Trail]) -> [String] {
+        matchedTrails(for: segment, trails: trails).map(\.name)
+    }
+
+    static func title(for segment: RideSegment, trails: [Trail]) -> String? {
+        let names = names(for: segment, trails: trails)
+        return names.isEmpty ? nil : names.joined(separator: " → ")
+    }
+}
+
+enum LiveMapPathRole: Equatable, Sendable {
+    case previousRun
+    case latestCompletedRun
+    case activeSegment
+}
+
+struct LiveMapPath: Equatable, Sendable {
+    let role: LiveMapPathRole
+    let points: [RoutePoint]
+}
+
+enum RideMapPresentation {
+    static func livePaths(
+        activeKind: SegmentKind?,
+        currentPath: [RoutePoint],
+        completedRunPaths: [[RoutePoint]],
+        showsPreviousRuns: Bool
+    ) -> [LiveMapPath] {
+        var paths: [LiveMapPath] = []
+        if showsPreviousRuns {
+            paths.append(contentsOf: completedRunPaths.filter { $0.count > 1 }.map {
+                LiveMapPath(role: .previousRun, points: $0)
+            })
+        }
+
+        switch activeKind {
+        case .run:
+            if currentPath.count > 1 {
+                paths.append(LiveMapPath(role: .activeSegment, points: currentPath))
+            }
+        case .lift:
+            if let latest = completedRunPaths.last, latest.count > 1 {
+                paths.append(LiveMapPath(role: .latestCompletedRun, points: latest))
+            } else if currentPath.count > 1 {
+                paths.append(LiveMapPath(role: .activeSegment, points: currentPath))
+            }
+        case .none:
+            if currentPath.count > 1 {
+                paths.append(LiveMapPath(role: .activeSegment, points: currentPath))
+            }
+        }
+        return paths
+    }
+
+    static func summaryRunOpacity(index: Int, count: Int) -> Double {
+        guard count > 1 else { return 0.82 }
+        let clampedIndex = min(max(index, 0), count - 1)
+        return 0.28 + 0.54 * Double(clampedIndex) / Double(count - 1)
+    }
+}

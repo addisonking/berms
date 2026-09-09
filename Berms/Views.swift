@@ -19,6 +19,7 @@ final class MapLayerPreferences: ObservableObject {
         static let ridePath = "berms.mapLayers.ridePath"
         static let actualTrails = "berms.mapLayers.actualTrails"
         static let jumps = "berms.mapLayers.jumps"
+        static let previousRuns = "berms.mapLayers.previousRuns"
     }
 
     private let defaults: UserDefaults
@@ -35,11 +36,16 @@ final class MapLayerPreferences: ObservableObject {
         didSet { defaults.set(showsJumps, forKey: Key.jumps) }
     }
 
+    @Published var showsPreviousRunsInLiveMap: Bool {
+        didSet { defaults.set(showsPreviousRunsInLiveMap, forKey: Key.previousRuns) }
+    }
+
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         showsRidePath = defaults.object(forKey: Key.ridePath) as? Bool ?? true
         showsActualTrails = defaults.object(forKey: Key.actualTrails) as? Bool ?? true
         showsJumps = defaults.object(forKey: Key.jumps) as? Bool ?? true
+        showsPreviousRunsInLiveMap = defaults.object(forKey: Key.previousRuns) as? Bool ?? false
     }
 }
 
@@ -48,16 +54,20 @@ private struct MapLayersMenu: View {
     var showsRidePathControl = true
     var showsActualTrailsControl = true
     var showsJumpsControl = true
-    var hasActualTrails = true
+    var showsPreviousRunsControl = false
 
     var body: some View {
         Menu {
             Toggle("Ride path", isOn: $preferences.showsRidePath)
                 .disabled(!showsRidePathControl)
-            Toggle("Actual trails", isOn: $preferences.showsActualTrails)
-                .disabled(!showsActualTrailsControl || !hasActualTrails)
+            if showsActualTrailsControl {
+                Toggle("Actual trails", isOn: $preferences.showsActualTrails)
+            }
             Toggle("Jumps", isOn: $preferences.showsJumps)
                 .disabled(!showsJumpsControl)
+            if showsPreviousRunsControl {
+                Toggle("Previous runs", isOn: $preferences.showsPreviousRunsInLiveMap)
+            }
         } label: {
             Label("Layers", systemImage: "square.3.layers.3d")
                 .labelStyle(.iconOnly)
@@ -71,35 +81,11 @@ private struct MapLayersMenu: View {
     }
 }
 
-private struct TrailMapOverlay: Identifiable {
-    let id: String
-    let trailID: UUID
+private struct TrailMapLabelPlacement: Identifiable {
+    let id: UUID
     let name: String
     let difficulty: TrailDifficulty
-    let points: [RoutePoint]
-    let score: Double
-
-    var color: Color {
-        .bermsDifficulty(difficulty)
-    }
-
-    var coordinates: [CLLocationCoordinate2D] {
-        points.map {
-            CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
-        }
-    }
-}
-
-@MainActor
-private func trailOverlays(for segment: RideSegment, trails: [Trail]) -> [TrailMapOverlay] {
-    guard segment.kind == .run else { return [] }
-    return TrailRouteMatchCache.shared.matchingSections(for: segment, trails: trails).compactMap { section in
-        guard let trail = trails.first(where: { $0.id == section.trailID }) else { return nil }
-        let points = TrailRouteSlice.slice(trail.points, progress: section.trailProgress)
-        guard points.count > 1 else { return nil }
-        return TrailMapOverlay(id: section.id, trailID: trail.id, name: trail.name,
-                               difficulty: trail.difficulty, points: points, score: section.score)
-    }
+    let point: CGPoint
 }
 
 private func trailCoordinates(for trail: Trail) -> [CLLocationCoordinate2D] {
@@ -113,51 +99,22 @@ private func trailCoordinates(for points: [RoutePoint]) -> [CLLocationCoordinate
 }
 
 @MainActor
-private struct ProjectedTrailLine: View {
+private struct ProjectedTrailHitTarget: View {
     let coordinates: [CLLocationCoordinate2D]
     let proxy: MapProxy
-    let color: Color
-    let lineWidth: CGFloat
     let refreshID: Int
-
-    init(coordinates: [CLLocationCoordinate2D], proxy: MapProxy, color: Color,
-         lineWidth: CGFloat, refreshID: Int = 0) {
-        self.coordinates = coordinates
-        self.proxy = proxy
-        self.color = color
-        self.lineWidth = lineWidth
-        self.refreshID = refreshID
-    }
+    let onTap: () -> Void
 
     var body: some View {
-        GeometryReader { _ in
-            Canvas { context, _ in
-                let path = projectedPath
-                context.stroke(
-                    path,
-                    with: .color(Color(uiColor: .systemBackground).opacity(0.85)),
-                    style: StrokeStyle(
-                        lineWidth: max(5, lineWidth + 2),
-                        lineCap: .round,
-                        lineJoin: .round,
-                        dash: [7, 5]
-                    )
-                )
-                context.stroke(
-                    path,
-                    with: .color(color),
-                    style: StrokeStyle(
-                        lineWidth: lineWidth,
-                        lineCap: .round,
-                        lineJoin: .round,
-                        dash: [7, 5]
-                    )
-                )
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .id(refreshID)
-        .allowsHitTesting(false)
+        Color.clear
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .id(refreshID)
+            .contentShape(projectedPath.strokedPath(StrokeStyle(
+                lineWidth: 26,
+                lineCap: .round,
+                lineJoin: .round
+            )))
+            .onTapGesture(perform: onTap)
     }
 
     private var projectedPath: Path {
@@ -181,33 +138,6 @@ private struct ProjectedTrailLine: View {
     }
 }
 
-private func trailDistance(from coordinate: Coordinate, to points: [RoutePoint]) -> Double {
-    guard points.count >= 2 else {
-        guard let point = points.first else { return .greatestFiniteMagnitude }
-        let start = Coordinate(latitude: point.latitude, longitude: point.longitude)
-        return start.distance(to: coordinate)
-    }
-
-    let latitudeScale = max(0.1, cos(coordinate.latitude * .pi / 180))
-    func project(_ value: Coordinate) -> (x: Double, y: Double) {
-        ((value.longitude - coordinate.longitude) * 111_000 * latitudeScale,
-         (value.latitude - coordinate.latitude) * 111_000)
-    }
-
-    let origin = project(coordinate)
-    return zip(points, points.dropFirst()).map { start, end in
-        let a = project(Coordinate(latitude: start.latitude, longitude: start.longitude))
-        let b = project(Coordinate(latitude: end.latitude, longitude: end.longitude))
-        let dx = b.x - a.x
-        let dy = b.y - a.y
-        let denominator = dx * dx + dy * dy
-        let fraction = denominator > 0
-            ? max(0, min(1, ((origin.x - a.x) * dx + (origin.y - a.y) * dy) / denominator))
-            : 0
-        return hypot(origin.x - (a.x + dx * fraction), origin.y - (a.y + dy * fraction))
-    }.min() ?? .greatestFiniteMagnitude
-}
-
 struct RootView: View {
     private enum Tab: Hashable {
         case track
@@ -222,6 +152,7 @@ struct RootView: View {
     @ObservedObject private var trailMapper = TrailMapper.shared
 #endif
     @StateObject private var mapLayerPreferences = MapLayerPreferences()
+    @StateObject private var trailCatalogSelection = TrailCatalogSelection()
     @State private var selectedTab: Tab = .track
     @State private var pendingDayID: UUID?
 
@@ -244,6 +175,7 @@ struct RootView: View {
         }
         .tint(.bermsTrail)
         .environmentObject(mapLayerPreferences)
+        .environmentObject(trailCatalogSelection)
         .onAppear { recorder.resumeIfNeeded() }
         .onOpenURL { url in
             guard url.scheme == "berms" else { return }
@@ -256,6 +188,7 @@ struct RootView: View {
 struct SettingsView: View {
     @ObservedObject var recorder: RideRecorder
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var trailCatalogSelection: TrailCatalogSelection
 
     private var sensitivityBinding: Binding<JumpSensitivity> {
         Binding(
@@ -267,6 +200,23 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section("Trail catalog") {
+                    Picker("Resort", selection: Binding(
+                        get: { trailCatalogSelection.selectionID },
+                        set: { trailCatalogSelection.setSelectionID($0) }
+                    )) {
+                        Text("Automatic").tag(TrailCatalogRegistry.automaticSelectionID)
+                        ForEach(TrailCatalogRegistry.catalogs) { catalog in
+                            Text(catalog.resortName).tag(catalog.id)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    Text(trailCatalogSelection.isAutomatic
+                         ? "Automatic chooses the nearest bundled resort from GPS."
+                         : "Using this resort until you switch back to Automatic.")
+                        .font(.caption)
+                        .foregroundStyle(Color.bermsMuted)
+                }
                 Section("Jump detection") {
                     Picker("Sensitivity", selection: sensitivityBinding) {
                         ForEach(JumpSensitivity.allCases) { sensitivity in
@@ -294,7 +244,6 @@ struct SettingsView: View {
 
 struct TrackView: View {
     @ObservedObject var recorder: RideRecorder
-    @Query private var trails: [Trail]
     @EnvironmentObject private var mapLayerPreferences: MapLayerPreferences
     @State private var mapPosition: MapCameraPosition = .automatic
     @State private var isFollowing = true
@@ -531,52 +480,32 @@ struct TrackView: View {
                 .background(Color.black.opacity(0.35))
                 .foregroundStyle(.white)
             } else {
-                MapReader { proxy in
-                    ZStack {
-                        Map(position: $mapPosition) {
-                            UserAnnotation()
-                            if mapLayerPreferences.showsRidePath {
-                                ForEach(recorder.activeDay?.segments ?? []) { segment in
-                                    MapPolyline(coordinates: segment.points.map {
-                                        CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
-                                    })
-                                    .stroke(segment.kind == .run ? Color.bermsTrail : Color.bermsLift, lineWidth: 4)
-                                }
-                                if !recorder.currentMapPoints.isEmpty {
-                                    MapPolyline(coordinates: recorder.currentMapPoints.map {
-                                        CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
-                                    })
-                                    .stroke(recorder.activeSegmentKind == .lift ? Color.bermsLift : Color.bermsTrail, lineWidth: 5)
-                                }
-                            }
+                Map(position: $mapPosition) {
+                    UserAnnotation()
+                    if mapLayerPreferences.showsRidePath {
+                        ForEach(Array(liveMapPaths.enumerated()), id: \.offset) { _, path in
+                            MapPolyline(coordinates: path.points.map {
+                                CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
+                            })
+                            .stroke(color(for: path.role), lineWidth: path.role == .previousRun ? 3 : 5)
                         }
-                        .mapStyle(.bermsMonochrome)
-                        .saturation(0)
-                        .mapControls {
-                            MapCompass()
-                        }
-                        .onChange(of: mapPosition) { _, position in
-                            if position.positionedByUser {
-                                isFollowing = false
-                            }
-                        }
-
-                        if mapLayerPreferences.showsActualTrails {
-                            ForEach(nearbyTrails) { trail in
-                                ProjectedTrailLine(
-                                    coordinates: trailCoordinates(for: trail),
-                                    proxy: proxy,
-                                    color: Color.bermsDifficulty(trail.difficulty).opacity(0.55),
-                                    lineWidth: 2.5
-                                )
-                            }
-                        }
+                    }
+                }
+                .mapStyle(.bermsMonochrome)
+                .saturation(0)
+                .mapControls {
+                    MapCompass()
+                }
+                .onChange(of: mapPosition) { _, position in
+                    if position.positionedByUser {
+                        isFollowing = false
                     }
                 }
 
                 MapLayersMenu(preferences: mapLayerPreferences,
+                              showsActualTrailsControl: false,
                               showsJumpsControl: false,
-                              hasActualTrails: !nearbyTrails.isEmpty)
+                              showsPreviousRunsControl: true)
                     .padding(.top, 12)
                     .padding(.trailing, 12)
 
@@ -606,10 +535,27 @@ struct TrackView: View {
         ))
     }
 
-    private var nearbyTrails: [Trail] {
-        guard let coordinate = recorder.lastSample?.coordinate else { return [] }
-        return trails.filter { trail in
-            !trail.points.isEmpty && trailDistance(from: coordinate, to: trail.points) <= 750
+    private var liveMapPaths: [LiveMapPath] {
+        let completedRuns = (recorder.activeDay?.segments ?? [])
+            .filter { $0.kind == .run }
+            .sorted { $0.startedAt < $1.startedAt }
+            .map(\.points)
+        return RideMapPresentation.livePaths(
+            activeKind: recorder.activeSegmentKind,
+            currentPath: recorder.currentMapPoints,
+            completedRunPaths: completedRuns,
+            showsPreviousRuns: mapLayerPreferences.showsPreviousRunsInLiveMap
+        )
+    }
+
+    private func color(for role: LiveMapPathRole) -> Color {
+        switch role {
+        case .previousRun:
+            return .gray.opacity(0.45)
+        case .latestCompletedRun:
+            return .bermsTrail
+        case .activeSegment:
+            return recorder.activeSegmentKind == .lift ? .bermsLift : .bermsTrail
         }
     }
 }
@@ -620,10 +566,13 @@ struct TrailMappingView: View {
     @ObservedObject var mapper: TrailMapper
     @ObservedObject var recorder: RideRecorder
     @EnvironmentObject private var mapLayerPreferences: MapLayerPreferences
+    @EnvironmentObject private var trailCatalogSelection: TrailCatalogSelection
     @State private var mapPosition: MapCameraPosition = .automatic
     @State private var mapProjectionRevision = 0
     @State private var showingStartSheet = false
     @State private var showingDiscardConfirmation = false
+    @State private var selectedTrail: Trail?
+    @State private var authoredMapCameraDistance: CLLocationDistance = .greatestFiniteMagnitude
 
     var body: some View {
         NavigationStack {
@@ -638,7 +587,12 @@ struct TrailMappingView: View {
             .navigationTitle("Dev Map")
         }
         .sheet(isPresented: $showingStartSheet) {
-            TrailStartSheet(trails: trails, mapper: mapper)
+            TrailStartSheet(trails: visibleTrails, mapper: mapper,
+                            defaultResort: activeCatalog.resortName)
+                .presentationDetents([.medium, .large])
+        }
+        .sheet(item: $selectedTrail) { trail in
+            TrailEditorSheet(trail: trail, mapper: mapper)
                 .presentationDetents([.medium, .large])
         }
         .alert("Mapping issue", isPresented: Binding(
@@ -679,19 +633,25 @@ struct TrailMappingView: View {
                 .background(Color.bermsTrail, in: RoundedRectangle(cornerRadius: 14))
                 .foregroundStyle(Color.bermsOnAccent)
 
-                Text("Authored trails")
+                Text("Authored trails · \(activeCatalog.resortName)")
                     .font(.title3.weight(.bold))
-                if trails.isEmpty {
+                if !visibleTrails.isEmpty {
+                    Text("Tap a trail to edit it, delete it, or record another pass for averaging.")
+                        .font(.footnote)
+                        .foregroundStyle(Color.bermsMuted)
+                }
+                if visibleTrails.isEmpty {
                     Text("Map your first trail from the top, then save it at the bottom.")
                         .foregroundStyle(Color.bermsMuted)
                 } else {
-                    ForEach(trails) { trail in
+                    ForEach(visibleTrails) { trail in
                         Button {
-                            _ = mapper.start(existingTrail: trail, name: trail.name, difficulty: trail.difficulty)
+                            selectedTrail = trail
                         } label: {
                             TrailLibraryRow(trail: trail)
                         }
                         .buttonStyle(.plain)
+                        .accessibilityHint("Edit, delete, or record a pass for this trail")
                     }
                 }
             }
@@ -702,40 +662,25 @@ struct TrailMappingView: View {
     private var mappingContent: some View {
         VStack(spacing: 12) {
             ZStack(alignment: .topTrailing) {
-                MapReader { proxy in
-                    ZStack {
-                        Map(position: $mapPosition, bounds: activeMapConfiguration?.bounds,
-                            interactionModes: [.pan, .zoom]) {
-                            if mapLayerPreferences.showsRidePath, mapper.activeRoutePoints.count > 1 {
-                                MapPolyline(coordinates: mapper.activeRoutePoints.map {
-                                    CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
-                                })
-                                .stroke(Color.bermsTrail, lineWidth: 5)
-                            }
-                        }
-                        .mapStyle(.bermsMonochrome)
-                        .saturation(0)
-                        .onMapCameraChange(frequency: .continuous) { _ in
-                            mapProjectionRevision &+= 1
-                        }
-
-                        if mapLayerPreferences.showsActualTrails,
-                           mapper.activeTrailPoints.count > 1 {
-                            ProjectedTrailLine(
-                                coordinates: trailCoordinates(for: mapper.activeTrailPoints),
-                                proxy: proxy,
-                                color: Color.bermsDifficulty(mapper.activeDifficulty).opacity(0.55),
-                                lineWidth: 2.5,
-                                refreshID: mapProjectionRevision
-                            )
-                        }
+                Map(position: $mapPosition, bounds: activeMapConfiguration?.bounds,
+                    interactionModes: [.pan, .zoom]) {
+                    if mapLayerPreferences.showsRidePath, mapper.activeRoutePoints.count > 1 {
+                        MapPolyline(coordinates: mapper.activeRoutePoints.map {
+                            CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
+                        })
+                        .stroke(Color.bermsTrail, lineWidth: 5)
+                    }
+                    if mapLayerPreferences.showsActualTrails,
+                       mapper.activeTrailPoints.count > 1 {
+                        MapPolyline(coordinates: trailCoordinates(for: mapper.activeTrailPoints))
+                            .stroke(Color.bermsDifficulty(mapper.activeDifficulty).opacity(0.65), lineWidth: 3)
                     }
                 }
                 .frame(maxWidth: .infinity, minHeight: 300)
                 VStack(spacing: 8) {
                     MapLayersMenu(preferences: mapLayerPreferences,
-                                  showsJumpsControl: false,
-                                  hasActualTrails: mapper.activeTrailPoints.count > 1)
+                                  showsActualTrailsControl: true,
+                                  showsJumpsControl: false)
                     recenterButton(action: recenterActiveMap)
                 }
                 .padding(12)
@@ -787,7 +732,7 @@ struct TrailMappingView: View {
 
     @ViewBuilder
     private var authoredMap: some View {
-        if trails.flatMap(\.points).isEmpty {
+        if visibleTrails.flatMap(\.points).isEmpty {
             VStack(spacing: 8) {
                 Image(systemName: "map")
                     .font(.title2)
@@ -801,33 +746,40 @@ struct TrailMappingView: View {
                 MapReader { proxy in
                     ZStack {
                         Map(position: $mapPosition, bounds: authoredMapConfiguration?.bounds,
-                            interactionModes: [.pan, .zoom]) { }
+                            interactionModes: [.pan, .zoom]) {
+                            if mapLayerPreferences.showsActualTrails {
+                                ForEach(visibleTrails) { trail in
+                                    if trail.points.count > 1 {
+                                        MapPolyline(coordinates: trailCoordinates(for: trail))
+                                            .stroke(color(for: trail.difficulty), lineWidth: 3)
+                                    }
+                                }
+                            }
+                        }
                         .mapStyle(.bermsMonochrome)
                         .saturation(0)
-                        .onMapCameraChange(frequency: .continuous) { _ in
+                        .onMapCameraChange(frequency: .onEnd) { context in
+                            authoredMapCameraDistance = context.camera.distance
                             mapProjectionRevision &+= 1
                         }
 
                         if mapLayerPreferences.showsActualTrails {
-                            ForEach(trails) { trail in
+                            ForEach(visibleTrails) { trail in
                                 if trail.points.count > 1 {
-                                    ProjectedTrailLine(
-                                        coordinates: trailCoordinates(for: trail),
+                                    ProjectedTrailHitTarget(
+                                        coordinates: interactionCoordinates(for: trail),
                                         proxy: proxy,
-                                        color: color(for: trail.difficulty).opacity(0.9),
-                                        lineWidth: 3,
-                                        refreshID: mapProjectionRevision
+                                        refreshID: mapProjectionRevision,
+                                        onTap: { selectedTrail = trail }
                                     )
                                 }
-                                if let point = labelPoint(for: trail),
-                                   let screenPoint = proxy.convert(
-                                       CLLocationCoordinate2D(latitude: point.latitude, longitude: point.longitude),
-                                       to: .local
-                                   ) {
-                                    TrailMapLabel(name: trail.name,
-                                                  difficulty: trail.difficulty,
-                                                  color: color(for: trail.difficulty))
-                                        .position(screenPoint)
+                            }
+                            if authoredMapCameraDistance < 2_500 {
+                                ForEach(labelPlacements(for: visibleTrails, proxy: proxy)) { placement in
+                                    TrailMapLabel(name: placement.name,
+                                                  difficulty: placement.difficulty,
+                                                  color: color(for: placement.difficulty))
+                                        .position(placement.point)
                                 }
                             }
                         }
@@ -836,8 +788,8 @@ struct TrailMappingView: View {
                 VStack(spacing: 8) {
                     MapLayersMenu(preferences: mapLayerPreferences,
                                   showsRidePathControl: false,
-                                  showsJumpsControl: false,
-                                  hasActualTrails: !trails.isEmpty)
+                                  showsActualTrailsControl: true,
+                                  showsJumpsControl: false)
                     recenterButton(action: recenterAuthoredMap)
                 }
                 .padding(12)
@@ -851,13 +803,72 @@ struct TrailMappingView: View {
     }
 
     private var authoredMapConfiguration: RouteMapConfiguration? {
-        RouteMapConfiguration(points: trails.flatMap(\.points))
+        RouteMapConfiguration(points: visibleTrails.flatMap(\.points))
+    }
+
+    private var activeCatalog: TrailCatalogDescriptor {
+        trailCatalogSelection.catalog(for: activeLocation)
+    }
+
+    private var visibleTrails: [Trail] {
+        trailCatalogSelection.trails(trails, near: activeLocation)
+    }
+
+    private var activeLocation: Coordinate? {
+        if let coordinate = recorder.lastSample?.coordinate {
+            return coordinate
+        }
+        guard let coordinate = recorder.locationService.lastLocation?.coordinate else { return nil }
+        return Coordinate(latitude: coordinate.latitude, longitude: coordinate.longitude)
     }
 
     private func labelPoint(for trail: Trail) -> RoutePoint? {
         let points = trail.points
         guard !points.isEmpty else { return nil }
         return points[points.count / 2]
+    }
+
+    private func interactionCoordinates(for trail: Trail) -> [CLLocationCoordinate2D] {
+        let coordinates = trailCoordinates(for: trail)
+        guard coordinates.count > 120 else { return coordinates }
+
+        let stride = max(1, coordinates.count / 120)
+        var reduced = Array(coordinates.enumerated().compactMap { index, coordinate in
+            index.isMultiple(of: stride) ? coordinate : nil
+        })
+        if let last = coordinates.last,
+           reduced.last?.latitude != last.latitude || reduced.last?.longitude != last.longitude {
+            reduced.append(last)
+        }
+        return reduced
+    }
+
+    private func labelPlacements(for trails: [Trail], proxy: MapProxy) -> [TrailMapLabelPlacement] {
+        var acceptedPoints: [CGPoint] = []
+        var placements: [TrailMapLabelPlacement] = []
+
+        for trail in trails {
+            guard placements.count < 10,
+                  let point = labelPoint(for: trail),
+                  let screenPoint = proxy.convert(
+                      CLLocationCoordinate2D(latitude: point.latitude, longitude: point.longitude),
+                      to: .local
+                  ) else {
+                continue
+            }
+
+            let isSeparated = acceptedPoints.allSatisfy { accepted in
+                hypot(screenPoint.x - accepted.x, screenPoint.y - accepted.y) >= 72
+            }
+            guard isSeparated else { continue }
+
+            acceptedPoints.append(screenPoint)
+            placements.append(TrailMapLabelPlacement(id: trail.id,
+                                                     name: trail.name,
+                                                     difficulty: trail.difficulty,
+                                                     point: screenPoint))
+        }
+        return placements
     }
 
     private func color(for difficulty: TrailDifficulty) -> Color {
@@ -901,7 +912,7 @@ private struct TrailLibraryRow: View {
                     .foregroundStyle(Color.bermsMuted)
             }
             Spacer()
-            Image(systemName: "plus.circle")
+            Image(systemName: "pencil.circle")
                 .foregroundStyle(Color.bermsTrail)
         }
         .padding(12)
@@ -921,8 +932,168 @@ private struct TrailLibraryRow: View {
     }
 }
 
+private struct TrailEditorSheet: View {
+    let trail: Trail
+    @ObservedObject var mapper: TrailMapper
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
+    @State private var name: String
+    @State private var difficulty: TrailDifficulty
+    @State private var style: TrailStyle
+    @State private var resort: String
+    @State private var showingDeleteConfirmation = false
+    @State private var errorMessage: String?
+
+    init(trail: Trail, mapper: TrailMapper) {
+        self.trail = trail
+        self._mapper = ObservedObject(wrappedValue: mapper)
+        _name = State(initialValue: trail.name)
+        _difficulty = State(initialValue: trail.difficulty)
+        _style = State(initialValue: trail.style)
+        _resort = State(initialValue: trail.resort)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Trail data") {
+                    TextField("Name", text: $name)
+                    Picker("Difficulty", selection: $difficulty) {
+                        ForEach(TrailDifficulty.allCases) { value in
+                            Text(value.title).tag(value)
+                        }
+                    }
+                    Picker("Style", selection: $style) {
+                        ForEach(TrailStyle.allCases) { value in
+                            Text(value.title).tag(value)
+                        }
+                    }
+                    TextField("Resort", text: $resort)
+                }
+
+                Section("Route data") {
+                    LabeledContent("Centerline points", value: "\(trail.points.count)")
+                    LabeledContent("Distance", value: BermsFormat.distance(trailDistance))
+                    LabeledContent("Recorded passes", value: "\(trail.passCount)")
+                    Text("The imported centerline is the first pass. New GPS passes are added and averaged with it.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
+                Section {
+                    Button {
+                        recordPass()
+                    } label: {
+                        Label("Record pass for average", systemImage: "record.circle")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .disabled(mapper.isRecording)
+                } footer: {
+                    Text("Start at the top of the trail and save the segment when you reach the bottom.")
+                }
+
+                Section {
+                    Button("Save changes") {
+                        _ = saveChanges()
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+
+                Section {
+                    Button("Delete trail", role: .destructive) {
+                        showingDeleteConfirmation = true
+                    }
+                }
+            }
+            .navigationTitle("Edit Trail")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { dismiss() }
+                }
+            }
+        }
+        .confirmationDialog(
+            "Delete \(trail.name)?",
+            isPresented: $showingDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Delete Trail", role: .destructive) {
+                deleteTrail()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This removes the trail and all of its recorded passes from the local database.")
+        }
+        .alert("Trail update failed", isPresented: Binding(
+            get: { errorMessage != nil },
+            set: { if !$0 { errorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) { errorMessage = nil }
+        } message: {
+            Text(errorMessage ?? "")
+        }
+    }
+
+    private func saveChanges() -> Bool {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else {
+            errorMessage = "Enter a trail name first."
+            return false
+        }
+
+        trail.name = trimmedName
+        trail.difficultyRawValue = difficulty.rawValue
+        trail.styleRawValue = style.rawValue
+        trail.resort = resort.trimmingCharacters(in: .whitespacesAndNewlines)
+        trail.updatedAt = .now
+
+        do {
+            try modelContext.save()
+            return true
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    private func recordPass() {
+        guard saveChanges() else { return }
+        if mapper.start(existingTrail: trail,
+                        name: trail.name,
+                        difficulty: trail.difficulty,
+                        style: trail.style) {
+            dismiss()
+        }
+    }
+
+    private func deleteTrail() {
+        guard !mapper.isRecording else {
+            errorMessage = "Finish the active recording before deleting a trail."
+            return
+        }
+
+        modelContext.delete(trail)
+        do {
+            try modelContext.save()
+            dismiss()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private var trailDistance: Double {
+        zip(trail.points, trail.points.dropFirst()).reduce(0) { total, pair in
+            let start = Coordinate(latitude: pair.0.latitude, longitude: pair.0.longitude)
+            let end = Coordinate(latitude: pair.1.latitude, longitude: pair.1.longitude)
+            return total + start.distance(to: end)
+        }
+    }
+}
+
 private struct TrailStartSheet: View {
     let trails: [Trail]
+    let defaultResort: String
     @ObservedObject var mapper: TrailMapper
     @Environment(\.dismiss) private var dismiss
     @State private var selectedTrailID: UUID?
@@ -930,6 +1101,13 @@ private struct TrailStartSheet: View {
     @State private var difficulty: TrailDifficulty = .blue
     @State private var style: TrailStyle = .freeRide
     @State private var resortOverride = ""
+
+    init(trails: [Trail], mapper: TrailMapper, defaultResort: String) {
+        self.trails = trails
+        self.defaultResort = defaultResort
+        self._mapper = ObservedObject(wrappedValue: mapper)
+        self._resortOverride = State(initialValue: defaultResort)
+    }
 
     private var selectedTrail: Trail? {
         trails.first { $0.id == selectedTrailID }
@@ -958,7 +1136,7 @@ private struct TrailStartSheet: View {
                                 Text(value.title).tag(value)
                             }
                         }
-                        TextField("Resort override (optional)", text: $resortOverride)
+                        TextField("Resort override", text: $resortOverride)
                     } else if let selectedTrail {
                         LabeledContent("Difficulty", value: selectedTrail.difficulty.title)
                         LabeledContent("Style", value: selectedTrail.style.title)
@@ -966,7 +1144,7 @@ private struct TrailStartSheet: View {
                 }
 
                 Section {
-                    Text("Start at the top. Berms will identify the resort from your location when you save. You can override it if needed.")
+                    Text("Start at the top. New trails are assigned to \(defaultResort); you can override it if needed.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                     Button("Start segment") {
@@ -1121,6 +1299,7 @@ struct DayDetailView: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var trails: [Trail]
     @EnvironmentObject private var mapLayerPreferences: MapLayerPreferences
+    @EnvironmentObject private var trailCatalogSelection: TrailCatalogSelection
     @State private var mapPosition: MapCameraPosition = .automatic
     @State private var selectedSegmentID: UUID?
     @State private var showingFullScreenMap = false
@@ -1153,8 +1332,7 @@ struct DayDetailView: View {
                                 RunMapView(number: index + 1, segment: segment)
                             } label: {
                                 SegmentRow(number: index + 1, segment: segment,
-                                           trailName: matchedTrailNames(for: segment),
-                                           isLastRun: index == runs.count - 1)
+                                           trailName: trailSequence(for: segment))
                             }
                             .buttonStyle(.plain)
                         }
@@ -1235,7 +1413,7 @@ struct DayDetailView: View {
 
     @ViewBuilder
     private var dayMap: some View {
-        if day.segments.isEmpty {
+        if runs.isEmpty {
             VStack(spacing: 8) {
                 Image(systemName: "map")
                     .font(.title2)
@@ -1246,52 +1424,36 @@ struct DayDetailView: View {
             .background(Color.bermsCard, in: RoundedRectangle(cornerRadius: 22))
         } else {
             ZStack(alignment: .topTrailing) {
-                MapReader { proxy in
-                    ZStack {
-                        Map(position: $mapPosition, bounds: mapConfiguration?.bounds,
-                            interactionModes: [.pan, .zoom], selection: $selectedSegmentID) {
-                            if mapLayerPreferences.showsRidePath {
-                                ForEach(day.segments) { segment in
-                                    MapPolyline(coordinates: coordinates(for: segment))
-                                        .stroke(segment.kind == .run ? Color.bermsTrail : Color.bermsLift, lineWidth: 4)
-                                        .tag(segment.id)
-                                }
-                            }
-                            if mapLayerPreferences.showsJumps {
-                                ForEach(summaryMapJumps(for: day.segments)) { marker in
-                                    Annotation("", coordinate: marker.coordinate) {
-                                        Circle()
-                                            .fill(.orange)
-                                            .frame(width: 12, height: 12)
-                                            .overlay(Circle().stroke(.white, lineWidth: 2))
-                                            .accessibilityLabel("\(marker.label), \(BermsFormat.airtime(marker.airtime))")
-                                    }
-                                }
-                            }
+                Map(position: $mapPosition, bounds: mapConfiguration?.bounds,
+                    interactionModes: [.pan, .zoom], selection: $selectedSegmentID) {
+                    if mapLayerPreferences.showsRidePath {
+                        ForEach(Array(runs.enumerated()), id: \.element.id) { index, segment in
+                            MapPolyline(coordinates: coordinates(for: segment))
+                                .stroke(Color.gray.opacity(RideMapPresentation.summaryRunOpacity(
+                                    index: index, count: runs.count)), lineWidth: 4)
+                                .tag(segment.id)
                         }
-                        .mapStyle(.bermsMonochrome)
-                        .saturation(0)
-                        .mapControls {
-                            MapCompass()
-                        }
-
-                        if mapLayerPreferences.showsActualTrails {
-                            ForEach(day.segments) { segment in
-                                ForEach(trailOverlays(for: segment, trails: trails)) { overlay in
-                                    ProjectedTrailLine(
-                                        coordinates: overlay.coordinates,
-                                        proxy: proxy,
-                                        color: overlay.color,
-                                        lineWidth: 2.5
-                                    )
-                                }
+                    }
+                    if mapLayerPreferences.showsJumps {
+                        ForEach(summaryMapJumps(for: runs)) { marker in
+                            Annotation("", coordinate: marker.coordinate) {
+                                Circle()
+                                    .fill(.orange)
+                                    .frame(width: 12, height: 12)
+                                    .overlay(Circle().stroke(.white, lineWidth: 2))
+                                    .accessibilityLabel("\(marker.label), \(BermsFormat.airtime(marker.airtime))")
                             }
                         }
                     }
                 }
+                .mapStyle(.bermsMonochrome)
+                .saturation(0)
+                .mapControls {
+                    MapCompass()
+                }
                 VStack(spacing: 8) {
                     MapLayersMenu(preferences: mapLayerPreferences,
-                                  hasActualTrails: hasMatchedTrailOverlays)
+                                  showsActualTrailsControl: false)
                     recenterButton
                     Button { showingFullScreenMap = true } label: {
                         Image(systemName: "arrow.up.left.and.arrow.down.right")
@@ -1310,24 +1472,21 @@ struct DayDetailView: View {
             .onAppear { recenterMap() }
             .fullScreenCover(isPresented: $showingFullScreenMap) {
                 FullScreenSummaryMap(title: "Ride Map", segments: day.segments,
-                                     trails: trails, focusedSegmentID: nil)
+                                     focusedSegmentID: nil)
             }
         }
     }
 
     private var mapConfiguration: RouteMapConfiguration? {
-        RouteMapConfiguration(points: day.segments.flatMap(\.points))
+        RouteMapConfiguration(points: runs.flatMap(\.points))
     }
 
-    private var hasMatchedTrailOverlays: Bool {
-        day.segments.contains { !trailOverlays(for: $0, trails: trails).isEmpty }
-    }
-
-    private func matchedTrailNames(for segment: RideSegment) -> String? {
-        let names = TrailRouteMatchCache.shared
-            .matchingSections(for: segment, trails: trails)
-            .compactMap { section in trails.first { $0.id == section.trailID }?.name }
-        return names.isEmpty ? nil : names.joined(separator: " → ")
+    private func trailSequence(for segment: RideSegment) -> String? {
+        let coordinate = segment.points.first.map {
+            Coordinate(latitude: $0.latitude, longitude: $0.longitude)
+        }
+        let activeTrails = trailCatalogSelection.trails(trails, near: coordinate)
+        return TrailSequenceResolver.title(for: segment, trails: activeTrails)
     }
 
     private func coordinates(for segment: RideSegment) -> [CLLocationCoordinate2D] {
@@ -1356,15 +1515,16 @@ struct DayDetailView: View {
 struct FullScreenSummaryMap: View {
     let title: String
     let segments: [RideSegment]
-    let trails: [Trail]
     let focusedSegmentID: UUID?
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var mapLayerPreferences: MapLayerPreferences
     @State private var mapPosition: MapCameraPosition = .automatic
 
     private var visibleSegments: [RideSegment] {
-        guard let focusedSegmentID else { return segments }
-        return segments.filter { $0.id == focusedSegmentID }
+        if let focusedSegmentID {
+            return segments.filter { $0.id == focusedSegmentID }
+        }
+        return segments.filter { $0.kind == .run }.sorted { $0.startedAt < $1.startedAt }
     }
 
     private var mapConfiguration: RouteMapConfiguration? {
@@ -1378,61 +1538,39 @@ struct FullScreenSummaryMap: View {
     var body: some View {
         NavigationStack {
             ZStack(alignment: .topTrailing) {
-                MapReader { proxy in
-                    ZStack {
-                        Map(position: $mapPosition, bounds: mapConfiguration?.bounds,
-                            interactionModes: [.pan, .zoom]) {
-                            if mapLayerPreferences.showsRidePath {
-                                ForEach(visibleSegments) { segment in
-                                    if segment.points.count > 1 {
-                                        MapPolyline(coordinates: segment.points.map {
-                                            CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
-                                        })
-                                        .stroke(segment.kind == .run ? Color.bermsTrail : Color.bermsLift, lineWidth: 5)
-                                    }
-                                }
-                            }
-                            if mapLayerPreferences.showsJumps {
-                                ForEach(jumpMarkers) { marker in
-                                    Annotation("", coordinate: marker.coordinate) {
-                                        Circle()
-                                            .fill(.orange)
-                                            .frame(width: 14, height: 14)
-                                            .overlay(Circle().stroke(.white, lineWidth: 2))
-                                            .accessibilityLabel("\(marker.label), \(BermsFormat.airtime(marker.airtime))")
-                                    }
-                                }
+                Map(position: $mapPosition, bounds: mapConfiguration?.bounds,
+                    interactionModes: [.pan, .zoom]) {
+                    if mapLayerPreferences.showsRidePath {
+                        ForEach(Array(visibleSegments.enumerated()), id: \.element.id) { index, segment in
+                            if segment.points.count > 1 {
+                                MapPolyline(coordinates: segment.points.map {
+                                    CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
+                                })
+                                .stroke(focusedSegmentID == nil
+                                        ? Color.gray.opacity(RideMapPresentation.summaryRunOpacity(
+                                            index: index, count: visibleSegments.count))
+                                        : Color.bermsTrail, lineWidth: 5)
                             }
                         }
-                        .mapStyle(.bermsMonochrome)
-                        .saturation(0)
-                        .mapControls { MapCompass() }
-
-                        if mapLayerPreferences.showsActualTrails {
-                            ForEach(visibleSegments) { segment in
-                                ForEach(trailOverlays(for: segment, trails: trails)) { overlay in
-                                    ProjectedTrailLine(
-                                        coordinates: overlay.coordinates,
-                                        proxy: proxy,
-                                        color: overlay.color,
-                                        lineWidth: 2.5
-                                    )
-                                    if focusedSegmentID != nil,
-                                       let coordinate = coordinate(for: overlay),
-                                       let screenPoint = proxy.convert(coordinate, to: .local) {
-                                        TrailMapLabel(name: overlay.name,
-                                                      difficulty: overlay.difficulty,
-                                                      color: overlay.color)
-                                            .position(screenPoint)
-                                    }
-                                }
+                    }
+                    if mapLayerPreferences.showsJumps {
+                        ForEach(jumpMarkers) { marker in
+                            Annotation("", coordinate: marker.coordinate) {
+                                Circle()
+                                    .fill(.orange)
+                                    .frame(width: 14, height: 14)
+                                    .overlay(Circle().stroke(.white, lineWidth: 2))
+                                    .accessibilityLabel("\(marker.label), \(BermsFormat.airtime(marker.airtime))")
                             }
                         }
                     }
                 }
+                .mapStyle(.bermsMonochrome)
+                .saturation(0)
+                .mapControls { MapCompass() }
                 VStack(spacing: 8) {
                     MapLayersMenu(preferences: mapLayerPreferences,
-                                  hasActualTrails: hasTrailOverlays)
+                                  showsActualTrailsControl: false)
                     Button { recenterMap() } label: {
                         Image(systemName: "scope")
                             .font(.headline)
@@ -1454,16 +1592,6 @@ struct FullScreenSummaryMap: View {
             .navigationBarTitleDisplayMode(.inline)
             .onAppear { recenterMap() }
         }
-    }
-
-    private var hasTrailOverlays: Bool {
-        visibleSegments.contains { !trailOverlays(for: $0, trails: trails).isEmpty }
-    }
-
-    private func coordinate(for overlay: TrailMapOverlay) -> CLLocationCoordinate2D? {
-        guard !overlay.points.isEmpty else { return nil }
-        let point = overlay.points[overlay.points.count / 2]
-        return CLLocationCoordinate2D(latitude: point.latitude, longitude: point.longitude)
     }
 
     private func recenterMap() {
@@ -1566,6 +1694,7 @@ struct RunMapView: View {
     let segment: RideSegment
     @Query private var trails: [Trail]
     @EnvironmentObject private var mapLayerPreferences: MapLayerPreferences
+    @EnvironmentObject private var trailCatalogSelection: TrailCatalogSelection
     @State private var mapPosition: MapCameraPosition = .automatic
     @State private var showingFullScreenMap = false
 
@@ -1602,116 +1731,74 @@ struct RunMapView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                ZStack(alignment: .topTrailing) {
-                    MapReader { proxy in
-                        ZStack {
-                            Map(position: $mapPosition, bounds: mapConfiguration?.bounds,
-                                interactionModes: [.pan, .zoom]) {
-                                if mapLayerPreferences.showsRidePath {
-                                    MapPolyline(coordinates: routePoints.map {
-                                        CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
-                                    })
-                                    .stroke(Color.bermsTrail, lineWidth: 5)
-                                }
-
-                                if mapLayerPreferences.showsJumps {
-                                    ForEach(jumpMarkers) { marker in
-                                        Annotation("", coordinate: marker.coordinate) {
-                                            Circle()
-                                                .fill(.orange)
-                                                .frame(width: 12, height: 12)
-                                                .overlay(Circle().stroke(.white, lineWidth: 2))
-                                                .accessibilityLabel("Jump \(marker.number), \(BermsFormat.airtime(marker.airtime))")
-                                        }
-                                    }
-                                }
-                            }
-                            .mapStyle(.bermsMonochrome)
-                            .saturation(0)
-                            .mapControls {
-                                MapCompass()
+                VStack(spacing: 0) {
+                    ZStack(alignment: .topTrailing) {
+                        Map(position: $mapPosition, bounds: mapConfiguration?.bounds,
+                            interactionModes: [.pan, .zoom]) {
+                            if mapLayerPreferences.showsRidePath {
+                                MapPolyline(coordinates: routePoints.map {
+                                    CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
+                                })
+                                .stroke(Color.bermsTrail, lineWidth: 5)
                             }
 
-                            if mapLayerPreferences.showsActualTrails {
-                                ForEach(matchedOverlays) { overlay in
-                                    ProjectedTrailLine(
-                                        coordinates: overlay.coordinates,
-                                        proxy: proxy,
-                                        color: overlay.color,
-                                        lineWidth: 2.5
-                                    )
-                                    if let coordinate = coordinate(for: overlay),
-                                       let screenPoint = proxy.convert(coordinate, to: .local) {
-                                        TrailMapLabel(name: overlay.name,
-                                                      difficulty: overlay.difficulty,
-                                                      color: overlay.color)
-                                            .position(screenPoint)
+                            if mapLayerPreferences.showsJumps {
+                                ForEach(jumpMarkers) { marker in
+                                    Annotation("", coordinate: marker.coordinate) {
+                                        Circle()
+                                            .fill(.orange)
+                                            .frame(width: 12, height: 12)
+                                            .overlay(Circle().stroke(.white, lineWidth: 2))
+                                            .accessibilityLabel("Jump \(marker.number), \(BermsFormat.airtime(marker.airtime))")
                                     }
                                 }
                             }
                         }
-                    }
-                    if !matchedOverlays.isEmpty, mapLayerPreferences.showsActualTrails {
-                        trailLegend
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
-                            .padding(12)
-                    }
-                    VStack(spacing: 8) {
-                        MapLayersMenu(preferences: mapLayerPreferences,
-                                      hasActualTrails: !matchedOverlays.isEmpty)
-                        recenterButton
-                        Button { showingFullScreenMap = true } label: {
-                            Image(systemName: "arrow.up.left.and.arrow.down.right")
-                                .font(.headline)
-                                .frame(width: 42, height: 42)
+                        .mapStyle(.bermsMonochrome)
+                        .saturation(0)
+                        .mapControls {
+                            MapCompass()
                         }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.black.opacity(0.7))
-                        .foregroundStyle(.white)
-                        .accessibilityLabel("Open full-screen run map")
+                        VStack(spacing: 8) {
+                            MapLayersMenu(preferences: mapLayerPreferences,
+                                          showsActualTrailsControl: false)
+                            recenterButton
+                            Button { showingFullScreenMap = true } label: {
+                                Image(systemName: "arrow.up.left.and.arrow.down.right")
+                                    .font(.headline)
+                                    .frame(width: 42, height: 42)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(.black.opacity(0.7))
+                            .foregroundStyle(.white)
+                            .accessibilityLabel("Open full-screen run map")
+                        }
+                        .padding(12)
                     }
-                    .padding(12)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding(10)
+
+                    TrailSequenceCard(sequence: trailSequence, runNumber: number)
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 12)
                 }
-                .padding(10)
                 .fullScreenCover(isPresented: $showingFullScreenMap) {
-                    FullScreenSummaryMap(title: "Run \(number)", segments: [segment],
-                                         trails: trails, focusedSegmentID: segment.id)
+                    FullScreenSummaryMap(title: trailSequence, segments: [segment],
+                                         focusedSegmentID: segment.id)
                 }
             }
         }
-        .navigationTitle("Run \(number)")
+        .navigationTitle(trailSequence)
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { recenterMap() }
     }
 
-    private var matchedOverlays: [TrailMapOverlay] {
-        trailOverlays(for: segment, trails: trails)
-    }
-
     private var trailSequence: String {
-        matchedOverlays.map(\.name).joined(separator: " → ")
-    }
-
-    private func coordinate(for overlay: TrailMapOverlay) -> CLLocationCoordinate2D? {
-        guard !overlay.points.isEmpty else { return nil }
-        let point = overlay.points[overlay.points.count / 2]
-        return CLLocationCoordinate2D(latitude: point.latitude, longitude: point.longitude)
-    }
-
-    private var trailLegend: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text("Trail sequence")
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(Color.bermsMuted)
-            Text(trailSequence)
-                .font(.caption.weight(.semibold))
-                .lineLimit(2)
+        let coordinate = routePoints.first.map {
+            Coordinate(latitude: $0.latitude, longitude: $0.longitude)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
-        .background(.thinMaterial, in: Capsule())
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(trailSequence)
+        let activeTrails = trailCatalogSelection.trails(trails, near: coordinate)
+        return TrailSequenceResolver.title(for: segment, trails: activeTrails) ?? "Unmatched run"
     }
 
     private var recenterButton: some View {
@@ -1783,17 +1870,36 @@ private struct RouteMapConfiguration {
     }
 }
 
+private struct TrailSequenceCard: View {
+    let sequence: String
+    let runNumber: Int
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(sequence)
+                .font(.headline)
+                .lineLimit(2)
+            Text("Run \(runNumber)")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Color.bermsMuted)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(Color.bermsCard, in: RoundedRectangle(cornerRadius: 16))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(sequence), Run \(runNumber)")
+    }
+}
+
 struct SegmentRow: View {
     let number: Int
     let segment: RideSegment
     var trailName: String?
-    var isLastRun: Bool
 
-    init(number: Int, segment: RideSegment, trailName: String? = nil, isLastRun: Bool = false) {
+    init(number: Int, segment: RideSegment, trailName: String? = nil) {
         self.number = number
         self.segment = segment
         self.trailName = trailName
-        self.isLastRun = isLastRun
     }
 
     var body: some View {
@@ -1803,16 +1909,11 @@ struct SegmentRow: View {
                 .frame(width: 28, height: 28)
                 .background(Color.bermsInset, in: Circle())
             VStack(alignment: .leading, spacing: 3) {
-                Text(isLastRun ? "Last Run" : "Run \(number)")
+                Text(trailName ?? "Unmatched run")
                     .font(.headline)
-                if let trailName {
-                    Text(trailName)
-                        .font(.subheadline)
-                        .foregroundStyle(Color.bermsMuted)
-                        .lineLimit(1)
-                }
-                Text(BermsFormat.duration(segment.duration))
+                Text("Run \(number) · \(BermsFormat.duration(segment.duration))")
                     .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Color.bermsMuted)
                 if segment.kind == .run, !segment.jumps.isEmpty {
                     Text("\(segment.jumps.count) jumps · \(BermsFormat.airtime(segment.jumps.map(\.airtime).max() ?? 0))")
                         .font(.caption)
