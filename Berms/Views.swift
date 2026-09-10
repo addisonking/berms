@@ -1049,10 +1049,15 @@ private struct ProductionTrailLibraryRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(trail.name)
                     .font(.headline)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
                 Text("\(trail.difficulty.title) · \(trail.style.title) · \(BermsFormat.distance(distance))")
                     .font(.caption)
                     .foregroundStyle(Color.bermsMuted)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(BermsSpacing.control)
         .background(isSelected ? Color.bermsInset : Color.bermsCard,
@@ -1374,10 +1379,15 @@ private struct TrailLibraryRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(trail.name)
                     .font(.headline)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
                 Text("\(trail.resort) · \(trail.difficulty.title) · \(trail.style.title) · \(trail.passCount) pass\(trail.passCount == 1 ? "" : "es") · \(BermsFormat.distance(trailDistance))")
                     .font(.caption)
                     .foregroundStyle(Color.bermsMuted)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             Spacer()
             Image(systemName: "pencil.circle")
                 .foregroundStyle(Color.bermsTrail)
