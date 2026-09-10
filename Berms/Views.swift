@@ -275,15 +275,9 @@ struct RootView: View {
     private enum Tab: Hashable {
         case track
         case days
-#if DEBUG
-        case map
-#endif
     }
 
     @ObservedObject var recorder: RideRecorder
-#if DEBUG
-    @ObservedObject private var trailMapper = TrailMapper.shared
-#endif
     @StateObject private var mapLayerPreferences = MapLayerPreferences()
     @StateObject private var trailCatalogSelection = TrailCatalogSelection()
     @State private var selectedTab: Tab = .track
@@ -302,11 +296,6 @@ struct RootView: View {
             }
                 .tabItem { Label("Days", systemImage: "calendar") }
                 .tag(Tab.days)
-#if DEBUG
-            TrailMappingView(mapper: trailMapper, recorder: recorder)
-                .tabItem { Label("Map", systemImage: "map") }
-                .tag(Tab.map)
-#endif
         }
         .tint(.bermsTrail)
         .environmentObject(mapLayerPreferences)
