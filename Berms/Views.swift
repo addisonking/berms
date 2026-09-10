@@ -1053,10 +1053,6 @@ private struct ProductionTrailLibraryRow: View {
                     .font(.caption)
                     .foregroundStyle(Color.bermsMuted)
             }
-            Spacer(minLength: 8)
-            Image(systemName: isSelected ? "checkmark.circle.fill" : "chevron.right")
-                .foregroundStyle(isSelected ? Color.bermsTrail : Color.bermsMuted)
-                .accessibilityHidden(true)
         }
         .padding(BermsSpacing.control)
         .background(isSelected ? Color.bermsInset : Color.bermsCard,
