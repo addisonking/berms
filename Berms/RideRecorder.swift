@@ -335,6 +335,10 @@ final class RideRecorder: ObservableObject {
         guard activeDay == nil else { return false }
         guard locationService.authorizationStatus != .denied,
               locationService.authorizationStatus != .restricted else { return false }
+        guard locationService.authorizationStatus != .notDetermined else {
+            requestPermissionsIfNeeded()
+            return false
+        }
 
         let day = RideDay()
         context.insert(day)

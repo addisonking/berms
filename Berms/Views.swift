@@ -632,10 +632,17 @@ struct TrackView: View {
     }
 
     private var startButton: some View {
+        let needsLocationPermission = recorder.locationAuthorization == .notDetermined
+
         Button {
-            if recorder.start() { BermsMotion.recordingFeedback() }
+            if needsLocationPermission {
+                recorder.requestPermissionsIfNeeded()
+            } else if recorder.start() {
+                BermsMotion.recordingFeedback()
+            }
         } label: {
-            Label("Start", systemImage: "play.fill")
+            Label(needsLocationPermission ? "Allow Location" : "Start",
+                  systemImage: needsLocationPermission ? "location.fill" : "play.fill")
                 .foregroundStyle(Color.bermsOnAccent)
                 .font(.headline)
                 .frame(maxWidth: 260)
