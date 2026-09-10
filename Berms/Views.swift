@@ -634,7 +634,7 @@ struct TrackView: View {
     private var startButton: some View {
         let needsLocationPermission = recorder.locationAuthorization == .notDetermined
 
-        Button {
+        return Button {
             if needsLocationPermission {
                 recorder.requestPermissionsIfNeeded()
             } else if recorder.start() {
