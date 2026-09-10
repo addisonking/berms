@@ -2001,6 +2001,10 @@ struct DayDetailView: View {
                 }
             }
         }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            Color.clear
+                .frame(height: BermsSpacing.major)
+        }
         .navigationTitle(day.displayName)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.visible, for: .navigationBar)
