@@ -1714,6 +1714,9 @@ struct DaysView: View {
     @Binding private var pendingDayID: UUID?
     let onStartTracking: () -> Void
     @State private var dayToDelete: RideDay?
+    @State private var editMode: EditMode = .inactive
+    @State private var selectedDayIDs = Set<UUID>()
+    @State private var showingBulkDeleteConfirmation = false
     @State private var navigationPath = NavigationPath()
 
     init(pendingDayID: Binding<UUID?> = .constant(nil),
@@ -1741,7 +1744,7 @@ struct DaysView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .transition(.opacity)
                 } else {
-                    List {
+                    List(selection: $selectedDayIDs) {
                         ForEach(days) { day in
                             NavigationLink {
                                 DayDetailView(day: day) { destination in
@@ -1750,6 +1753,8 @@ struct DaysView: View {
                             } label: {
                                 DayRow(day: day)
                             }
+                            .tag(day.id)
+                            .selectionDisabled(!day.isFinished)
                             .listRowBackground(Color.clear)
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                 if day.isFinished {
@@ -1763,13 +1768,17 @@ struct DaysView: View {
                             }
                         }
                     }
+                    .environment(\.editMode, $editMode)
                     .scrollContentBackground(.hidden)
                     .animation(reduceMotion ? nil : BermsMotion.content, value: days.map(\.id))
                     .transition(.opacity)
                 }
             }
             .animation(reduceMotion ? nil : BermsMotion.content, value: days.isEmpty)
-            .navigationTitle("Days")
+            .safeAreaInset(edge: .top, spacing: 0) {
+                daysHeader
+            }
+            .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: UUID.self) { dayID in
                 if let day = days.first(where: { $0.id == dayID }) {
                     DayDetailView(day: day) { destination in
@@ -1787,8 +1796,17 @@ struct DaysView: View {
             }
             .onAppear { openPendingDayIfNeeded() }
             .onChange(of: pendingDayID) { _, _ in openPendingDayIfNeeded() }
-            .onChange(of: days.map(\.id)) { _, _ in openPendingDayIfNeeded() }
+            .onChange(of: days.map(\.id)) { _, ids in
+                selectedDayIDs.formIntersection(ids)
+                openPendingDayIfNeeded()
+            }
+            .onChange(of: editMode) { _, mode in
+                if mode == .inactive {
+                    selectedDayIDs.removeAll()
+                }
+            }
         }
+        .environment(\.editMode, $editMode)
         .alert("Delete day?", isPresented: Binding(
             get: { dayToDelete != nil },
             set: { if !$0 { dayToDelete = nil } }
@@ -1804,6 +1822,73 @@ struct DaysView: View {
                 dayToDelete = nil
             }
         }
+        .alert("Delete \(selectedDays.count) days?", isPresented: $showingBulkDeleteConfirmation) {
+            Button("Delete", role: .destructive) {
+                deleteSelectedDays()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This permanently removes the selected days, their runs, lifts, and map data.")
+        }
+    }
+
+    private var daysHeader: some View {
+        HStack(spacing: BermsSpacing.compact) {
+            Text("Days")
+                .font(.largeTitle.bold())
+                .accessibilityAddTraits(.isHeader)
+
+            Spacer()
+
+            if editMode == .active && !selectedDays.isEmpty {
+                Button(role: .destructive) {
+                    showingBulkDeleteConfirmation = true
+                } label: {
+                    Image(systemName: "trash")
+                        .frame(minWidth: BermsSpacing.target, minHeight: BermsSpacing.target)
+                }
+                .buttonStyle(.glass)
+                .accessibilityLabel("Delete \(selectedDays.count) selected days")
+            }
+
+            Button {
+                editMode = editMode == .active ? .inactive : .active
+            } label: {
+                Group {
+                    if editMode == .active {
+                        Image(systemName: "checkmark")
+                    } else {
+                        Text("Edit")
+                    }
+                }
+                .frame(minWidth: BermsSpacing.target, minHeight: BermsSpacing.target)
+            }
+            .buttonStyle(.glass)
+            .accessibilityLabel(editMode == .active ? "Done editing days" : "Edit days")
+        }
+        .padding(.horizontal, BermsSpacing.content)
+        .padding(.vertical, BermsSpacing.compact)
+        .background(Color.bermsInk)
+    }
+
+    private var selectedDays: [RideDay] {
+        days.filter { $0.isFinished && selectedDayIDs.contains($0.id) }
+    }
+
+    private func deleteSelectedDays() {
+        let daysToDelete = selectedDays
+        guard !daysToDelete.isEmpty else { return }
+
+        let diagnosticURLs = daysToDelete.map { RideRecorder.debugLogURL(for: $0.id) }
+        for day in daysToDelete {
+            modelContext.delete(day)
+        }
+        try? modelContext.save()
+        for diagnosticURL in diagnosticURLs {
+            try? FileManager.default.removeItem(at: diagnosticURL)
+        }
+        selectedDayIDs.removeAll()
+        editMode = .inactive
     }
 
     private func openPendingDayIfNeeded() {
@@ -1903,6 +1988,7 @@ struct DayDetailView: View {
         }
         .navigationTitle(day.startedAt.formatted(date: .abbreviated, time: .omitted))
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.visible, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {

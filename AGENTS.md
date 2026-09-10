@@ -20,3 +20,11 @@ References:
 ## Track screen layout
 
 Preserve the centered start composition: center the icon, description, Start button, and supporting text in the available screen, with scrolling only when content does not fit. During recording, keep the map full-screen behind a compact floating stats panel above the tab bar. Size that panel to its content; never give it a large empty fixed-height background or replace it with an edge-to-edge bottom block. Keep the recording navigation chrome transparent and avoid a redundant Recording title. These are explicit user preferences from the September 9 visual review.
+
+## Local device workflow
+
+- For physical iPhone builds and installs, use the stable Xcode toolchain at /Applications/Xcode.app/Contents/Developer. The beta toolchain currently rejects Berms's legacy watchkit2-extension target.
+- Use DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun devicectl list devices to find the paired physical iPhone, and use its identifier for device work. Do not use a simulator for physical-device validation.
+- Build for the connected device with DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild -project Berms.xcodeproj -scheme Berms -destination 'id=DEVICE_ID' -derivedDataPath /tmp/berms-device-build -allowProvisioningUpdates build.
+- Install the signed app with DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun devicectl device install app --device DEVICE_ID /tmp/berms-device-build/Build/Products/Debug-iphoneos/Berms.app.
+- Device installation requires a paired phone, an Apple account available to Xcode, and provisioning profiles that include Berms's HealthKit capability and its Watch targets.
