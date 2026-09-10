@@ -664,7 +664,7 @@ final class BermsTests: XCTestCase {
     }
 
     @MainActor
-    func testManualLaunchDiscardsUnfinishedSessionAndClearsRecordingState() throws {
+    func testManualLaunchPromptsForUnfinishedSession() throws {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
         let container = try ModelContainer(for: RideDay.self, RideSegment.self,
                                            Trail.self, TrailPass.self, LearnedLift.self,
@@ -689,9 +689,14 @@ final class BermsTests: XCTestCase {
 
         let recorder = RideRecorder(context: context)
         recorder.resumeIfNeeded()
-        XCTAssertFalse(recorder.needsRecoveryPrompt)
+        XCTAssertTrue(recorder.needsRecoveryPrompt)
         XCTAssertFalse(recorder.isRecording)
 
+        XCTAssertEqual(try context.fetch(FetchDescriptor<RideDay>()).count, 1)
+        XCTAssertTrue(UserDefaults.standard.bool(forKey: "berms.recordingActive"))
+
+        recorder.discardPendingSession()
+        XCTAssertFalse(recorder.needsRecoveryPrompt)
         XCTAssertTrue(try context.fetch(FetchDescriptor<RideDay>()).isEmpty)
         XCTAssertFalse(UserDefaults.standard.bool(forKey: "berms.recordingActive"))
     }

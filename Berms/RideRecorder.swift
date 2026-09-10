@@ -620,11 +620,8 @@ final class RideRecorder: ObservableObject {
         }
 
         guard autoResume else {
-            // A manual launch after the process was killed means the user
-            // dismissed the app. Treat the unfinished ride as abandoned and
-            // clear its Live Activity instead of resurrecting it from the
-            // Dynamic Island.
-            discardUnfinishedSession(day)
+            pendingRecoveryDay = day
+            needsRecoveryPrompt = true
             return
         }
         automaticallyRestoredOnLaunch = true
