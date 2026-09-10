@@ -410,7 +410,10 @@ struct TrackView: View {
                 }
             }
             .navigationTitle(recorder.isRecording ? "" : "Berms")
-            .navigationBarTitleDisplayMode(.inline)
+            .navigationBarTitleDisplayMode(recorder.isRecording ? .inline : .large)
+            .navigationSubtitle(recorder.isRecording
+                                ? ""
+                                : Date.now.formatted(.dateTime.weekday(.wide).month(.wide).day()))
             .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -471,15 +474,21 @@ struct TrackView: View {
         GeometryReader { geometry in
             ScrollView {
                 VStack(spacing: BermsSpacing.section) {
-                    Image(systemName: "mountain.2.fill")
-                        .font(.largeTitle)
-                        .foregroundStyle(Color.bermsTrail)
-                    Text("Track runs, lifts, jumps, and your route throughout the day.")
-                        .font(.subheadline)
-                        .foregroundStyle(Color.bermsMuted)
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: 300)
+                    VStack(spacing: BermsSpacing.compact) {
+                        Image(systemName: "mountain.2.fill")
+                            .font(.system(size: 34, weight: .semibold))
+                            .foregroundStyle(Color.bermsTrail)
+                        Text("No activity yet")
+                            .font(.title2.weight(.semibold))
+                        Text("Track runs, lifts, and routes.")
+                            .font(.subheadline)
+                            .foregroundStyle(Color.bermsMuted)
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: 300)
+                    }
+
                     startButton
+
                     Text("Berms uses location only while you are recording.")
                         .font(.caption)
                         .foregroundStyle(Color.bermsMuted)
@@ -497,12 +506,13 @@ struct TrackView: View {
                         .foregroundStyle(Color.bermsMuted)
                     }
                 }
+                .padding(.horizontal, BermsSpacing.content)
                 .padding(.vertical, BermsSpacing.section)
-                .frame(maxWidth: .infinity)
-                .frame(minHeight: geometry.size.height)
+                .frame(maxWidth: .infinity,
+                       minHeight: geometry.size.height,
+                       alignment: .center)
             }
             .scrollBounceBehavior(.basedOnSize)
-            .contentMargins(.horizontal, BermsSpacing.content, for: .scrollContent)
         }
     }
 
@@ -757,9 +767,13 @@ struct TrackView: View {
     }
 
     private var settingsButton: some View {
-        Button("Settings", systemImage: "gearshape") {
+        Button {
             showingSettings = true
+        } label: {
+            Image(systemName: "gearshape")
+                .imageScale(.medium)
         }
+        .accessibilityLabel("Settings")
         .accessibilityIdentifier("settingsButton")
     }
 
@@ -1744,17 +1758,9 @@ struct DaysView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .transition(.opacity)
                 } else {
-                    List(selection: $selectedDayIDs) {
+                    List {
                         ForEach(days) { day in
-                            NavigationLink {
-                                DayDetailView(day: day) { destination in
-                                    navigationPath.append(destination)
-                                }
-                            } label: {
-                                DayRow(day: day)
-                            }
-                            .tag(day.id)
-                            .selectionDisabled(!day.isFinished)
+                            dayListItem(for: day)
                             .listRowBackground(Color.clear)
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                 if day.isFinished {
@@ -1775,10 +1781,30 @@ struct DaysView: View {
                 }
             }
             .animation(reduceMotion ? nil : BermsMotion.content, value: days.isEmpty)
-            .safeAreaInset(edge: .top, spacing: 0) {
-                daysHeader
+            .navigationTitle("Days")
+            .navigationBarTitleDisplayMode(.large)
+            .toolbarBackground(.hidden, for: .navigationBar)
+            .toolbar {
+                if hasSelectedDays {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button(role: .destructive) {
+                            showingBulkDeleteConfirmation = true
+                        } label: {
+                            Image(systemName: "trash")
+                        }
+                        .accessibilityLabel("Delete \(selectedDays.count) selected days")
+                        .transition(.scale(scale: 0.8).combined(with: .opacity))
+                    }
+                    ToolbarSpacer(.fixed, placement: .topBarTrailing)
+                }
+
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(editMode == .active ? "Done" : "Select") {
+                        editMode = editMode == .active ? .inactive : .active
+                    }
+                    .accessibilityLabel(editMode == .active ? "Done selecting days" : "Select days")
+                }
             }
-            .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: UUID.self) { dayID in
                 if let day = days.first(where: { $0.id == dayID }) {
                     DayDetailView(day: day) { destination in
@@ -1832,53 +1858,47 @@ struct DaysView: View {
         }
     }
 
-    private var daysHeader: some View {
-        HStack(alignment: .center, spacing: BermsSpacing.control) {
-            Text("Days")
-                .font(.largeTitle.bold())
-                .accessibilityAddTraits(.isHeader)
-
-            Spacer(minLength: BermsSpacing.control)
-
-            GlassEffectContainer(spacing: 0) {
-                HStack(spacing: BermsSpacing.control) {
-                    if editMode == .active && !selectedDays.isEmpty {
-                        Button(role: .destructive) {
-                            showingBulkDeleteConfirmation = true
-                        } label: {
-                            Image(systemName: "trash")
-                                .font(.system(size: 16, weight: .medium))
-                                .frame(minWidth: BermsSpacing.target, minHeight: BermsSpacing.target)
-                        }
-                        .buttonStyle(.glass)
-                        .buttonBorderShape(.circle)
-                        .controlSize(.regular)
-                        .tint(.red)
-                        .accessibilityLabel("Delete \(selectedDays.count) selected days")
-                        .transition(.scale(scale: 0.8).combined(with: .opacity))
-                    }
-
-                    Button {
-                        editMode = editMode == .active ? .inactive : .active
-                    } label: {
-                        Text(editMode == .active ? "Done" : "Edit")
-                            .fontWeight(.semibold)
-                    }
-                    .buttonStyle(.glass)
-                    .buttonBorderShape(.capsule)
-                    .controlSize(.large)
-                    .accessibilityLabel(editMode == .active ? "Done editing days" : "Edit days")
-                }
-            }
-            .animation(reduceMotion ? nil : BermsMotion.content, value: selectedDays.map(\.id))
-        }
-        .padding(.horizontal, BermsSpacing.content)
-        .padding(.vertical, BermsSpacing.compact)
-        .background(Color.bermsInk)
-    }
-
     private var selectedDays: [RideDay] {
         days.filter { $0.isFinished && selectedDayIDs.contains($0.id) }
+    }
+
+    private var hasSelectedDays: Bool {
+        editMode == .active && !selectedDays.isEmpty
+    }
+
+    @ViewBuilder
+    private func dayListItem(for day: RideDay) -> some View {
+        if editMode == .active {
+            Button {
+                toggleSelection(for: day)
+            } label: {
+                DayRow(day: day,
+                       isSelecting: true,
+                       isSelected: selectedDayIDs.contains(day.id))
+            }
+            .buttonStyle(.plain)
+            .disabled(!day.isFinished)
+        } else {
+            NavigationLink {
+                DayDetailView(day: day) { destination in
+                    navigationPath.append(destination)
+                }
+            } label: {
+                DayRow(day: day)
+            }
+        }
+    }
+
+    private func toggleSelection(for day: RideDay) {
+        guard day.isFinished else { return }
+
+        withAnimation(reduceMotion ? nil : .snappy) {
+            if selectedDayIDs.contains(day.id) {
+                selectedDayIDs.remove(day.id)
+            } else {
+                selectedDayIDs.insert(day.id)
+            }
+        }
     }
 
     private func deleteSelectedDays() {
@@ -1906,10 +1926,18 @@ struct DaysView: View {
 }
 
 struct DayRow: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let day: RideDay
+    var isSelecting = false
+    var isSelected = false
 
     var body: some View {
         HStack(spacing: BermsSpacing.control) {
+            if isSelecting {
+                DaySelectionIndicator(isSelected: isSelected)
+                    .transition(.move(edge: .leading).combined(with: .opacity))
+            }
+
             VStack(alignment: .leading, spacing: 5) {
                 Text(day.displayName)
                     .font(.headline)
@@ -1923,12 +1951,39 @@ struct DayRow: View {
                 .monospacedDigit()
                 .foregroundStyle(Color.bermsTrail)
         }
+        .animation(reduceMotion ? nil : .snappy, value: isSelecting)
     }
 
     private var metadata: String {
         let stats = "\(day.segments.filter { $0.kind == .run }.count) runs  ·  \(BermsFormat.distance(day.distanceMeters))"
         guard day.hasCustomName else { return stats }
         return "\(day.startedAt.formatted(date: .abbreviated, time: .shortened))  ·  \(stats)"
+    }
+}
+
+private struct DaySelectionIndicator: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let isSelected: Bool
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .stroke(isSelected ? Color.bermsTrail : Color.bermsMuted,
+                        lineWidth: isSelected ? 0 : 2)
+
+            if isSelected {
+                Circle()
+                    .fill(Color.bermsTrail)
+                Image(systemName: "checkmark")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(Color.bermsOnAccent)
+                    .transition(.scale(scale: 0.45).combined(with: .opacity))
+            }
+        }
+        .frame(width: 24, height: 24)
+        .animation(reduceMotion ? nil : .snappy, value: isSelected)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(isSelected ? "Selected" : "Not selected")
     }
 }
 
