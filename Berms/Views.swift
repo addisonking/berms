@@ -1758,10 +1758,12 @@ struct DaysView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .transition(.opacity)
                 } else {
-                    List {
+                    List(selection: $selectedDayIDs) {
                         ForEach(days) { day in
                             dayListItem(for: day)
+                            .tag(day.id)
                             .listRowBackground(Color.clear)
+                            .selectionDisabled(!day.isFinished)
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                 if day.isFinished {
                                     Button {
@@ -1800,7 +1802,9 @@ struct DaysView: View {
 
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(editMode == .active ? "Done" : "Select") {
-                        editMode = editMode == .active ? .inactive : .active
+                        withAnimation(reduceMotion ? nil : BermsMotion.content) {
+                            editMode = editMode == .active ? .inactive : .active
+                        }
                     }
                     .accessibilityLabel(editMode == .active ? "Done selecting days" : "Select days")
                 }
@@ -1866,39 +1870,11 @@ struct DaysView: View {
         editMode == .active && !selectedDays.isEmpty
     }
 
-    @ViewBuilder
     private func dayListItem(for day: RideDay) -> some View {
-        if editMode == .active {
-            Button {
-                toggleSelection(for: day)
-            } label: {
-                DayRow(day: day,
-                       isSelecting: true,
-                       isSelected: selectedDayIDs.contains(day.id))
-            }
-            .buttonStyle(.plain)
-            .disabled(!day.isFinished)
-        } else {
-            NavigationLink {
-                DayDetailView(day: day) { destination in
-                    navigationPath.append(destination)
-                }
-            } label: {
-                DayRow(day: day)
-            }
+        NavigationLink(value: day.id) {
+            DayRow(day: day)
         }
-    }
-
-    private func toggleSelection(for day: RideDay) {
-        guard day.isFinished else { return }
-
-        withAnimation(reduceMotion ? nil : .snappy) {
-            if selectedDayIDs.contains(day.id) {
-                selectedDayIDs.remove(day.id)
-            } else {
-                selectedDayIDs.insert(day.id)
-            }
-        }
+        .navigationLinkIndicatorVisibility(.hidden)
     }
 
     private func deleteSelectedDays() {
@@ -1926,64 +1902,35 @@ struct DaysView: View {
 }
 
 struct DayRow: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let day: RideDay
-    var isSelecting = false
-    var isSelected = false
 
     var body: some View {
         HStack(spacing: BermsSpacing.control) {
-            if isSelecting {
-                DaySelectionIndicator(isSelected: isSelected)
-                    .transition(.move(edge: .leading).combined(with: .opacity))
-            }
-
             VStack(alignment: .leading, spacing: 5) {
                 Text(day.displayName)
                     .font(.headline)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
                 Text(metadata)
                     .font(.subheadline)
                     .foregroundStyle(Color.bermsMuted)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
             }
-            Spacer()
+            .frame(maxWidth: .infinity, alignment: .leading)
             Text(BermsFormat.duration(day.duration))
                 .font(.subheadline.weight(.semibold))
                 .monospacedDigit()
                 .foregroundStyle(Color.bermsTrail)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
         }
-        .animation(reduceMotion ? nil : .snappy, value: isSelecting)
     }
 
     private var metadata: String {
         let stats = "\(day.segments.filter { $0.kind == .run }.count) runs  ·  \(BermsFormat.distance(day.distanceMeters))"
         guard day.hasCustomName else { return stats }
         return "\(day.startedAt.formatted(date: .abbreviated, time: .shortened))  ·  \(stats)"
-    }
-}
-
-private struct DaySelectionIndicator: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    let isSelected: Bool
-
-    var body: some View {
-        ZStack {
-            Circle()
-                .stroke(isSelected ? Color.bermsTrail : Color.bermsMuted,
-                        lineWidth: isSelected ? 0 : 2)
-
-            if isSelected {
-                Circle()
-                    .fill(Color.bermsTrail)
-                Image(systemName: "checkmark")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(Color.bermsOnAccent)
-                    .transition(.scale(scale: 0.45).combined(with: .opacity))
-            }
-        }
-        .frame(width: 24, height: 24)
-        .animation(reduceMotion ? nil : .snappy, value: isSelected)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(isSelected ? "Selected" : "Not selected")
     }
 }
 
