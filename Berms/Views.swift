@@ -1761,9 +1761,7 @@ struct DaysView: View {
                     List(selection: $selectedDayIDs) {
                         ForEach(days) { day in
                             dayListItem(for: day)
-                            .tag(day.id)
                             .listRowBackground(Color.clear)
-                            .selectionDisabled(!day.isFinished || editMode != .active)
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                 if day.isFinished {
                                     Button {
@@ -1870,11 +1868,20 @@ struct DaysView: View {
         editMode == .active && !selectedDays.isEmpty
     }
 
+    @ViewBuilder
     private func dayListItem(for day: RideDay) -> some View {
-        NavigationLink(value: day.id) {
+        if editMode == .active {
             DayRow(day: day)
+                .tag(day.id)
+                .selectionDisabled(!day.isFinished)
+        } else {
+            Button {
+                navigationPath.append(day.id)
+            } label: {
+                DayRow(day: day)
+            }
+            .buttonStyle(.plain)
         }
-        .navigationLinkIndicatorVisibility(.hidden)
     }
 
     private func deleteSelectedDays() {
