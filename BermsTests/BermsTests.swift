@@ -1168,6 +1168,39 @@ final class BermsTests: XCTestCase {
     }
 
     @MainActor
+    func testRideDayNameFallsBackAndPersists() throws {
+        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try ModelContainer(for: RideDay.self, configurations: configuration)
+        let context = container.mainContext
+        let startedAt = Date(timeIntervalSince1970: 1_000)
+        let day = RideDay(startedAt: startedAt)
+        let fallback = startedAt.formatted(date: .abbreviated, time: .shortened)
+
+        XCTAssertFalse(day.hasCustomName)
+        XCTAssertEqual(day.displayName, fallback)
+
+        day.setName("  Powder laps  ")
+        XCTAssertEqual(day.name, "Powder laps")
+        XCTAssertTrue(day.hasCustomName)
+        XCTAssertEqual(day.displayName, "Powder laps")
+
+        context.insert(day)
+        try context.save()
+
+        let saved = try XCTUnwrap(context.fetch(FetchDescriptor<RideDay>()).first)
+        XCTAssertEqual(saved.name, "Powder laps")
+        XCTAssertEqual(saved.displayName, "Powder laps")
+
+        saved.setName("  \\n  ")
+        try context.save()
+
+        let cleared = try XCTUnwrap(context.fetch(FetchDescriptor<RideDay>()).first)
+        XCTAssertNil(cleared.name)
+        XCTAssertFalse(cleared.hasCustomName)
+        XCTAssertEqual(cleared.displayName, fallback)
+    }
+
+    @MainActor
     func testRecorderLunchResumeAndFinishPersistSummary() throws {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
         let container = try ModelContainer(for: RideDay.self, RideSegment.self, configurations: configuration)

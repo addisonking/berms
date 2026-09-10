@@ -1905,9 +1905,9 @@ struct DayRow: View {
     var body: some View {
         HStack(spacing: BermsSpacing.control) {
             VStack(alignment: .leading, spacing: 5) {
-                Text(day.startedAt.formatted(date: .abbreviated, time: .shortened))
+                Text(day.displayName)
                     .font(.headline)
-                Text("\(day.segments.filter { $0.kind == .run }.count) runs  ·  \(BermsFormat.distance(day.distanceMeters))")
+                Text(metadata)
                     .font(.subheadline)
                     .foregroundStyle(Color.bermsMuted)
             }
@@ -1917,6 +1917,12 @@ struct DayRow: View {
                 .monospacedDigit()
                 .foregroundStyle(Color.bermsTrail)
         }
+    }
+
+    private var metadata: String {
+        let stats = "\(day.segments.filter { $0.kind == .run }.count) runs  ·  \(BermsFormat.distance(day.distanceMeters))"
+        guard day.hasCustomName else { return stats }
+        return "\(day.startedAt.formatted(date: .abbreviated, time: .shortened))  ·  \(stats)"
     }
 }
 
@@ -1932,6 +1938,8 @@ struct DayDetailView: View {
     @State private var mapPosition: MapCameraPosition = .automatic
     @State private var selectedSegmentID: UUID?
     @State private var showingFullScreenMap = false
+    @State private var showingNameEditor = false
+    @State private var nameDraft = ""
     @State private var showingDeleteConfirmation = false
 
     init(day: RideDay, onRunSelected: @escaping (RunMapDestination) -> Void = { _ in }) {
@@ -1986,7 +1994,7 @@ struct DayDetailView: View {
                 }
             }
         }
-        .navigationTitle(day.startedAt.formatted(date: .abbreviated, time: .omitted))
+        .navigationTitle(day.displayName)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.visible, for: .navigationBar)
         .toolbar {
@@ -1996,6 +2004,12 @@ struct DayDetailView: View {
                         ShareLink(item: debugURL) {
                             Label("Export diagnostics", systemImage: "arrow.up.doc")
                         }
+                    }
+                    Button {
+                        nameDraft = day.name ?? ""
+                        showingNameEditor = true
+                    } label: {
+                        Label(day.hasCustomName ? "Edit name" : "Add name", systemImage: "pencil")
                     }
                     Button(role: .destructive) {
                         showingDeleteConfirmation = true
@@ -2021,12 +2035,41 @@ struct DayDetailView: View {
         } message: {
             Text("This removes the day and all of its runs, lifts, and map data.")
         }
+        .sheet(isPresented: $showingNameEditor) {
+            NavigationStack {
+                Form {
+                    TextField("Session name", text: $nameDraft)
+                        .textInputAutocapitalization(.words)
+                }
+                .navigationTitle(day.hasCustomName ? "Edit name" : "Add name")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") {
+                            showingNameEditor = false
+                        }
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Save") {
+                            saveName()
+                        }
+                    }
+                }
+            }
+            .presentationDetents([.medium])
+        }
         .onChange(of: selectedSegmentID) { _, segmentID in
             guard let segmentID,
                   let number = runs.firstIndex(where: { $0.id == segmentID }) else { return }
             onRunSelected(RunMapDestination(dayID: day.id, runID: segmentID, number: number + 1))
             selectedSegmentID = nil
         }
+    }
+
+    private func saveName() {
+        day.setName(nameDraft)
+        try? modelContext.save()
+        showingNameEditor = false
     }
 
     private var summary: some View {

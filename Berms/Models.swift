@@ -4,6 +4,7 @@ import SwiftData
 @Model
 final class RideDay {
     @Attribute(.unique) var id: UUID
+    var name: String?
     var startedAt: Date
     var endedAt: Date?
     var distanceMeters: Double
@@ -23,6 +24,7 @@ final class RideDay {
 
     init(startedAt: Date = .now) {
         self.id = UUID()
+        self.name = nil
         self.startedAt = startedAt
         self.endedAt = nil
         self.distanceMeters = 0
@@ -39,6 +41,19 @@ final class RideDay {
     var isFinished: Bool { endedAt != nil }
 
     var isPaused: Bool { endedAt == nil && pausedAt != nil }
+
+    var displayName: String {
+        normalizedName ?? startedAt.formatted(date: .abbreviated, time: .shortened)
+    }
+
+    var hasCustomName: Bool {
+        normalizedName != nil
+    }
+
+    func setName(_ value: String) {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        name = trimmed.isEmpty ? nil : trimmed
+    }
 
     var duration: TimeInterval {
         duration(at: .now)
@@ -82,6 +97,12 @@ final class RideDay {
         activeSeconds = runs.reduce(0) { $0 + $1.duration }
         liftSeconds = lifts.reduce(0) { $0 + $1.duration }
         maximumSpeedMetersPerSecond = runs.map(\.maximumSpeedMetersPerSecond).max() ?? 0
+    }
+
+    private var normalizedName: String? {
+        guard let name else { return nil }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 }
 
