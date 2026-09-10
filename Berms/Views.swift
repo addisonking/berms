@@ -467,7 +467,7 @@ struct TrackView: View {
                         Image(systemName: "mountain.2.fill")
                             .font(.system(size: 34, weight: .semibold))
                             .foregroundStyle(Color.bermsTrail)
-                        Text("No activity yet")
+                        Text("Ready to track")
                             .font(.title2.weight(.semibold))
                         Text("Track runs, lifts, and routes.")
                             .font(.subheadline)
