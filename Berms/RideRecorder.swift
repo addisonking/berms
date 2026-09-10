@@ -202,6 +202,7 @@ final class RideRecorder: ObservableObject {
     let motionService = MotionService()
 
     private let context: ModelContext
+    private let watchStateSink: WatchRideStateSink?
     private let detector = ParkLapDetector()
     private let jumpDetector: JumpDetector
     private var normalizer = TrackSampleNormalizer()
@@ -219,12 +220,14 @@ final class RideRecorder: ObservableObject {
     private var pendingRecoveryDay: RideDay?
     private var automaticallyRestoredOnLaunch = false
 
-    init(context: ModelContext? = nil) {
+    init(context: ModelContext? = nil,
+         watchStateSink: WatchRideStateSink? = WatchConnectivityCoordinator.shared) {
         let storedSensitivity = JumpSensitivity(rawValue: UserDefaults.standard.string(forKey: "berms.jumpSensitivity") ?? "")
             ?? .standard
         jumpSensitivity = storedSensitivity
         jumpDetector = JumpDetector(configuration: storedSensitivity.configuration)
         self.context = context ?? PersistenceController.shared.container.mainContext
+        self.watchStateSink = watchStateSink
         if let lifts = try? self.context.fetch(FetchDescriptor<LearnedLift>()) {
             detector.setLearnedLifts(lifts.map(\.profile))
         }
@@ -257,6 +260,24 @@ final class RideRecorder: ObservableObject {
     }
 
     var isRecording: Bool { activeDay != nil }
+
+    var currentWatchRideState: WatchRideState {
+        guard let day = activeDay else { return .idle }
+        let currentRunPoints = phase == .run ? activePoints.map(\.routePoint) : []
+        let liveDistance = day.distanceMeters + RouteMetrics.distance(of: currentRunPoints)
+        let liveDescent = day.descentMeters + RouteMetrics.vertical(of: currentRunPoints, kind: .run)
+        return WatchRideState(
+            status: day.isPaused ? .paused : .recording,
+            rideID: day.id.uuidString,
+            phase: phase.rawValue,
+            startedAt: day.startedAt,
+            elapsedSeconds: day.duration,
+            distanceMeters: liveDistance,
+            descentMeters: liveDescent,
+            speedMetersPerSecond: currentSpeed,
+            updatedAt: .now
+        )
+    }
 
     var isPaused: Bool { activeDay?.isPaused == true }
 
@@ -339,6 +360,7 @@ final class RideRecorder: ObservableObject {
             UserDefaults.standard.set(true, forKey: "berms.recordingActive")
             BermsLiveActivityCoordinator.shared.start(rideID: day.id, startedAt: day.startedAt)
             startSensors()
+            updateLiveActivity(force: true)
             return true
         } catch {
             context.delete(day)
@@ -434,6 +456,7 @@ final class RideRecorder: ObservableObject {
             day.endedAt = nil
             day.beginPause(at: stopDate)
             resetTrackingState(clearLastSample: false)
+            updateLiveActivity(force: true)
             return nil
         }
         diagnosticLogger?.close()
@@ -442,6 +465,7 @@ final class RideRecorder: ObservableObject {
 
         resetTrackingState(clearLastSample: true)
         activeDay = nil
+        watchStateSink?.publish(.idle, force: true)
         UserDefaults.standard.set(false, forKey: "berms.recordingActive")
         return day
     }
@@ -636,6 +660,7 @@ final class RideRecorder: ObservableObject {
         diagnosticLogger?.close()
         diagnosticLogger = nil
         activeDay = nil
+        watchStateSink?.publish(.idle, force: true)
         resetTrackingState(clearLastSample: true)
         context.delete(day)
         _ = saveContext(detail: "discard_unfinished_session")
@@ -961,6 +986,7 @@ final class RideRecorder: ObservableObject {
             speed: currentSpeed,
             force: force
         )
+        watchStateSink?.publish(currentWatchRideState, force: force)
     }
 
     private func handleJumpEvent(_ event: JumpDetectorEvent) {
