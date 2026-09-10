@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
     <key>NSHealthShareUsageDescription</key>
-    <string>Berms launches the companion on Apple Watch to display live heart rate and active energy during your ride.</string>
+    <string>Berms uses Apple Watch health data to display live heart rate and active energy during your ride.</string>
     <key>NSHealthUpdateUsageDescription</key>
-    <string>Berms launches a live Apple Watch workout session without saving a separate workout.</string>
+    <string>Berms starts an Apple Watch workout session for live ride tracking without saving a separate workout.</string>
 	<key>CFBundleDisplayName</key>
 	<string>Berms</string>
 	<key>CFBundleName</key>
@@ -40,11 +40,11 @@
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Location records runs and lifts.</string>
+    <string>Berms uses your location to record runs and lifts while the app is open.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>Location records runs and lifts while locked.</string>
+    <string>Berms uses your location to keep recording runs and lifts while your iPhone is locked.</string>
 	<key>NSMotionUsageDescription</key>
-	<string>Motion and barometer data classify runs and lifts.</string>
+    <string>Berms uses motion and barometer data to distinguish runs, lifts, and jumps.</string>
 	<key>UIRequiredDeviceCapabilities</key>
 	<array>
 		<string>gps</string>
