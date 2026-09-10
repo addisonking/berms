@@ -35,11 +35,7 @@
 	<array>
 		<string>location</string>
 	</array>
-	<key>UIFileSharingEnabled</key>
-	<true/>
-	<key>LSSupportsOpeningDocumentsInPlace</key>
-	<true/>
-	<key>NSLocationWhenInUseUsageDescription</key>
+    <key>NSLocationWhenInUseUsageDescription</key>
     <string>Berms uses your location to record runs and lifts while the app is open.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
     <string>Berms uses your location to keep recording runs and lifts while your iPhone is locked.</string>
