@@ -858,7 +858,6 @@ struct TrailLibraryView: View {
     @EnvironmentObject private var mapLayerPreferences: MapLayerPreferences
     @EnvironmentObject private var trailCatalogSelection: TrailCatalogSelection
     @State private var mapPosition: MapCameraPosition = .automatic
-    @State private var mapCameraDistance: CLLocationDistance = .greatestFiniteMagnitude
     @State private var searchText = ""
     @State private var selectedDifficulty: TrailDifficulty?
     @State private var selectedTrailID: UUID?
@@ -976,9 +975,6 @@ struct TrailLibraryView: View {
                     }
                     .mapStyle(.bermsMonochrome)
                     .mapControls { MapCompass() }
-                    .onMapCameraChange(frequency: .onEnd) { context in
-                        mapCameraDistance = context.camera.distance
-                    }
 
                 }
 
@@ -1018,13 +1014,8 @@ struct TrailLibraryView: View {
     }
 
     private var libraryLabelTrails: [Trail] {
-        guard let initialDistance = mapConfiguration?.initialDistance,
-              initialDistance.isFinite,
-              mapCameraDistance.isFinite,
-              mapCameraDistance < initialDistance * 0.85 else {
-            return Array(visibleTrails.prefix(12))
-        }
-        return visibleTrails
+        guard let selectedTrailID else { return [] }
+        return visibleTrails.filter { $0.id == selectedTrailID }
     }
 
     private func difficultyFilter(_ title: String, difficulty: TrailDifficulty?) -> some View {
@@ -1045,7 +1036,6 @@ struct TrailLibraryView: View {
 
     private func recenterMap() {
         mapPosition = mapConfiguration?.initialPosition ?? .automatic
-        mapCameraDistance = mapConfiguration?.initialDistance ?? .greatestFiniteMagnitude
     }
 }
 
