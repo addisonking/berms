@@ -642,6 +642,27 @@ final class BermsTests: XCTestCase {
         XCTAssertFalse(attributes.rideID.isEmpty)
     }
 
+    func testWatchRideStateAndCommandsRoundTrip() throws {
+        let state = WatchRideState(
+            status: .recording,
+            rideID: "ride-1",
+            phase: "run",
+            startedAt: Date(timeIntervalSince1970: 100),
+            elapsedSeconds: 42,
+            distanceMeters: 1_250,
+            descentMeters: 210,
+            speedMetersPerSecond: 12,
+            updatedAt: Date(timeIntervalSince1970: 142)
+        )
+
+        XCTAssertEqual(try WatchRideCodec.decode(WatchRideState.self,
+                                                 from: WatchRideCodec.encode(state)), state)
+        XCTAssertEqual(try WatchRideCodec.decode(WatchRideCommand.self,
+                                                 from: WatchRideCodec.encode(WatchRideCommand.pause)), .pause)
+        XCTAssertTrue(state.isStale(at: Date(timeIntervalSince1970: 148)))
+        XCTAssertFalse(state.isStale(at: Date(timeIntervalSince1970: 146)))
+    }
+
     @MainActor
     func testManualLaunchDiscardsUnfinishedSessionAndClearsRecordingState() throws {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)

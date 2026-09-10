@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>WKBackgroundModes</key>
+    <array><string>workout-processing</string></array>
+	<key>CFBundleDisplayName</key>
+	<string>Berms</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleName</key>
+	<string>BermsWatchExtension</string>
+	<key>CFBundlePackageType</key>
+	<string>XPC!</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0</string>
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>NSHealthShareUsageDescription</key>
+	<string>Berms uses heart rate and active energy to show live ride stats on Apple Watch.</string>
+	<key>NSHealthUpdateUsageDescription</key>
+	<string>Berms uses a live workout session for ride metrics and does not save a separate workout.</string>
+	<key>NSExtension</key>
+	<dict>
+		<key>NSExtensionAttributes</key>
+		<dict>
+			<key>WKAppBundleIdentifier</key>
+			<string>com.addis.berms.watchkitapp</string>
+		</dict>
+		<key>NSExtensionPointIdentifier</key>
+		<string>com.apple.watchkit</string>
+	</dict>
+</dict>
+</plist>

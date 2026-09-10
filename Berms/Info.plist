@@ -2,6 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <key>NSHealthShareUsageDescription</key>
+    <string>Berms launches the companion on Apple Watch to display live heart rate and active energy during your ride.</string>
+    <key>NSHealthUpdateUsageDescription</key>
+    <string>Berms launches a live Apple Watch workout session without saving a separate workout.</string>
 	<key>CFBundleDisplayName</key>
 	<string>Berms</string>
 	<key>CFBundleName</key>
