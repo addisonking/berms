@@ -1763,7 +1763,7 @@ struct DaysView: View {
                             dayListItem(for: day)
                             .tag(day.id)
                             .listRowBackground(Color.clear)
-                            .selectionDisabled(!day.isFinished)
+                            .selectionDisabled(!day.isFinished || editMode != .active)
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                 if day.isFinished {
                                     Button {
