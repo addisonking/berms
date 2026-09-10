@@ -1833,38 +1833,44 @@ struct DaysView: View {
     }
 
     private var daysHeader: some View {
-        HStack(spacing: BermsSpacing.compact) {
+        HStack(alignment: .center, spacing: BermsSpacing.control) {
             Text("Days")
                 .font(.largeTitle.bold())
                 .accessibilityAddTraits(.isHeader)
 
-            Spacer()
+            Spacer(minLength: BermsSpacing.control)
 
-            if editMode == .active && !selectedDays.isEmpty {
-                Button(role: .destructive) {
-                    showingBulkDeleteConfirmation = true
-                } label: {
-                    Image(systemName: "trash")
-                        .frame(minWidth: BermsSpacing.target, minHeight: BermsSpacing.target)
-                }
-                .buttonStyle(.glass)
-                .accessibilityLabel("Delete \(selectedDays.count) selected days")
-            }
-
-            Button {
-                editMode = editMode == .active ? .inactive : .active
-            } label: {
-                Group {
-                    if editMode == .active {
-                        Image(systemName: "checkmark")
-                    } else {
-                        Text("Edit")
+            GlassEffectContainer(spacing: 0) {
+                HStack(spacing: BermsSpacing.control) {
+                    if editMode == .active && !selectedDays.isEmpty {
+                        Button(role: .destructive) {
+                            showingBulkDeleteConfirmation = true
+                        } label: {
+                            Image(systemName: "trash")
+                                .font(.system(size: 16, weight: .medium))
+                                .frame(minWidth: BermsSpacing.target, minHeight: BermsSpacing.target)
+                        }
+                        .buttonStyle(.glass)
+                        .buttonBorderShape(.circle)
+                        .controlSize(.regular)
+                        .tint(.red)
+                        .accessibilityLabel("Delete \(selectedDays.count) selected days")
+                        .transition(.scale(scale: 0.8).combined(with: .opacity))
                     }
+
+                    Button {
+                        editMode = editMode == .active ? .inactive : .active
+                    } label: {
+                        Text(editMode == .active ? "Done" : "Edit")
+                            .fontWeight(.semibold)
+                    }
+                    .buttonStyle(.glass)
+                    .buttonBorderShape(.capsule)
+                    .controlSize(.large)
+                    .accessibilityLabel(editMode == .active ? "Done editing days" : "Edit days")
                 }
-                .frame(minWidth: BermsSpacing.target, minHeight: BermsSpacing.target)
             }
-            .buttonStyle(.glass)
-            .accessibilityLabel(editMode == .active ? "Done editing days" : "Edit days")
+            .animation(reduceMotion ? nil : BermsMotion.content, value: selectedDays.map(\.id))
         }
         .padding(.horizontal, BermsSpacing.content)
         .padding(.vertical, BermsSpacing.compact)
