@@ -5,6 +5,7 @@ import SwiftData
 final class RideDay {
     @Attribute(.unique) var id: UUID
     var name: String?
+    var notes: String?
     var startedAt: Date
     var endedAt: Date?
     var distanceMeters: Double
@@ -25,6 +26,7 @@ final class RideDay {
     init(startedAt: Date = .now) {
         self.id = UUID()
         self.name = nil
+        self.notes = nil
         self.startedAt = startedAt
         self.endedAt = nil
         self.distanceMeters = 0
@@ -53,6 +55,15 @@ final class RideDay {
     func setName(_ value: String) {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         name = trimmed.isEmpty ? nil : trimmed
+    }
+
+    var hasNotes: Bool {
+        normalizedNotes != nil
+    }
+
+    func setNotes(_ value: String) {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        notes = trimmed.isEmpty ? nil : trimmed
     }
 
     var duration: TimeInterval {
@@ -102,6 +113,12 @@ final class RideDay {
     private var normalizedName: String? {
         guard let name else { return nil }
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private var normalizedNotes: String? {
+        guard let notes else { return nil }
+        let trimmed = notes.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
     }
 }

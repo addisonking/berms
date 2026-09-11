@@ -1891,6 +1891,7 @@ struct DayDetailView: View {
     @State private var showingFullScreenMap = false
     @State private var showingNameEditor = false
     @State private var nameDraft = ""
+    @State private var notesDraft = ""
     @State private var showingDeleteConfirmation = false
 
     init(day: RideDay, onRunSelected: @escaping (RunMapDestination) -> Void = { _ in }) {
@@ -1943,6 +1944,12 @@ struct DayDetailView: View {
                         }
                     }
                 }
+            }
+            Section("Journal") {
+                TextEditor(text: $notesDraft)
+                    .frame(minHeight: 140)
+                    .textInputAutocapitalization(.sentences)
+                    .accessibilityLabel("Session journal")
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -2018,6 +2025,13 @@ struct DayDetailView: View {
                   let number = runs.firstIndex(where: { $0.id == segmentID }) else { return }
             onRunSelected(RunMapDestination(dayID: day.id, runID: segmentID, number: number + 1))
             selectedSegmentID = nil
+        }
+        .onAppear {
+            notesDraft = day.notes ?? ""
+        }
+        .onChange(of: notesDraft) { _, value in
+            day.setNotes(value)
+            try? modelContext.save()
         }
     }
 

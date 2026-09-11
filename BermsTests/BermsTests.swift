@@ -1183,10 +1183,14 @@ final class BermsTests: XCTestCase {
 
         XCTAssertFalse(day.hasCustomName)
         XCTAssertEqual(day.displayName, fallback)
+        XCTAssertFalse(day.hasNotes)
 
         day.setName("  Powder laps  ")
+        day.setNotes("  Fresh snow  ")
         XCTAssertEqual(day.name, "Powder laps")
+        XCTAssertEqual(day.notes, "Fresh snow")
         XCTAssertTrue(day.hasCustomName)
+        XCTAssertTrue(day.hasNotes)
         XCTAssertEqual(day.displayName, "Powder laps")
 
         context.insert(day)
@@ -1194,14 +1198,18 @@ final class BermsTests: XCTestCase {
 
         let saved = try XCTUnwrap(context.fetch(FetchDescriptor<RideDay>()).first)
         XCTAssertEqual(saved.name, "Powder laps")
+        XCTAssertEqual(saved.notes, "Fresh snow")
         XCTAssertEqual(saved.displayName, "Powder laps")
 
-        saved.setName("  \\n  ")
+        saved.setName("  \n  ")
+        saved.setNotes("  \n  ")
         try context.save()
 
         let cleared = try XCTUnwrap(context.fetch(FetchDescriptor<RideDay>()).first)
         XCTAssertNil(cleared.name)
+        XCTAssertNil(cleared.notes)
         XCTAssertFalse(cleared.hasCustomName)
+        XCTAssertFalse(cleared.hasNotes)
         XCTAssertEqual(cleared.displayName, fallback)
     }
 
