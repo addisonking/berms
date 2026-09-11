@@ -400,6 +400,7 @@ struct TrackView: View {
             }
             .navigationTitle(recorder.isRecording ? "" : "Berms")
             .navigationBarTitleDisplayMode(recorder.isRecording ? .inline : .large)
+            .toolbarTitleDisplayMode(recorder.isRecording ? .inline : .large)
             .navigationSubtitle(recorder.isRecording
                                 ? ""
                                 : Date.now.formatted(.dateTime.weekday(.wide).month(.wide).day()))
