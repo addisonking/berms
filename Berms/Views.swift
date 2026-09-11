@@ -1750,22 +1750,7 @@ struct DaysView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .transition(.opacity)
                 } else {
-                    List(selection: $selectedDayIDs) {
-                        ForEach(days) { day in
-                            dayListItem(for: day)
-                            .listRowBackground(Color.clear)
-                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                if day.isFinished {
-                                    Button {
-                                        dayToDelete = day
-                                    } label: {
-                                        Label("Delete", systemImage: "trash")
-                                    }
-                                    .tint(.red)
-                                }
-                            }
-                        }
-                    }
+                    daysList
                     .environment(\.editMode, $editMode)
                     .scrollContentBackground(.hidden)
                     .animation(reduceMotion ? nil : BermsMotion.content, value: days.map(\.id))
@@ -1861,18 +1846,46 @@ struct DaysView: View {
     }
 
     @ViewBuilder
-    private func dayListItem(for day: RideDay) -> some View {
+    private var daysList: some View {
         if editMode == .active {
-            DayRow(day: day)
-                .tag(day.id)
-                .selectionDisabled(!day.isFinished)
-        } else {
-            Button {
-                navigationPath.append(day.id)
-            } label: {
-                DayRow(day: day)
+            List(selection: $selectedDayIDs) {
+                ForEach(days) { day in
+                    DayRow(day: day)
+                        .tag(day.id)
+                        .listRowBackground(Color.clear)
+                        .selectionDisabled(!day.isFinished)
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            dayDeleteAction(for: day)
+                        }
+                }
             }
-            .buttonStyle(.plain)
+        } else {
+            List {
+                ForEach(days) { day in
+                    Button {
+                        navigationPath.append(day.id)
+                    } label: {
+                        DayRow(day: day)
+                    }
+                    .buttonStyle(.plain)
+                    .listRowBackground(Color.clear)
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        dayDeleteAction(for: day)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func dayDeleteAction(for day: RideDay) -> some View {
+        if day.isFinished {
+            Button {
+                dayToDelete = day
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+            .tint(.red)
         }
     }
 
@@ -1924,6 +1937,8 @@ struct DayRow: View {
                 .lineLimit(1)
                 .fixedSize(horizontal: true, vertical: false)
         }
+        .frame(maxWidth: .infinity, minHeight: BermsSpacing.target, alignment: .leading)
+        .contentShape(Rectangle())
     }
 
     private var metadata: String {
