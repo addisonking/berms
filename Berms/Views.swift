@@ -1732,19 +1732,7 @@ struct DaysView: View {
             ZStack {
                 BermsBackground()
                 if finishedDays.isEmpty {
-                    VStack(spacing: BermsSpacing.section) {
-                        ContentUnavailableView(
-                            "No days",
-                            systemImage: "mountain.2",
-                            description: Text("Start tracking to build a day of runs, lifts, and jumps.")
-                        )
-                        Button("Track a ride", action: onStartTracking)
-                            .buttonStyle(.borderedProminent)
-                            .tint(.bermsTrail)
-                            .foregroundStyle(Color.bermsOnAccent)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .transition(.opacity)
+                    emptyDaysView
                 } else {
                     daysList
                     .scrollContentBackground(.hidden)
@@ -1789,6 +1777,30 @@ struct DaysView: View {
                 dayToDelete = nil
             }
         }
+    }
+
+    private var emptyDaysView: some View {
+        VStack(spacing: BermsSpacing.section) {
+            VStack(spacing: BermsSpacing.compact) {
+                Image(systemName: "mountain.2.fill")
+                    .font(.system(size: 34, weight: .semibold))
+                    .foregroundStyle(Color.bermsTrail)
+                Text("No days yet")
+                    .font(.title2.weight(.semibold))
+                Text("Finish a ride and it will appear here.")
+                    .font(.subheadline)
+                    .foregroundStyle(Color.bermsMuted)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 300)
+            }
+
+            Button("Start tracking", action: onStartTracking)
+                .buttonStyle(.borderedProminent)
+                .tint(.bermsTrail)
+                .controlSize(.large)
+        }
+        .padding(.horizontal, BermsSpacing.content)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
     }
 
     private var finishedDays: [RideDay] {
