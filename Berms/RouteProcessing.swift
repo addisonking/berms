@@ -191,6 +191,7 @@ struct TrailMatch: Sendable {
 
 struct TrailMatchSection: Identifiable, Sendable {
     let trailID: UUID
+    let routeIndex: Int
     let startIndex: Int
     let endIndex: Int
     let trailStartProgress: Double
@@ -199,7 +200,7 @@ struct TrailMatchSection: Identifiable, Sendable {
     let averageDistance: Double
 
     var id: String {
-        "\(trailID.uuidString)-\(startIndex)-\(endIndex)-"
+        "\(trailID.uuidString)-\(routeIndex)-\(startIndex)-\(endIndex)-"
             + "\(trailStartProgress)-\(trailEndProgress)"
     }
 
@@ -393,16 +394,18 @@ enum SessionDetailPresentationBuilder {
 
             overlays.append(contentsOf: result.sections.compactMap { section in
                 guard let candidate = candidatesByID[section.trailID],
-                      candidate.primaryRoute.count > 1 else {
+                      candidate.routes.indices.contains(section.routeIndex) else {
                     return nil
                 }
+                let matchedRoute = candidate.routes[section.routeIndex]
+                guard matchedRoute.count > 1 else { return nil }
                 return SessionDetailTrailOverlay(
                     id: "\(run.id.uuidString)-\(section.id)",
                     segmentID: run.id,
                     trailID: candidate.id,
                     name: candidate.name,
                     difficulty: candidate.difficulty,
-                    points: TrailRouteSlice.slice(candidate.primaryRoute,
+                    points: TrailRouteSlice.slice(matchedRoute,
                                                   progress: section.trailProgress),
                     score: section.score
                 )
@@ -457,6 +460,7 @@ struct TrailRouteMatcher: Sendable {
     var minimumWinningMargin: Double = 0.08
 
     private struct ScoredSection: Sendable {
+        let routeIndex: Int
         let range: Range<Int>
         let trailStartProgress: Double
         let trailEndProgress: Double
@@ -491,11 +495,14 @@ struct TrailRouteMatcher: Sendable {
 
         let scoredCandidates = candidates.compactMap { candidate -> (UUID, ScoredSection)? in
             let best = candidate.routes
-                .filter { $0.count >= 2 }
-                .flatMap { candidateRoute in
+                .enumerated()
+                .filter { $0.element.count >= 2 }
+                .flatMap { routeIndex, candidateRoute in
                     [
-                        score(route: route, against: candidateRoute, isReversed: false),
-                        score(route: route, against: Array(candidateRoute.reversed()), isReversed: true)
+                        score(route: route, against: candidateRoute,
+                              routeIndex: routeIndex, isReversed: false),
+                        score(route: route, against: Array(candidateRoute.reversed()),
+                              routeIndex: routeIndex, isReversed: true)
                     ].compactMap { $0 }
                 }
                 .max { $0.score < $1.score }
@@ -518,6 +525,7 @@ struct TrailRouteMatcher: Sendable {
         let candidates = scoredCandidates.compactMap { trailID, best -> TrailMatchSection? in
             guard best.score >= minimumScore else { return nil }
             return TrailMatchSection(trailID: trailID,
+                                     routeIndex: best.routeIndex,
                                      startIndex: best.range.lowerBound,
                                      endIndex: best.range.upperBound - 1,
                                      trailStartProgress: best.trailStartProgress,
@@ -557,6 +565,7 @@ struct TrailRouteMatcher: Sendable {
     private func score(
         route: [RoutePoint],
         against trail: [RoutePoint],
+        routeIndex: Int,
         isReversed: Bool
     ) -> ScoredSection? {
         let cumulativeTrailDistances = cumulativeDistances(for: trail)
@@ -595,6 +604,7 @@ struct TrailRouteMatcher: Sendable {
         let canonicalStart = isReversed ? 1 - firstProgress : firstProgress
         let canonicalEnd = isReversed ? 1 - lastProgress : lastProgress
         return ScoredSection(
+            routeIndex: routeIndex,
             range: range,
             trailStartProgress: canonicalStart,
             trailEndProgress: canonicalEnd,

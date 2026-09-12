@@ -94,14 +94,6 @@ private final class SessionDetailPresentationCache: ObservableObject {
         runEntries[key]
     }
 
-    func latestRunEntry(dayID: UUID, segmentID: UUID, selectionID: String) -> RunEntry? {
-        let prefix = "\(dayID.uuidString)|\(segmentID.uuidString)|\(selectionID)|"
-        guard let key = runOrder.reversed().first(where: { $0.hasPrefix(prefix) }) else {
-            return nil
-        }
-        return runEntries[key]
-    }
-
     func storeRun(_ entry: RunEntry, for key: String) {
         runEntries[key] = entry
         runOrder.removeAll { $0 == key }
@@ -116,11 +108,7 @@ private final class SessionDetailPresentationCache: ObservableObject {
 @MainActor
 private enum SessionDetailPresentationPreheater {
     static func cacheKey(dayID: UUID, selectionID: String, trails: [Trail]) -> String {
-        let trailRevision = trails
-            .map { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" }
-            .sorted()
-            .joined(separator: "|")
-        return "\(dayID.uuidString)|\(selectionID)|\(trailRevision)"
+        "\(dayID.uuidString)|\(selectionID)|\(trailRevision(for: trails))"
     }
 
     static func runCacheKey(
@@ -211,7 +199,7 @@ private enum SessionDetailPresentationPreheater {
         }
     }
 
-    private static func trailRevision(for trails: [Trail]) -> String {
+    static func trailRevision(for trails: [Trail]) -> String {
         trails
             .map { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" }
             .sorted()
@@ -289,7 +277,9 @@ private func trailOverlays(for segment: RideSegment, trails: [Trail]) -> [TrailM
     guard segment.kind == .run else { return [] }
     return TrailRouteMatchCache.shared.matchingSections(for: segment, trails: trails).compactMap { section in
         guard let trail = trails.first(where: { $0.id == section.trailID }) else { return nil }
-        let points = TrailRouteSlice.slice(trail.points, progress: section.trailProgress)
+        let routes = [trail.points] + trail.passes.map(\.points)
+        guard routes.indices.contains(section.routeIndex) else { return nil }
+        let points = TrailRouteSlice.slice(routes[section.routeIndex], progress: section.trailProgress)
         guard points.count > 1 else { return nil }
         return TrailMapOverlay(id: section.id, trailID: trail.id, name: trail.name,
                                difficulty: trail.difficulty, points: points, score: section.score)
@@ -1882,6 +1872,7 @@ struct DaysView: View {
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var trailCatalogSelection: TrailCatalogSelection
     @Query(sort: \RideDay.startedAt, order: .reverse) private var days: [RideDay]
+    @Query(sort: \Trail.updatedAt, order: .reverse) private var trails: [Trail]
     @Binding private var pendingDayID: UUID?
     let onStartTracking: () -> Void
     @State private var dayToDelete: RideDay?
@@ -1919,11 +1910,13 @@ struct DaysView: View {
                    let run = day.segments.first(where: {
                        $0.id == destination.runID && $0.kind == .run
                    }) {
-                    let preheatedRun = SessionDetailPresentationCache.shared.latestRunEntry(
+                    let preheatedRunKey = SessionDetailPresentationPreheater.runCacheKey(
                         dayID: day.id,
                         segmentID: run.id,
-                        selectionID: trailCatalogSelection.selectionID
+                        selectionID: trailCatalogSelection.selectionID,
+                        trails: trails
                     )
+                    let preheatedRun = SessionDetailPresentationCache.shared.runEntry(for: preheatedRunKey)
                     RunMapView(number: destination.number,
                                segment: run,
                                preparedBase: preheatedRun?.base,
@@ -1992,7 +1985,8 @@ struct DaysView: View {
                 .max(by: { $0.startedAt < $1.startedAt }) else {
             return "none"
         }
-        return "\(day.id.uuidString)|\(latestRun.id.uuidString)|\(trailCatalogSelection.selectionID)"
+        return "\(day.id.uuidString)|\(latestRun.id.uuidString)|"
+            + "\(trailCatalogSelection.selectionID)|\(SessionDetailPresentationPreheater.trailRevision(for: trails))"
     }
 
     @MainActor
@@ -2005,7 +1999,6 @@ struct DaysView: View {
         try? await Task.sleep(nanoseconds: 100_000_000)
         guard !Task.isCancelled else { return }
 
-        let trails = (try? modelContext.fetch(FetchDescriptor<Trail>())) ?? []
         let cacheKey = SessionDetailPresentationPreheater.runCacheKey(
             dayID: day.id,
             segmentID: latestRun.id,
@@ -2114,6 +2107,7 @@ struct DayDetailView: View {
     @EnvironmentObject private var mapLayerPreferences: MapLayerPreferences
     @EnvironmentObject private var trailCatalogSelection: TrailCatalogSelection
     @ObservedObject private var presentationCache = SessionDetailPresentationCache.shared
+    @Query(sort: \Trail.updatedAt, order: .reverse) private var trails: [Trail]
     @State private var mapPosition: MapCameraPosition = .automatic
     @State private var selectedSegmentID: UUID?
     @State private var showingFullScreenMap = false
@@ -2134,7 +2128,8 @@ struct DayDetailView: View {
     }
 
     private var preparationTaskKey: String {
-        "\(day.id.uuidString)|\(trailCatalogSelection.selectionID)"
+        "\(day.id.uuidString)|\(trailCatalogSelection.selectionID)|"
+            + SessionDetailPresentationPreheater.trailRevision(for: trails)
     }
 
     private func preparationCacheKey(for trails: [Trail]) -> String {
@@ -2146,11 +2141,13 @@ struct DayDetailView: View {
     }
 
     private func preheatedRun(for segment: RideSegment) -> SessionDetailPresentationCache.RunEntry? {
-        presentationCache.latestRunEntry(
+        let key = SessionDetailPresentationPreheater.runCacheKey(
             dayID: day.id,
             segmentID: segment.id,
-            selectionID: trailCatalogSelection.selectionID
+            selectionID: trailCatalogSelection.selectionID,
+            trails: trails
         )
+        return presentationCache.runEntry(for: key)
     }
 
     var body: some View {
@@ -2637,6 +2634,13 @@ struct FullScreenSummaryMap: View {
         !matchedTrailOverlays.isEmpty
     }
 
+    private var liftPathsAvailable: Bool {
+        if let preparedBase {
+            return preparedBase.mapSegments.contains { $0.kind == .lift }
+        }
+        return segments.contains { $0.kind == .lift }
+    }
+
     var body: some View {
         NavigationStack {
             ZStack(alignment: .topTrailing) {
@@ -2756,7 +2760,7 @@ struct FullScreenSummaryMap: View {
                                   actualTrailsAvailable: hasMatchedTrailOverlays,
                                   showsJumpsControl: !jumpMarkers.isEmpty,
                                   showsLiftPathsControl: focusedSegmentID == nil,
-                                  liftPathsAvailable: segments.contains { $0.kind == .lift })
+                                  liftPathsAvailable: liftPathsAvailable)
                     Button {
                         withAnimation(reduceMotion ? nil : BermsMotion.recenter) { recenterMap() }
                     } label: {

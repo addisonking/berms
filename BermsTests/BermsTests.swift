@@ -264,6 +264,13 @@ final class BermsTests: XCTestCase {
                        timestamp: base.addingTimeInterval(Double(index)))
         }
         let routeData = try RouteCodec.encode(route)
+        let offsetRoute = route.map { point in
+            RoutePoint(latitude: point.latitude + 0.002,
+                       longitude: point.longitude,
+                       altitude: point.altitude,
+                       speed: point.speed,
+                       timestamp: point.timestamp)
+        }
         let input = SessionDetailPreparationInput(
             segments: [SessionDetailSegmentInput(
                 id: segmentID,
@@ -281,8 +288,8 @@ final class BermsTests: XCTestCase {
                 name: "Test Trail",
                 difficulty: .blue,
                 resort: TrailCatalogRegistry.defaultCatalog.resortName,
-                averagedRouteData: routeData,
-                passRouteData: []
+                averagedRouteData: try RouteCodec.encode(offsetRoute),
+                passRouteData: [routeData]
             )],
             manualCatalogID: nil
         )
@@ -298,6 +305,9 @@ final class BermsTests: XCTestCase {
         XCTAssertEqual(details.overlays.first?.trailID, trailID)
         XCTAssertEqual(details.overlays.first?.name, "Test Trail")
         XCTAssertGreaterThan(details.overlays.first?.points.count ?? 0, 1)
+        XCTAssertEqual(details.overlays.first?.points.first?.latitude ?? .nan,
+                       route.first?.latitude ?? .nan,
+                       accuracy: 0.0001)
     }
 
     func testSessionDetailBaseLimitsOverviewJumpMarkersDeterministically() {
@@ -566,8 +576,10 @@ final class BermsTests: XCTestCase {
         trail.recalculateAverage()
 
         let match = TrailRouteMatcher().bestMatch(for: route, trails: [trail])
+        let section = TrailRouteMatcher().matchingSections(for: route, trails: [trail]).first
 
         XCTAssertEqual(match?.trailID, trail.id)
+        XCTAssertEqual(section?.routeIndex, 1)
     }
 
     func testTrailMatcherReturnsMultipleContiguousTrailSections() {
