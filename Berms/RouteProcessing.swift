@@ -373,7 +373,11 @@ enum SessionDetailPresentationBuilder {
         base: SessionDetailBase,
         input: SessionDetailPreparationInput
     ) throws -> SessionDetailTrailDetails {
-        let candidatesByResort = Dictionary(grouping: input.trails, by: \.resort).mapValues { trails in
+        let activeResorts = Set(base.runs.map(\.activeResort))
+        let candidatesByResort = Dictionary(
+            grouping: input.trails.filter { activeResorts.contains($0.resort) },
+            by: \.resort
+        ).mapValues { trails in
             trails.compactMap(makeCandidate(for:))
         }
         let candidatesByID = Dictionary(
@@ -418,7 +422,7 @@ enum SessionDetailPresentationBuilder {
         )
     }
 
-    private static func activeResort(for firstPoint: RoutePoint?, manualCatalogID: String?) -> String {
+    static func activeResort(for firstPoint: RoutePoint?, manualCatalogID: String?) -> String {
         if let manualCatalogID,
            let manualCatalog = TrailCatalogRegistry.catalog(withID: manualCatalogID) {
             return manualCatalog.resortName

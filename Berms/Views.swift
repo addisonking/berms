@@ -141,9 +141,14 @@ private enum SessionDetailPresentationPreheater {
         trails: [Trail],
         manualCatalogID: String?
     ) -> SessionDetailPreparationInput {
-        SessionDetailPreparationInput(
+        let routePoints = (try? RouteCodec.decode(segment.routeData)) ?? []
+        let activeResort = SessionDetailPresentationBuilder.activeResort(
+            for: routePoints.first,
+            manualCatalogID: manualCatalogID
+        )
+        return SessionDetailPreparationInput(
             segments: [makeSegmentInput(segment)],
-            trails: makeTrailInputs(trails),
+            trails: makeTrailInputs(trails.filter { $0.resort == activeResort }),
             manualCatalogID: manualCatalogID
         )
     }
@@ -1978,23 +1983,31 @@ struct DaysView: View {
         days.filter { $0.isFinished }
     }
 
-    private var latestRunPreheatKey: String {
-        guard let day = finishedDays.first,
-              let latestRun = day.segments
+    private var latestRunPreheatTarget: (day: RideDay, run: RideSegment)? {
+        finishedDays.compactMap { day in
+            guard let run = day.segments
                 .filter({ $0.kind == .run })
                 .max(by: { $0.startedAt < $1.startedAt }) else {
+                return nil
+            }
+            return (day: day, run: run)
+        }
+        .max(by: { $0.run.startedAt < $1.run.startedAt })
+    }
+
+    private var latestRunPreheatKey: String {
+        guard let target = latestRunPreheatTarget else {
             return "none"
         }
-        return "\(day.id.uuidString)|\(latestRun.id.uuidString)|"
+        return "\(target.day.id.uuidString)|\(target.run.id.uuidString)|"
             + "\(trailCatalogSelection.selectionID)|\(SessionDetailPresentationPreheater.trailRevision(for: trails))"
     }
 
     @MainActor
     private func preheatLatestRun() async {
-        guard let day = finishedDays.first,
-              let latestRun = day.segments
-                .filter({ $0.kind == .run })
-                .max(by: { $0.startedAt < $1.startedAt }) else { return }
+        guard let target = latestRunPreheatTarget else { return }
+        let day = target.day
+        let latestRun = target.run
         await Task.yield()
         try? await Task.sleep(nanoseconds: 100_000_000)
         guard !Task.isCancelled else { return }
@@ -2425,7 +2438,10 @@ struct DayDetailView: View {
         .onAppear { recenterMap() }
         .fullScreenCover(isPresented: $showingFullScreenMap) {
             FullScreenSummaryMap(title: "Ride Map", base: detailBase,
-                                 trailDetails: trailDetails, focusedSegmentID: nil,
+                                 trailDetails: trailDetails,
+                                 fallbackSegments: day.segments,
+                                 fallbackTrails: trails,
+                                 focusedSegmentID: nil,
                                  focusedRunNumber: nil)
         }
     }
@@ -2556,11 +2572,13 @@ struct FullScreenSummaryMap: View {
     init(title: String,
          base: SessionDetailBase,
          trailDetails: SessionDetailTrailDetails?,
+         fallbackSegments: [RideSegment] = [],
+         fallbackTrails: [Trail] = [],
          focusedSegmentID: UUID?,
          focusedRunNumber: Int?) {
         self.title = title
-        self.segments = []
-        self.trails = []
+        self.segments = fallbackSegments
+        self.trails = fallbackTrails
         self.focusedSegmentID = focusedSegmentID
         self.focusedRunNumber = focusedRunNumber
         self.preparedBase = base
@@ -3074,6 +3092,8 @@ struct RunMapView: View {
                     if let preparedBase {
                         FullScreenSummaryMap(title: trailSequence, base: preparedBase,
                                              trailDetails: preparedTrailDetails,
+                                             fallbackSegments: [segment],
+                                             fallbackTrails: trails,
                                              focusedSegmentID: segment.id,
                                              focusedRunNumber: number)
                     } else {
