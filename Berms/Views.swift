@@ -56,16 +56,25 @@ final class MapLayerPreferences: ObservableObject {
 }
 
 @MainActor
-private final class SessionDetailPresentationCache {
+private final class SessionDetailPresentationCache: ObservableObject {
     static let shared = SessionDetailPresentationCache()
 
-    struct Entry {
+    struct Entry: Sendable {
         let base: SessionDetailBase
+        let trailDetails: SessionDetailTrailDetails
+    }
+
+    struct RunEntry: Sendable {
+        let base: SessionDetailBase
+        let detail: SessionDetailSegment
         let trailDetails: SessionDetailTrailDetails
     }
 
     private var entries: [String: Entry] = [:]
     private var order: [String] = []
+    private var runEntries: [String: RunEntry] = [:]
+    private var runOrder: [String] = []
+    @Published private(set) var revision = 0
 
     func entry(for key: String) -> Entry? {
         entries[key]
@@ -78,6 +87,135 @@ private final class SessionDetailPresentationCache {
         while order.count > 3 {
             entries[order.removeFirst()] = nil
         }
+        revision &+= 1
+    }
+
+    func runEntry(for key: String) -> RunEntry? {
+        runEntries[key]
+    }
+
+    func latestRunEntry(dayID: UUID, segmentID: UUID, selectionID: String) -> RunEntry? {
+        let prefix = "\(dayID.uuidString)|\(segmentID.uuidString)|\(selectionID)|"
+        guard let key = runOrder.reversed().first(where: { $0.hasPrefix(prefix) }) else {
+            return nil
+        }
+        return runEntries[key]
+    }
+
+    func storeRun(_ entry: RunEntry, for key: String) {
+        runEntries[key] = entry
+        runOrder.removeAll { $0 == key }
+        runOrder.append(key)
+        while runOrder.count > 3 {
+            runEntries[runOrder.removeFirst()] = nil
+        }
+        revision &+= 1
+    }
+}
+
+@MainActor
+private enum SessionDetailPresentationPreheater {
+    static func cacheKey(dayID: UUID, selectionID: String, trails: [Trail]) -> String {
+        let trailRevision = trails
+            .map { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" }
+            .sorted()
+            .joined(separator: "|")
+        return "\(dayID.uuidString)|\(selectionID)|\(trailRevision)"
+    }
+
+    static func runCacheKey(
+        dayID: UUID,
+        segmentID: UUID,
+        selectionID: String,
+        trails: [Trail]
+    ) -> String {
+        "\(dayID.uuidString)|\(segmentID.uuidString)|\(selectionID)|\(trailRevision(for: trails))"
+    }
+
+    static func makeInput(
+        day: RideDay,
+        trails: [Trail],
+        manualCatalogID: String?
+    ) -> SessionDetailPreparationInput {
+        let segments = day.segments
+            .filter { $0.kind == .run || $0.kind == .lift }
+            .sorted { $0.startedAt < $1.startedAt }
+            .map(makeSegmentInput)
+        return SessionDetailPreparationInput(
+            segments: segments,
+            trails: makeTrailInputs(trails),
+            manualCatalogID: manualCatalogID
+        )
+    }
+
+    static func makeInput(
+        segment: RideSegment,
+        trails: [Trail],
+        manualCatalogID: String?
+    ) -> SessionDetailPreparationInput {
+        SessionDetailPreparationInput(
+            segments: [makeSegmentInput(segment)],
+            trails: makeTrailInputs(trails),
+            manualCatalogID: manualCatalogID
+        )
+    }
+
+    static func build(_ input: SessionDetailPreparationInput) async throws -> SessionDetailPresentationCache.Entry {
+        let baseTask = Task.detached(priority: .utility) {
+            try SessionDetailPresentationBuilder.buildBase(input)
+        }
+        let base = try await withTaskCancellationHandler {
+            try await baseTask.value
+        } onCancel: {
+            baseTask.cancel()
+        }
+        try Task.checkCancellation()
+
+        let trailTask = Task.detached(priority: .utility) {
+            try SessionDetailPresentationBuilder.buildTrailDetails(base: base, input: input)
+        }
+        let trailDetails = try await withTaskCancellationHandler {
+            try await trailTask.value
+        } onCancel: {
+            trailTask.cancel()
+        }
+        return .init(base: base, trailDetails: trailDetails)
+    }
+
+    private static func makeSegmentInput(_ segment: RideSegment) -> SessionDetailSegmentInput {
+        SessionDetailSegmentInput(
+            id: segment.id,
+            kind: segment.kind,
+            startedAt: segment.startedAt,
+            endedAt: segment.endedAt,
+            distanceMeters: segment.distanceMeters,
+            verticalMeters: segment.verticalMeters,
+            maximumSpeedMetersPerSecond: segment.maximumSpeedMetersPerSecond,
+            routeData: segment.routeData,
+            jumpData: segment.jumpData
+        )
+    }
+
+    private static func makeTrailInputs(_ trails: [Trail]) -> [SessionDetailTrailInput] {
+        trails.map { trail in
+            SessionDetailTrailInput(
+                id: trail.id,
+                name: trail.name,
+                difficulty: trail.difficulty,
+                resort: trail.resort,
+                averagedRouteData: trail.averagedRouteData,
+                passRouteData: trail.passes
+                    .sorted { $0.recordedAt < $1.recordedAt }
+                    .map(\.routeData)
+            )
+        }
+    }
+
+    private static func trailRevision(for trails: [Trail]) -> String {
+        trails
+            .map { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" }
+            .sorted()
+            .joined(separator: "|")
     }
 }
 
@@ -1742,6 +1880,7 @@ struct RunMapDestination: Hashable {
 
 struct DaysView: View {
     @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject private var trailCatalogSelection: TrailCatalogSelection
     @Query(sort: \RideDay.startedAt, order: .reverse) private var days: [RideDay]
     @Binding private var pendingDayID: UUID?
     let onStartTracking: () -> Void
@@ -1780,7 +1919,16 @@ struct DaysView: View {
                    let run = day.segments.first(where: {
                        $0.id == destination.runID && $0.kind == .run
                    }) {
-                    RunMapView(number: destination.number, segment: run)
+                    let preheatedRun = SessionDetailPresentationCache.shared.latestRunEntry(
+                        dayID: day.id,
+                        segmentID: run.id,
+                        selectionID: trailCatalogSelection.selectionID
+                    )
+                    RunMapView(number: destination.number,
+                               segment: run,
+                               preparedBase: preheatedRun?.base,
+                               preparedDetail: preheatedRun?.detail,
+                               preparedTrailDetails: preheatedRun?.trailDetails)
                 }
             }
             .onAppear { openPendingDayIfNeeded() }
@@ -1788,6 +1936,9 @@ struct DaysView: View {
             .onChange(of: finishedDays.map(\.id)) { _, _ in
                 openPendingDayIfNeeded()
             }
+        }
+        .task(id: latestRunPreheatKey) {
+            await preheatLatestRun()
         }
         .alert("Delete day?", isPresented: Binding(
             get: { dayToDelete != nil },
@@ -1832,6 +1983,57 @@ struct DaysView: View {
 
     private var finishedDays: [RideDay] {
         days.filter { $0.isFinished }
+    }
+
+    private var latestRunPreheatKey: String {
+        guard let day = finishedDays.first,
+              let latestRun = day.segments
+                .filter({ $0.kind == .run })
+                .max(by: { $0.startedAt < $1.startedAt }) else {
+            return "none"
+        }
+        return "\(day.id.uuidString)|\(latestRun.id.uuidString)|\(trailCatalogSelection.selectionID)"
+    }
+
+    @MainActor
+    private func preheatLatestRun() async {
+        guard let day = finishedDays.first,
+              let latestRun = day.segments
+                .filter({ $0.kind == .run })
+                .max(by: { $0.startedAt < $1.startedAt }) else { return }
+        await Task.yield()
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        guard !Task.isCancelled else { return }
+
+        let trails = (try? modelContext.fetch(FetchDescriptor<Trail>())) ?? []
+        let cacheKey = SessionDetailPresentationPreheater.runCacheKey(
+            dayID: day.id,
+            segmentID: latestRun.id,
+            selectionID: trailCatalogSelection.selectionID,
+            trails: trails
+        )
+        if SessionDetailPresentationCache.shared.runEntry(for: cacheKey) != nil {
+            return
+        }
+
+        let input = SessionDetailPresentationPreheater.makeInput(
+            segment: latestRun,
+            trails: trails,
+            manualCatalogID: trailCatalogSelection.manualCatalogID
+        )
+        do {
+            let entry = try await SessionDetailPresentationPreheater.build(input)
+            guard !Task.isCancelled else { return }
+            guard let detail = entry.base.segmentsByID[latestRun.id] else { return }
+            SessionDetailPresentationCache.shared.storeRun(
+                .init(base: entry.base, detail: detail, trailDetails: entry.trailDetails),
+                for: cacheKey
+            )
+        } catch is CancellationError {
+            return
+        } catch {
+            return
+        }
     }
 
     private var daysList: some View {
@@ -1911,6 +2113,7 @@ struct DayDetailView: View {
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var mapLayerPreferences: MapLayerPreferences
     @EnvironmentObject private var trailCatalogSelection: TrailCatalogSelection
+    @ObservedObject private var presentationCache = SessionDetailPresentationCache.shared
     @State private var mapPosition: MapCameraPosition = .automatic
     @State private var selectedSegmentID: UUID?
     @State private var showingFullScreenMap = false
@@ -1935,11 +2138,19 @@ struct DayDetailView: View {
     }
 
     private func preparationCacheKey(for trails: [Trail]) -> String {
-        let trailRevision = trails
-            .map { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" }
-            .sorted()
-            .joined(separator: "|")
-        return "\(preparationTaskKey)|\(trailRevision)"
+        SessionDetailPresentationPreheater.cacheKey(
+            dayID: day.id,
+            selectionID: trailCatalogSelection.selectionID,
+            trails: trails
+        )
+    }
+
+    private func preheatedRun(for segment: RideSegment) -> SessionDetailPresentationCache.RunEntry? {
+        presentationCache.latestRunEntry(
+            dayID: day.id,
+            segmentID: segment.id,
+            selectionID: trailCatalogSelection.selectionID
+        )
     }
 
     var body: some View {
@@ -1957,16 +2168,22 @@ struct DayDetailView: View {
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach(Array(runs.enumerated()), id: \.element.id) { index, segment in
+                        let preheatedRun = preheatedRun(for: segment)
                         NavigationLink {
                             RunMapView(number: index + 1,
                                        segment: segment,
-                                       preparedDetail: detailBase?.segmentsByID[segment.id],
-                                       preparedTrailDetails: trailDetails)
+                                       preparedBase: detailBase ?? preheatedRun?.base,
+                                       preparedDetail: detailBase?.segmentsByID[segment.id]
+                                           ?? preheatedRun?.detail,
+                                       preparedTrailDetails: trailDetails
+                                           ?? preheatedRun?.trailDetails)
                         } label: {
                             SegmentRow(number: index + 1, segment: segment,
-                                       detail: detailBase?.segmentsByID[segment.id],
-                                       trailName: trailDetails?.sequenceBySegmentID[segment.id],
-                                       isPreparingDetails: trailDetails == nil)
+                                       detail: detailBase?.segmentsByID[segment.id]
+                                           ?? preheatedRun?.detail,
+                                       trailName: trailDetails?.sequenceBySegmentID[segment.id]
+                                           ?? preheatedRun?.trailDetails.sequenceBySegmentID[segment.id],
+                                       isPreparingDetails: trailDetails == nil && preheatedRun == nil)
                         }
                     }
                 }
@@ -2233,7 +2450,11 @@ struct DayDetailView: View {
             return
         }
 
-        let input = makePreparationInput(trails: trails)
+        let input = SessionDetailPresentationPreheater.makeInput(
+            day: day,
+            trails: trails,
+            manualCatalogID: trailCatalogSelection.manualCatalogID
+        )
         guard !Task.isCancelled else { return }
 
         do {
@@ -2268,45 +2489,6 @@ struct DayDetailView: View {
         } catch {
             return
         }
-    }
-
-    @MainActor
-    private func makePreparationInput(trails: [Trail]) -> SessionDetailPreparationInput {
-        let segments = day.segments
-            .filter { $0.kind == .run || $0.kind == .lift }
-            .sorted { $0.startedAt < $1.startedAt }
-            .map { segment in
-                SessionDetailSegmentInput(
-                    id: segment.id,
-                    kind: segment.kind,
-                    startedAt: segment.startedAt,
-                    endedAt: segment.endedAt,
-                    distanceMeters: segment.distanceMeters,
-                    verticalMeters: segment.verticalMeters,
-                    maximumSpeedMetersPerSecond: segment.maximumSpeedMetersPerSecond,
-                    routeData: segment.routeData,
-                    jumpData: segment.jumpData
-                )
-            }
-        let trailInputs = trails.map { trail in
-            SessionDetailTrailInput(
-                id: trail.id,
-                name: trail.name,
-                difficulty: trail.difficulty,
-                resort: trail.resort,
-                averagedRouteData: trail.averagedRouteData,
-                passRouteData: trail.passes
-                    .sorted { $0.recordedAt < $1.recordedAt }
-                    .map(\.routeData)
-            )
-        }
-        return SessionDetailPreparationInput(
-            segments: segments,
-            trails: trailInputs,
-            manualCatalogID: trailCatalogSelection.isAutomatic
-                ? nil
-                : trailCatalogSelection.selectionID
-        )
     }
 
     private var mapConfiguration: RouteMapConfiguration? {
@@ -2735,6 +2917,7 @@ struct RunMapView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let number: Int
     let segment: RideSegment
+    let preparedBase: SessionDetailBase?
     let preparedDetail: SessionDetailSegment?
     let preparedTrailDetails: SessionDetailTrailDetails?
     @Query private var trails: [Trail]
@@ -2745,10 +2928,12 @@ struct RunMapView: View {
 
     init(number: Int,
          segment: RideSegment,
+         preparedBase: SessionDetailBase? = nil,
          preparedDetail: SessionDetailSegment? = nil,
          preparedTrailDetails: SessionDetailTrailDetails? = nil) {
         self.number = number
         self.segment = segment
+        self.preparedBase = preparedBase
         self.preparedDetail = preparedDetail
         self.preparedTrailDetails = preparedTrailDetails
     }
@@ -2882,9 +3067,16 @@ struct RunMapView: View {
                 .contentMargins(.horizontal, BermsSpacing.content, for: .scrollContent)
                 .contentMargins(.vertical, BermsSpacing.content, for: .scrollContent)
                 .fullScreenCover(isPresented: $showingFullScreenMap) {
-                    FullScreenSummaryMap(title: trailSequence, segments: [segment],
-                                         trails: trails, focusedSegmentID: segment.id,
-                                         focusedRunNumber: number)
+                    if let preparedBase {
+                        FullScreenSummaryMap(title: trailSequence, base: preparedBase,
+                                             trailDetails: preparedTrailDetails,
+                                             focusedSegmentID: segment.id,
+                                             focusedRunNumber: number)
+                    } else {
+                        FullScreenSummaryMap(title: trailSequence, segments: [segment],
+                                             trails: trails, focusedSegmentID: segment.id,
+                                             focusedRunNumber: number)
+                    }
                 }
             }
         }
