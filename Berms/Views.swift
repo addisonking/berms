@@ -56,7 +56,7 @@ final class MapLayerPreferences: ObservableObject {
 }
 
 @MainActor
-private final class SessionDetailPresentationCache: ObservableObject {
+final class SessionDetailPresentationCache: ObservableObject {
     static let shared = SessionDetailPresentationCache()
 
     struct Entry: Sendable {
@@ -106,7 +106,19 @@ private final class SessionDetailPresentationCache: ObservableObject {
 }
 
 @MainActor
-private enum SessionDetailPresentationPreheater {
+enum SessionDetailPresentationPreheater {
+    static func latestCompletedRun(in days: [RideDay]) -> (day: RideDay, run: RideSegment)? {
+        days.filter { $0.isFinished }.compactMap { day in
+            guard let run = day.segments
+                .filter({ $0.kind == .run })
+                .max(by: { $0.startedAt < $1.startedAt }) else {
+                return nil
+            }
+            return (day: day, run: run)
+        }
+        .max(by: { $0.run.startedAt < $1.run.startedAt })
+    }
+
     static func cacheKey(dayID: UUID, selectionID: String, trails: [Trail]) -> String {
         "\(dayID.uuidString)|\(selectionID)|\(trailRevision(for: trails))"
     }
@@ -1984,15 +1996,7 @@ struct DaysView: View {
     }
 
     private var latestRunPreheatTarget: (day: RideDay, run: RideSegment)? {
-        finishedDays.compactMap { day in
-            guard let run = day.segments
-                .filter({ $0.kind == .run })
-                .max(by: { $0.startedAt < $1.startedAt }) else {
-                return nil
-            }
-            return (day: day, run: run)
-        }
-        .max(by: { $0.run.startedAt < $1.run.startedAt })
+        SessionDetailPresentationPreheater.latestCompletedRun(in: days)
     }
 
     private var latestRunPreheatKey: String {

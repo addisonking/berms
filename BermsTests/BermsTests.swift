@@ -329,6 +329,112 @@ final class BermsTests: XCTestCase {
         XCTAssertEqual(base.summaryJumpMarkers.last?.id, "jump-99")
     }
 
+    @MainActor
+    func testLatestRunPreheatSkipsEmptyLiftOnlyAndUnfinishedDays() throws {
+        let start = Date(timeIntervalSince1970: 30_000)
+        let olderDay = RideDay(startedAt: start)
+        let newerDay = RideDay(startedAt: start.addingTimeInterval(100))
+        let emptyDay = RideDay(startedAt: start.addingTimeInterval(200))
+        let liftOnlyDay = RideDay(startedAt: start.addingTimeInterval(300))
+        let unfinishedDay = RideDay(startedAt: start.addingTimeInterval(400))
+        for day in [olderDay, newerDay, emptyDay, liftOnlyDay] {
+            day.endedAt = day.startedAt.addingTimeInterval(60)
+        }
+        for day in [olderDay, newerDay, liftOnlyDay, unfinishedDay] {
+            day.segments = [RideSegment(
+                kind: day === liftOnlyDay ? .lift : .run,
+                startedAt: day.startedAt,
+                endedAt: day.startedAt.addingTimeInterval(30),
+                routeData: Data()
+            )]
+        }
+        let days = [unfinishedDay, emptyDay, olderDay, liftOnlyDay, newerDay]
+
+        let target = try XCTUnwrap(SessionDetailPresentationPreheater.latestCompletedRun(in: days))
+
+        XCTAssertEqual(target.day.id, newerDay.id)
+        XCTAssertEqual(target.run.id, newerDay.segments[0].id)
+        XCTAssertNil(SessionDetailPresentationPreheater.latestCompletedRun(
+            in: [emptyDay, liftOnlyDay, unfinishedDay]
+        ))
+    }
+
+    @MainActor
+    func testRunPreheatSnapshotsOnlyTheActiveResort() throws {
+        let start = Date(timeIntervalSince1970: 31_000)
+        let point = RoutePoint(latitude: 41.2505, longitude: -74.5012,
+                               altitude: 100, speed: 8, timestamp: start)
+        let segment = RideSegment(kind: .run, startedAt: start, endedAt: start,
+                                  routeData: try RouteCodec.encode([point]))
+        let local = Trail(name: "Local", difficulty: .blue,
+                          resort: TrailCatalogRegistry.defaultCatalog.resortName)
+        let unrelated = Trail(name: "Unrelated", difficulty: .black, resort: "Other resort")
+        local.averagedRouteData = segment.routeData
+        unrelated.averagedRouteData = Data([0xFF])
+
+        for catalogID in [nil, TrailCatalogRegistry.defaultCatalog.id] as [String?] {
+            let input = SessionDetailPresentationPreheater.makeInput(
+                segment: segment, trails: [unrelated, local], manualCatalogID: catalogID
+            )
+
+            XCTAssertEqual(input.segments.map(\.id), [segment.id])
+            XCTAssertEqual(input.trails.map(\.id), [local.id])
+            XCTAssertEqual(input.trails.first?.averagedRouteData, segment.routeData)
+        }
+    }
+
+    @MainActor
+    func testRunPreheatCacheRejectsEditedAndRemovedTrails() async throws {
+        let start = Date(timeIntervalSince1970: 32_000)
+        let segment = RideSegment(kind: .run, startedAt: start, endedAt: start,
+                                  routeData: try RouteCodec.encode([]))
+        let trail = Trail(name: "Original", difficulty: .blue,
+                          resort: TrailCatalogRegistry.defaultCatalog.resortName,
+                          createdAt: start)
+        let dayID = UUID()
+        let selectionID = TrailCatalogRegistry.automaticSelectionID
+        let key = SessionDetailPresentationPreheater.runCacheKey(
+            dayID: dayID, segmentID: segment.id, selectionID: selectionID, trails: [trail]
+        )
+        let input = SessionDetailPresentationPreheater.makeInput(
+            segment: segment, trails: [trail], manualCatalogID: nil
+        )
+        let entry = try await SessionDetailPresentationPreheater.build(input)
+        let cache = SessionDetailPresentationCache()
+        let detail = try XCTUnwrap(entry.base.segmentsByID[segment.id])
+        cache.storeRun(.init(base: entry.base, detail: detail, trailDetails: entry.trailDetails),
+                       for: key)
+        XCTAssertNotNil(cache.runEntry(for: key))
+
+        trail.name = "Renamed"
+        trail.updatedAt = start.addingTimeInterval(1)
+        let editedKey = SessionDetailPresentationPreheater.runCacheKey(
+            dayID: dayID, segmentID: segment.id, selectionID: selectionID, trails: [trail]
+        )
+        let removedKey = SessionDetailPresentationPreheater.runCacheKey(
+            dayID: dayID, segmentID: segment.id, selectionID: selectionID, trails: []
+        )
+
+        XCTAssertNil(cache.runEntry(for: editedKey))
+        XCTAssertNil(cache.runEntry(for: removedKey))
+    }
+
+    @MainActor
+    func testRunPreheatCancellationDoesNotPublishAPresentation() async throws {
+        let input = SessionDetailPreparationInput(segments: [], trails: [], manualCatalogID: nil)
+        let preparation = Task { @MainActor in
+            try await SessionDetailPresentationPreheater.build(input)
+        }
+        preparation.cancel()
+
+        do {
+            _ = try await preparation.value
+            XCTFail("Cancelled preheating must not return a presentation")
+        } catch is CancellationError {
+            // Expected when navigation cancels a pending preheat.
+        }
+    }
+
     func testLiveMapPresentationSelectsOnlyTheRelevantPath() {
         let point = RoutePoint(latitude: 40, longitude: -105, altitude: 100, speed: 8,
                                timestamp: Date(timeIntervalSince1970: 1))
