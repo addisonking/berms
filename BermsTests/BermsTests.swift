@@ -674,7 +674,7 @@ final class BermsTests: XCTestCase {
                        altitude: point.altitude, speed: point.speed, timestamp: point.timestamp)
         }
         let trail = Trail(name: "Offset", difficulty: .black, resort: "Test")
-        let pass = TrailPass(routePoints: route)
+        let pass = TrailPass(routePoints: route, recordedAt: base)
         let offsetPass = TrailPass(routePoints: offsetRoute, recordedAt: base.addingTimeInterval(10))
         pass.trail = trail
         offsetPass.trail = trail
@@ -686,6 +686,33 @@ final class BermsTests: XCTestCase {
 
         XCTAssertEqual(match?.trailID, trail.id)
         XCTAssertEqual(section?.routeIndex, 1)
+    }
+
+    func testTrailMatcherRouteIndexFollowsRecordedPassOrder() {
+        let base = Date(timeIntervalSince1970: 1_320)
+        let route = (0...4).map { index in
+            RoutePoint(latitude: 40 + Double(index) * 0.0001, longitude: -105,
+                       altitude: 100 - Double(index), speed: 8,
+                       timestamp: base.addingTimeInterval(Double(index)))
+        }
+        let offsetRoute = route.map { point in
+            RoutePoint(latitude: point.latitude + 0.002, longitude: point.longitude,
+                       altitude: point.altitude, speed: point.speed, timestamp: point.timestamp)
+        }
+        let trail = Trail(name: "Out of order", difficulty: .black, resort: "Test")
+        let olderPass = TrailPass(routePoints: route, recordedAt: base)
+        let newerPass = TrailPass(routePoints: offsetRoute, recordedAt: base.addingTimeInterval(20))
+        olderPass.trail = trail
+        newerPass.trail = trail
+        // Stored newest first so the raw relationship order disagrees with recorded date.
+        trail.passes.append(contentsOf: [newerPass, olderPass])
+        trail.recalculateAverage()
+
+        let section = TrailRouteMatcher().matchingSections(for: route, trails: [trail]).first
+
+        XCTAssertEqual(section?.routeIndex, 1)
+        guard let section else { return }
+        XCTAssertEqual(trail.matcherRoutes[section.routeIndex], route)
     }
 
     func testTrailMatcherReturnsMultipleContiguousTrailSections() {

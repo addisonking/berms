@@ -218,6 +218,19 @@ struct TrailRouteCandidate: Sendable {
     let primaryRoute: [RoutePoint]
 }
 
+extension Trail {
+    var orderedPasses: [TrailPass] {
+        passes.sorted { $0.recordedAt < $1.recordedAt }
+    }
+
+    /// Routes in matcher order: the primary route, then recorded passes by date.
+    /// Every consumer must use this order because `TrailMatchSection.routeIndex`
+    /// indexes into it.
+    var matcherRoutes: [[RoutePoint]] {
+        [points] + orderedPasses.map(\.points)
+    }
+}
+
 struct TrailRouteMatchResult: Sendable {
     let match: TrailMatch?
     let sections: [TrailMatchSection]
@@ -497,12 +510,15 @@ struct TrailRouteMatcher: Sendable {
             return TrailRouteMatchResult(match: nil, sections: [])
         }
 
-        let scoredCandidates = candidates.compactMap { candidate -> (UUID, ScoredSection)? in
+        var scoredCandidates: [(UUID, ScoredSection)] = []
+        for candidate in candidates {
+            if Task.isCancelled { break }
             let best = candidate.routes
                 .enumerated()
                 .filter { $0.element.count >= 2 }
-                .flatMap { routeIndex, candidateRoute in
-                    [
+                .flatMap { routeIndex, candidateRoute -> [ScoredSection] in
+                    guard !Task.isCancelled else { return [] }
+                    return [
                         score(route: route, against: candidateRoute,
                               routeIndex: routeIndex, isReversed: false),
                         score(route: route, against: Array(candidateRoute.reversed()),
@@ -510,10 +526,10 @@ struct TrailRouteMatcher: Sendable {
                     ].compactMap { $0 }
                 }
                 .max { $0.score < $1.score }
-            guard let best else { return nil }
-            return (candidate.id, best)
+            guard let best else { continue }
+            scoredCandidates.append((candidate.id, best))
         }
-        .sorted { $0.1.score > $1.1.score }
+        scoredCandidates.sort { $0.1.score > $1.1.score }
 
         let match: TrailMatch?
         if let winner = scoredCandidates.first,
@@ -526,7 +542,7 @@ struct TrailRouteMatcher: Sendable {
             match = nil
         }
 
-        let candidates = scoredCandidates.compactMap { trailID, best -> TrailMatchSection? in
+        let matchedSections = scoredCandidates.compactMap { trailID, best -> TrailMatchSection? in
             guard best.score >= minimumScore else { return nil }
             return TrailMatchSection(trailID: trailID,
                                      routeIndex: best.routeIndex,
@@ -542,7 +558,7 @@ struct TrailRouteMatcher: Sendable {
         // strongest evidence for each section, while allowing a small shared
         // boundary at a trail junction.
         var accepted: [TrailMatchSection] = []
-        for candidate in candidates {
+        for candidate in matchedSections {
             let overlap = accepted.map { overlapCount(candidate.range, $0.range) }.max() ?? 0
             let allowedOverlap = max(2, Int(Double(candidate.range.count) * 0.35))
             guard overlap <= allowedOverlap else { continue }
@@ -561,7 +577,7 @@ struct TrailRouteMatcher: Sendable {
             id: trail.id,
             name: trail.name,
             difficulty: trail.difficulty,
-            routes: [primaryRoute] + trail.passes.map(\.points),
+            routes: trail.matcherRoutes,
             primaryRoute: primaryRoute
         )
     }
@@ -854,7 +870,10 @@ final class TrailRouteMatchCache {
         let newEntry = Entry(trailRevision: revision,
                              match: result.match,
                              sections: result.sections)
-        entries[segment.id] = newEntry
+        // A cancelled match stops early, so its partial result must not be cached.
+        if !Task.isCancelled {
+            entries[segment.id] = newEntry
+        }
         return newEntry
     }
 

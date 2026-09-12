@@ -209,9 +209,7 @@ enum SessionDetailPresentationPreheater {
                 difficulty: trail.difficulty,
                 resort: trail.resort,
                 averagedRouteData: trail.averagedRouteData,
-                passRouteData: trail.passes
-                    .sorted { $0.recordedAt < $1.recordedAt }
-                    .map(\.routeData)
+                passRouteData: trail.orderedPasses.map(\.routeData)
             )
         }
     }
@@ -294,7 +292,7 @@ private func trailOverlays(for segment: RideSegment, trails: [Trail]) -> [TrailM
     guard segment.kind == .run else { return [] }
     return TrailRouteMatchCache.shared.matchingSections(for: segment, trails: trails).compactMap { section in
         guard let trail = trails.first(where: { $0.id == section.trailID }) else { return nil }
-        let routes = [trail.points] + trail.passes.map(\.points)
+        let routes = trail.matcherRoutes
         guard routes.indices.contains(section.routeIndex) else { return nil }
         let points = TrailRouteSlice.slice(routes[section.routeIndex], progress: section.trailProgress)
         guard points.count > 1 else { return nil }
@@ -2322,7 +2320,7 @@ struct DayDetailView: View {
                 AdaptiveStatRow {
                     SummaryStat(label: "Top speed", value: BermsFormat.speed(day.maximumSpeedMetersPerSecond))
                     SummaryStat(label: "Jumps",
-                                value: detailBase.map { "\($0.jumpMarkers.count)" } ?? "…",
+                                value: detailBase.map { "\($0.jumpMarkers.count)" } ?? "\(day.jumpCount)",
                                 tint: .primary)
                 }
             }
@@ -3297,7 +3295,7 @@ struct SegmentRow: View {
     }
 
     private var durationTitle: String {
-        detail.map { BermsFormat.duration($0.duration) } ?? "…"
+        detail.map { BermsFormat.duration($0.duration) } ?? BermsFormat.duration(segment.duration)
     }
 
     private var kind: SegmentKind {
