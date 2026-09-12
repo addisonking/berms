@@ -209,6 +209,245 @@ struct TrailMatchSection: Identifiable, Sendable {
     }
 }
 
+struct TrailRouteCandidate: Sendable {
+    let id: UUID
+    let name: String
+    let difficulty: TrailDifficulty
+    let routes: [[RoutePoint]]
+    let primaryRoute: [RoutePoint]
+}
+
+struct TrailRouteMatchResult: Sendable {
+    let match: TrailMatch?
+    let sections: [TrailMatchSection]
+}
+
+struct SessionDetailSegmentInput: Sendable {
+    let id: UUID
+    let kind: SegmentKind
+    let startedAt: Date
+    let endedAt: Date
+    let distanceMeters: Double
+    let verticalMeters: Double
+    let maximumSpeedMetersPerSecond: Double
+    let routeData: Data
+    let jumpData: Data?
+}
+
+struct SessionDetailTrailInput: Sendable {
+    let id: UUID
+    let name: String
+    let difficulty: TrailDifficulty
+    let resort: String
+    let averagedRouteData: Data?
+    let passRouteData: [Data]
+}
+
+struct SessionDetailPreparationInput: Sendable {
+    let segments: [SessionDetailSegmentInput]
+    let trails: [SessionDetailTrailInput]
+    let manualCatalogID: String?
+}
+
+struct SessionDetailSegment: Identifiable, Sendable {
+    let id: UUID
+    let kind: SegmentKind
+    let startedAt: Date
+    let endedAt: Date
+    let distanceMeters: Double
+    let verticalMeters: Double
+    let maximumSpeedMetersPerSecond: Double
+    let routePoints: [RoutePoint]
+    let jumps: [JumpEvent]
+    let activeResort: String
+
+    var duration: TimeInterval {
+        guard routePoints.count >= 2 else {
+            return max(0, endedAt.timeIntervalSince(startedAt))
+        }
+        return zip(routePoints, routePoints.dropFirst()).reduce(0) { total, pair in
+            let interval = pair.1.timestamp.timeIntervalSince(pair.0.timestamp)
+            return total + min(max(0, interval), 10)
+        }
+    }
+}
+
+struct SessionDetailJumpMarker: Identifiable, Sendable {
+    let id: String
+    let segmentID: UUID
+    let number: Int
+    let coordinate: Coordinate
+    let airtime: TimeInterval
+}
+
+struct SessionDetailTrailOverlay: Identifiable, Sendable {
+    let id: String
+    let segmentID: UUID
+    let trailID: UUID
+    let name: String
+    let difficulty: TrailDifficulty
+    let points: [RoutePoint]
+    let score: Double
+}
+
+struct SessionDetailBase: Sendable {
+    // Keep overview maps readable and responsive; focused run maps retain every jump.
+    static let summaryJumpMarkerLimit = 24
+
+    let runs: [SessionDetailSegment]
+    let mapSegments: [SessionDetailSegment]
+    let jumpMarkers: [SessionDetailJumpMarker]
+    let segmentsByID: [UUID: SessionDetailSegment]
+
+    var summaryJumpMarkers: [SessionDetailJumpMarker] {
+        let maximumCount = Self.summaryJumpMarkerLimit
+        guard jumpMarkers.count > maximumCount else { return jumpMarkers }
+        return (0..<maximumCount).map { index in
+            let sourceIndex = Int((Double(index) * Double(jumpMarkers.count - 1)
+                / Double(maximumCount - 1)).rounded())
+            return jumpMarkers[sourceIndex]
+        }
+    }
+}
+
+struct SessionDetailTrailDetails: Sendable {
+    let overlays: [SessionDetailTrailOverlay]
+    let sequenceBySegmentID: [UUID: String]
+}
+
+enum SessionDetailPresentationBuilder {
+    static func buildBase(_ input: SessionDetailPreparationInput) throws -> SessionDetailBase {
+        let decoder = JSONDecoder()
+        var segments: [SessionDetailSegment] = []
+        segments.reserveCapacity(input.segments.count)
+
+        for segment in input.segments {
+            try Task.checkCancellation()
+            let routePoints = (try? RouteCodec.decode(segment.routeData)) ?? []
+            let jumps = segment.jumpData.flatMap { try? decoder.decode([JumpEvent].self, from: $0) } ?? []
+            segments.append(SessionDetailSegment(
+                id: segment.id,
+                kind: segment.kind,
+                startedAt: segment.startedAt,
+                endedAt: segment.endedAt,
+                distanceMeters: segment.distanceMeters,
+                verticalMeters: segment.verticalMeters,
+                maximumSpeedMetersPerSecond: segment.maximumSpeedMetersPerSecond,
+                routePoints: routePoints,
+                jumps: jumps,
+                activeResort: activeResort(for: routePoints.first,
+                                           manualCatalogID: input.manualCatalogID)
+            ))
+        }
+
+        let mapSegments = segments.sorted { $0.startedAt < $1.startedAt }
+        let runs = mapSegments.filter { $0.kind == .run }
+        let jumpMarkers = runs.flatMap { segment in
+            segment.jumps.enumerated().compactMap { index, jump -> SessionDetailJumpMarker? in
+                guard let point = segment.routePoints.min(by: {
+                    abs($0.timestamp.timeIntervalSince(jump.takeoffTimestamp))
+                        < abs($1.timestamp.timeIntervalSince(jump.takeoffTimestamp))
+                }) else {
+                    return nil
+                }
+                return SessionDetailJumpMarker(
+                    id: "\(segment.id.uuidString)-\(index)",
+                    segmentID: segment.id,
+                    number: index + 1,
+                    coordinate: Coordinate(latitude: point.latitude, longitude: point.longitude),
+                    airtime: jump.airtime
+                )
+            }
+        }
+
+        return SessionDetailBase(
+            runs: runs,
+            mapSegments: mapSegments,
+            jumpMarkers: jumpMarkers,
+            segmentsByID: Dictionary(uniqueKeysWithValues: segments.map { ($0.id, $0) })
+        )
+    }
+
+    static func buildTrailDetails(
+        base: SessionDetailBase,
+        input: SessionDetailPreparationInput
+    ) throws -> SessionDetailTrailDetails {
+        let candidatesByResort = Dictionary(grouping: input.trails, by: \.resort).mapValues { trails in
+            trails.compactMap(makeCandidate(for:))
+        }
+        let candidatesByID = Dictionary(
+            uniqueKeysWithValues: candidatesByResort.values.flatMap { $0 }.map { ($0.id, $0) }
+        )
+        let matcher = TrailRouteMatcher()
+        var overlays: [SessionDetailTrailOverlay] = []
+        var sequenceBySegmentID: [UUID: String] = [:]
+
+        for run in base.runs {
+            try Task.checkCancellation()
+            let candidates = candidatesByResort[run.activeResort] ?? []
+            let result = matcher.matchResult(for: run.routePoints, candidates: candidates)
+            let names = result.sections.compactMap { candidatesByID[$0.trailID]?.name }
+            if !names.isEmpty {
+                sequenceBySegmentID[run.id] = names.joined(separator: " → ")
+            }
+
+            overlays.append(contentsOf: result.sections.compactMap { section in
+                guard let candidate = candidatesByID[section.trailID],
+                      candidate.primaryRoute.count > 1 else {
+                    return nil
+                }
+                return SessionDetailTrailOverlay(
+                    id: "\(run.id.uuidString)-\(section.id)",
+                    segmentID: run.id,
+                    trailID: candidate.id,
+                    name: candidate.name,
+                    difficulty: candidate.difficulty,
+                    points: TrailRouteSlice.slice(candidate.primaryRoute,
+                                                  progress: section.trailProgress),
+                    score: section.score
+                )
+            })
+        }
+
+        return SessionDetailTrailDetails(
+            overlays: overlays,
+            sequenceBySegmentID: sequenceBySegmentID
+        )
+    }
+
+    private static func activeResort(for firstPoint: RoutePoint?, manualCatalogID: String?) -> String {
+        if let manualCatalogID,
+           let manualCatalog = TrailCatalogRegistry.catalog(withID: manualCatalogID) {
+            return manualCatalog.resortName
+        }
+        guard let firstPoint else {
+            return TrailCatalogRegistry.defaultCatalog.resortName
+        }
+        let coordinate = Coordinate(latitude: firstPoint.latitude, longitude: firstPoint.longitude)
+        return TrailCatalogRegistry.nearestCatalog(to: coordinate).resortName
+    }
+
+    private static func makeCandidate(for input: SessionDetailTrailInput) -> TrailRouteCandidate? {
+        let decodedPasses = input.passRouteData.compactMap { try? RouteCodec.decode($0) }
+        let averaged = input.averagedRouteData.flatMap { try? RouteCodec.decode($0) }
+        let primaryRoute: [RoutePoint]
+        if let averaged, !averaged.isEmpty {
+            primaryRoute = averaged
+        } else {
+            primaryRoute = decodedPasses.first ?? []
+        }
+        let routes = [primaryRoute] + decodedPasses
+        guard routes.contains(where: { $0.count >= 2 }) else { return nil }
+        return TrailRouteCandidate(
+            id: input.id,
+            name: input.name,
+            difficulty: input.difficulty,
+            routes: routes,
+            primaryRoute: primaryRoute
+        )
+    }
+}
+
 struct TrailRouteMatcher: Sendable {
     // A wide proximity radius can make a ride on a neighboring connector look
     // like a trail match. Keep enough room for normal phone GPS drift, but make
@@ -231,22 +470,54 @@ struct TrailRouteMatcher: Sendable {
     }
 
     func matchingSections(for route: [RoutePoint], trails: [Trail]) -> [TrailMatchSection] {
-        guard route.count >= 2 else { return [] }
+        matchResult(for: route, trails: trails).sections
+    }
 
-        let candidates = trails.compactMap { trail -> TrailMatchSection? in
-            var candidateRoutes = [trail.points]
-            candidateRoutes.append(contentsOf: trail.passes.map(\.points))
-            let scoredRoutes = candidateRoutes
+    func bestMatch(for route: [RoutePoint], trails: [Trail]) -> TrailMatch? {
+        matchResult(for: route, trails: trails).match
+    }
+
+    func matchResult(for route: [RoutePoint], trails: [Trail]) -> TrailRouteMatchResult {
+        matchResult(for: route, candidates: trails.map(candidate(for:)))
+    }
+
+    func matchResult(
+        for route: [RoutePoint],
+        candidates: [TrailRouteCandidate]
+    ) -> TrailRouteMatchResult {
+        guard route.count >= 2 else {
+            return TrailRouteMatchResult(match: nil, sections: [])
+        }
+
+        let scoredCandidates = candidates.compactMap { candidate -> (UUID, ScoredSection)? in
+            let best = candidate.routes
                 .filter { $0.count >= 2 }
-                .flatMap { candidate in
+                .flatMap { candidateRoute in
                     [
-                        score(route: route, against: candidate, isReversed: false),
-                        score(route: route, against: Array(candidate.reversed()), isReversed: true)
+                        score(route: route, against: candidateRoute, isReversed: false),
+                        score(route: route, against: Array(candidateRoute.reversed()), isReversed: true)
                     ].compactMap { $0 }
                 }
-            let best = scoredRoutes.max { $0.score < $1.score }
-            guard let best, best.score >= minimumScore else { return nil }
-            return TrailMatchSection(trailID: trail.id,
+                .max { $0.score < $1.score }
+            guard let best else { return nil }
+            return (candidate.id, best)
+        }
+        .sorted { $0.1.score > $1.1.score }
+
+        let match: TrailMatch?
+        if let winner = scoredCandidates.first,
+           winner.1.score >= minimumScore,
+           scoredCandidates.dropFirst().first.map({ winner.1.score - $0.1.score >= minimumWinningMargin }) ?? true {
+            match = TrailMatch(trailID: winner.0,
+                               score: winner.1.score,
+                               averageDistance: winner.1.averageDistance)
+        } else {
+            match = nil
+        }
+
+        let candidates = scoredCandidates.compactMap { trailID, best -> TrailMatchSection? in
+            guard best.score >= minimumScore else { return nil }
+            return TrailMatchSection(trailID: trailID,
                                      startIndex: best.range.lowerBound,
                                      endIndex: best.range.upperBound - 1,
                                      trailStartProgress: best.trailStartProgress,
@@ -254,7 +525,6 @@ struct TrailRouteMatcher: Sendable {
                                      score: best.score,
                                      averageDistance: best.averageDistance)
         }
-        .sorted { $0.score > $1.score }
 
         // The same GPS points can be close to neighboring trails. Keep the
         // strongest evidence for each section, while allowing a small shared
@@ -266,35 +536,22 @@ struct TrailRouteMatcher: Sendable {
             guard overlap <= allowedOverlap else { continue }
             accepted.append(candidate)
         }
-        return accepted.sorted { $0.startIndex < $1.startIndex }
+
+        return TrailRouteMatchResult(
+            match: match,
+            sections: accepted.sorted { $0.startIndex < $1.startIndex }
+        )
     }
 
-    func bestMatch(for route: [RoutePoint], trails: [Trail]) -> TrailMatch? {
-        guard route.count >= 2 else { return nil }
-        let candidates = trails.compactMap { trail -> TrailMatch? in
-            // A trail's average is useful for a stable centerline, but a single
-            // noisy or offset pass can pull that average away from a real ride.
-            // Score the original passes too and keep the strongest evidence.
-            let candidateRoutes = [trail.points] + trail.passes.map(\.points)
-            let scores = candidateRoutes
-                .filter { candidate in candidate.count >= 2 }
-                .flatMap { candidate in
-                    [
-                        self.score(route: route, against: candidate, isReversed: false),
-                        self.score(route: route, against: Array(candidate.reversed()), isReversed: true)
-                    ].compactMap { $0 }
-                }
-            guard let score = scores.max(by: { left, right in left.score < right.score }) else {
-                return nil
-            }
-            return TrailMatch(trailID: trail.id, score: score.score, averageDistance: score.averageDistance)
-        }.sorted { $0.score > $1.score }
-        guard let winner = candidates.first, winner.score >= minimumScore else { return nil }
-        if let runnerUp = candidates.dropFirst().first,
-           winner.score - runnerUp.score < minimumWinningMargin {
-            return nil
-        }
-        return winner
+    private func candidate(for trail: Trail) -> TrailRouteCandidate {
+        let primaryRoute = trail.points
+        return TrailRouteCandidate(
+            id: trail.id,
+            name: trail.name,
+            difficulty: trail.difficulty,
+            routes: [primaryRoute] + trail.passes.map(\.points),
+            primaryRoute: primaryRoute
+        )
     }
 
     private func score(
@@ -310,7 +567,7 @@ struct TrailRouteMatcher: Sendable {
                               totalLength: trailLength)
         }
         let distances = projections.map(\.distance)
-        guard let range = bestContiguousMatchRange(in: route, distances: distances) else { return nil }
+        guard let range = bestContiguousMatchRange(in: route, projections: projections) else { return nil }
         let matchedRoute = Array(route[range])
         let matchedDistances = Array(distances[range])
         let matchedLength = RouteMetrics.distance(of: matchedRoute)
@@ -351,20 +608,26 @@ struct TrailRouteMatcher: Sendable {
         max(0, min(lhs.upperBound, rhs.upperBound) - max(lhs.lowerBound, rhs.lowerBound))
     }
 
-    private func bestContiguousMatchRange(in route: [RoutePoint], distances: [Double]) -> Range<Int>? {
-        guard route.count == distances.count, route.count >= 2 else { return nil }
+    private func bestContiguousMatchRange(
+        in route: [RoutePoint],
+        projections: [TrailProjection]
+    ) -> Range<Int>? {
+        guard route.count == projections.count, route.count >= 2 else { return nil }
         var best: Range<Int>?
         var start: Int?
 
-        for index in 0...distances.count {
-            let isCovered = index < distances.count && distances[index] <= maximumDistance
+        for index in 0...projections.count {
+            let isCovered = index < projections.count && projections[index].distance <= maximumDistance
             if isCovered {
                 start = start ?? index
                 continue
             }
 
-            if let start, index - start >= 2 {
-                let candidate = start..<index
+            if let segmentStart = start, index - segmentStart >= 2 {
+                guard let candidate = trimEndpointPadding(segmentStart..<index, projections: projections) else {
+                    start = nil
+                    continue
+                }
                 if best == nil || RouteMetrics.distance(of: Array(route[candidate]))
                     > RouteMetrics.distance(of: Array(route[best!])) {
                     best = candidate
@@ -373,6 +636,28 @@ struct TrailRouteMatcher: Sendable {
             start = nil
         }
         return best
+    }
+
+    private func trimEndpointPadding(
+        _ range: Range<Int>,
+        projections: [TrailProjection]
+    ) -> Range<Int>? {
+        var lowerBound = range.lowerBound
+        var upperBound = range.upperBound
+
+        while lowerBound + 1 < upperBound,
+              projections[lowerBound].progress <= 0.001,
+              abs(projections[lowerBound].progress - projections[lowerBound + 1].progress) <= 0.001 {
+            lowerBound += 1
+        }
+        while upperBound - 2 >= lowerBound,
+              projections[upperBound - 1].progress >= 0.999,
+              abs(projections[upperBound - 1].progress - projections[upperBound - 2].progress) <= 0.001 {
+            upperBound -= 1
+        }
+
+        guard upperBound - lowerBound >= 2 else { return nil }
+        return lowerBound..<upperBound
     }
 
     private func endpointScore(projections: [TrailProjection]) -> (
@@ -551,9 +836,10 @@ final class TrailRouteMatchCache {
         if let entry = entries[segment.id], entry.trailRevision == revision {
             return entry
         }
-        let match = matcher.bestMatch(for: segment.points, trails: trails)
-        let sections = matcher.matchingSections(for: segment.points, trails: trails)
-        let newEntry = Entry(trailRevision: revision, match: match, sections: sections)
+        let result = matcher.matchResult(for: segment.points, trails: trails)
+        let newEntry = Entry(trailRevision: revision,
+                             match: result.match,
+                             sections: result.sections)
         entries[segment.id] = newEntry
         return newEntry
     }

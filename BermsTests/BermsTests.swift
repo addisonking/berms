@@ -212,6 +212,113 @@ final class BermsTests: XCTestCase {
         TrailRouteMatchCache.shared.invalidate()
     }
 
+    func testSessionDetailPresentationBuilderBuildsStableBaseMarkers() throws {
+        let id = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
+        let base = Date(timeIntervalSince1970: 10_000)
+        let route = (0...10).map { index in
+            RoutePoint(latitude: 41.2505 + Double(index) * 0.0001,
+                       longitude: -74.5012,
+                       altitude: 100 - Double(index),
+                       speed: 8,
+                       timestamp: base.addingTimeInterval(Double(index)))
+        }
+        let jump = JumpEvent(takeoffTimestamp: base.addingTimeInterval(5),
+                             landingTimestamp: base.addingTimeInterval(5.2),
+                             takeoffMonotonicSeconds: 5,
+                             landingMonotonicSeconds: 5.2)
+        let input = SessionDetailPreparationInput(
+            segments: [SessionDetailSegmentInput(
+                id: id,
+                kind: .run,
+                startedAt: route[0].timestamp,
+                endedAt: route[10].timestamp,
+                distanceMeters: 1_000,
+                verticalMeters: 100,
+                maximumSpeedMetersPerSecond: 8,
+                routeData: try RouteCodec.encode(route),
+                jumpData: try JSONEncoder().encode([jump])
+            )],
+            trails: [],
+            manualCatalogID: nil
+        )
+
+        let result = try SessionDetailPresentationBuilder.buildBase(input)
+
+        XCTAssertEqual(result.runs.map(\.id), [id])
+        XCTAssertEqual(result.runs.first?.routePoints, route)
+        XCTAssertEqual(result.runs.first?.jumps, [jump])
+        XCTAssertEqual(result.runs.first?.duration ?? .nan, 10, accuracy: 0.001)
+        XCTAssertEqual(result.jumpMarkers.map(\.id), ["\(id.uuidString)-0"])
+        XCTAssertEqual(result.jumpMarkers.first?.segmentID, id)
+    }
+
+    func testSessionDetailPresentationBuilderBuildsTrailNamesAndOverlays() throws {
+        let segmentID = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
+        let trailID = UUID(uuidString: "33333333-3333-3333-3333-333333333333")!
+        let base = Date(timeIntervalSince1970: 20_000)
+        let route = (0...10).map { index in
+            RoutePoint(latitude: 41.2505 + Double(index) * 0.0001,
+                       longitude: -74.5012,
+                       altitude: 100 - Double(index),
+                       speed: 8,
+                       timestamp: base.addingTimeInterval(Double(index)))
+        }
+        let routeData = try RouteCodec.encode(route)
+        let input = SessionDetailPreparationInput(
+            segments: [SessionDetailSegmentInput(
+                id: segmentID,
+                kind: .run,
+                startedAt: route[0].timestamp,
+                endedAt: route[10].timestamp,
+                distanceMeters: 1_000,
+                verticalMeters: 100,
+                maximumSpeedMetersPerSecond: 8,
+                routeData: routeData,
+                jumpData: nil
+            )],
+            trails: [SessionDetailTrailInput(
+                id: trailID,
+                name: "Test Trail",
+                difficulty: .blue,
+                resort: TrailCatalogRegistry.defaultCatalog.resortName,
+                averagedRouteData: routeData,
+                passRouteData: []
+            )],
+            manualCatalogID: nil
+        )
+        let baseResult = try SessionDetailPresentationBuilder.buildBase(input)
+
+        let details = try SessionDetailPresentationBuilder.buildTrailDetails(
+            base: baseResult,
+            input: input
+        )
+
+        XCTAssertEqual(details.sequenceBySegmentID[segmentID], "Test Trail")
+        XCTAssertEqual(details.overlays.count, 1)
+        XCTAssertEqual(details.overlays.first?.trailID, trailID)
+        XCTAssertEqual(details.overlays.first?.name, "Test Trail")
+        XCTAssertGreaterThan(details.overlays.first?.points.count ?? 0, 1)
+    }
+
+    func testSessionDetailBaseLimitsOverviewJumpMarkersDeterministically() {
+        let markers = (0..<100).map { index in
+            SessionDetailJumpMarker(
+                id: "jump-\(index)",
+                segmentID: UUID(uuidString: "44444444-4444-4444-4444-444444444444")!,
+                number: index + 1,
+                coordinate: Coordinate(latitude: 41.25 + Double(index) * 0.0001,
+                                        longitude: -74.50),
+                airtime: 0.2
+            )
+        }
+        let base = SessionDetailBase(runs: [], mapSegments: [], jumpMarkers: markers, segmentsByID: [:])
+
+        XCTAssertEqual(base.jumpMarkers.count, 100)
+        XCTAssertEqual(base.summaryJumpMarkers.count, SessionDetailBase.summaryJumpMarkerLimit)
+        XCTAssertEqual(base.summaryJumpMarkers.first?.id, "jump-0")
+        XCTAssertEqual(base.summaryJumpMarkers.last?.id, "jump-99")
+    }
+
     func testLiveMapPresentationSelectsOnlyTheRelevantPath() {
         let point = RoutePoint(latitude: 40, longitude: -105, altitude: 100, speed: 8,
                                timestamp: Date(timeIntervalSince1970: 1))
