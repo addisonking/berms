@@ -184,6 +184,9 @@ enum SessionDetailPresentationPreheater {
         } onCancel: {
             trailTask.cancel()
         }
+        // The matcher stops early when cancelled, so a partial result must not be
+        // handed back as a successful presentation.
+        try Task.checkCancellation()
         return .init(base: base, trailDetails: trailDetails)
     }
 
@@ -2320,7 +2323,7 @@ struct DayDetailView: View {
                 AdaptiveStatRow {
                     SummaryStat(label: "Top speed", value: BermsFormat.speed(day.maximumSpeedMetersPerSecond))
                     SummaryStat(label: "Jumps",
-                                value: detailBase.map { "\($0.jumpMarkers.count)" } ?? "\(day.jumpCount)",
+                                value: detailBase.map { "\($0.jumpCount)" } ?? "…",
                                 tint: .primary)
                 }
             }
@@ -2645,6 +2648,9 @@ struct FullScreenSummaryMap: View {
                                     score: $0.score)
                 }
         }
+        // Staged preparation publishes the base first; while the trail details are
+        // still matching, showing no overlays beats matching synchronously here.
+        guard preparedBase == nil else { return [] }
         return visibleSegments.flatMap { segment in
             trailOverlays(for: segment, trails: trailsFor(segment))
         }
@@ -2990,6 +2996,9 @@ struct RunMapView: View {
                                     score: $0.score)
                 }
         }
+        // The prepared base arrives before its trail details; matching synchronously
+        // in that window would reintroduce the work this preparation moves off-main.
+        guard preparedDetail == nil else { return [] }
         return trailOverlays(for: segment, trails: activeTrails)
     }
 
@@ -3115,6 +3124,9 @@ struct RunMapView: View {
         if let preparedDetail, let preparedTrailDetails {
             return preparedTrailDetails.sequenceBySegmentID[preparedDetail.id] ?? "Trail not identified"
         }
+        // The base lands before the trail details do; resolve the title only for the
+        // destinations that have no prepared presentation at all.
+        guard preparedDetail == nil else { return "Loading trails…" }
         let coordinate = routePoints.first.map {
             Coordinate(latitude: $0.latitude, longitude: $0.longitude)
         }
@@ -3295,7 +3307,10 @@ struct SegmentRow: View {
     }
 
     private var durationTitle: String {
-        detail.map { BermsFormat.duration($0.duration) } ?? BermsFormat.duration(segment.duration)
+        if let detail { return BermsFormat.duration(detail.duration) }
+        // Reading the segment duration decodes its route, which is the work being
+        // moved off the main actor while preparation runs.
+        return isPreparingDetails ? "…" : BermsFormat.duration(segment.duration)
     }
 
     private var kind: SegmentKind {

@@ -215,7 +215,6 @@ struct TrailRouteCandidate: Sendable {
     let name: String
     let difficulty: TrailDifficulty
     let routes: [[RoutePoint]]
-    let primaryRoute: [RoutePoint]
 }
 
 extension Trail {
@@ -321,6 +320,11 @@ struct SessionDetailBase: Sendable {
                 / Double(maximumCount - 1)).rounded())
             return jumpMarkers[sourceIndex]
         }
+    }
+
+    /// Jumps recorded on the day's runs, independent of whether each jump found a map anchor.
+    var jumpCount: Int {
+        runs.reduce(0) { $0 + $1.jumps.count }
     }
 }
 
@@ -462,8 +466,7 @@ enum SessionDetailPresentationBuilder {
             id: input.id,
             name: input.name,
             difficulty: input.difficulty,
-            routes: routes,
-            primaryRoute: primaryRoute
+            routes: routes
         )
     }
 }
@@ -572,13 +575,11 @@ struct TrailRouteMatcher: Sendable {
     }
 
     private func candidate(for trail: Trail) -> TrailRouteCandidate {
-        let primaryRoute = trail.points
-        return TrailRouteCandidate(
+        TrailRouteCandidate(
             id: trail.id,
             name: trail.name,
             difficulty: trail.difficulty,
-            routes: trail.matcherRoutes,
-            primaryRoute: primaryRoute
+            routes: trail.matcherRoutes
         )
     }
 
