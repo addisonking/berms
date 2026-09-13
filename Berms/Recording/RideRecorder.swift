@@ -1,5 +1,6 @@
 import Combine
 import CoreLocation
+import Darwin
 import Foundation
 import SwiftData
 
@@ -361,6 +362,7 @@ final class RideRecorder: ObservableObject {
     private var diagnosticLogger: RawLogWriter?
     private var lastSampleTimestamp: Date?
     private var lastCheckpointDate: Date?
+    private var lastFootprintLogDate: Date?
     private var trackingBoundaryDate: Date?
     private let maximumTrackingGap: TimeInterval = 60
     private var hasResumed = false
@@ -595,6 +597,7 @@ final class RideRecorder: ObservableObject {
             return
         }
         diagnosticLogger?.append(RawDiagnosticRecord(kind: "app_background", detail: "Scene entered background"))
+        logMemoryFootprint(force: true)
         checkpointIfNeeded(at: .now, force: true)
         diagnosticLogger?.flush()
     }
@@ -1239,6 +1242,7 @@ final class RideRecorder: ObservableObject {
             activePoints = []
         }
         updateLiveActivity(force: phaseBefore != phase)
+        logMemoryFootprint(at: arrivalDate)
     }
 
     private func consume(deviceMotion sample: DeviceMotionSample) {
@@ -1400,6 +1404,33 @@ final class RideRecorder: ObservableObject {
             }
         }
         detector.setLearnedLifts(profiles)
+    }
+
+    /// Periodic footprint sampling so a background session leaves evidence if
+    /// the system terminates it for memory.
+    private func logMemoryFootprint(at date: Date = .now, force: Bool = false) {
+        guard force || lastFootprintLogDate.map({ date.timeIntervalSince($0) >= 30 }) ?? true else { return }
+        lastFootprintLogDate = date
+
+        var info = task_vm_info_data_t()
+        var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size
+                                           / MemoryLayout<integer_t>.size)
+        let result = withUnsafeMutablePointer(to: &info) { pointer in
+            pointer.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { rebound in
+                task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), rebound, &count)
+            }
+        }
+        guard result == KERN_SUCCESS else { return }
+
+        diagnosticLogger?.append(RawDiagnosticRecord(
+            kind: "memory_footprint",
+            timestamp: date,
+            detail: String(format: "footprint_mb=%.1f,points=%d,segments=%d,phase=%@",
+                           Double(info.phys_footprint) / 1_048_576,
+                           activePoints.count,
+                           activeDay?.segments.count ?? 0,
+                           phase.rawValue)
+        ))
     }
 
     @discardableResult

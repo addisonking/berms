@@ -10,6 +10,7 @@ struct RootView: View {
     }
 
     @ObservedObject var recorder: RideRecorder
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var mapLayerPreferences = MapLayerPreferences()
     @StateObject private var trailCatalogSelection = TrailCatalogSelection()
     @State private var selectedTab: Tab = .track
@@ -50,6 +51,13 @@ struct RootView: View {
         .environmentObject(mapLayerPreferences)
         .environmentObject(trailCatalogSelection)
         .onAppear { recorder.resumeIfNeeded() }
+        // SwiftUI's scene lifecycle does not call the app delegate's
+        // applicationDidEnterBackground, so route it through the scene phase.
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase == .background {
+                recorder.appDidEnterBackground()
+            }
+        }
         .onOpenURL { url in
             guard url.scheme == "berms", url.host == "track" else { return }
             selectedTab = .track

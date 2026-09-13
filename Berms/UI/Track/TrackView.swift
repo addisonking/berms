@@ -11,6 +11,7 @@ let liveControlsTrailingInset: CGFloat = 20
 
 struct TrackView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
     @ObservedObject var recorder: RideRecorder
     @Query private var trails: [Trail]
     @EnvironmentObject private var mapLayerPreferences: MapLayerPreferences
@@ -148,7 +149,14 @@ struct TrackView: View {
     private var recordingContent: some View {
         GeometryReader { geometry in
             ZStack(alignment: .bottom) {
-                liveMap
+                // MapKit keeps rendering offscreen while the app records in the
+                // background, which balloons memory until iOS jetsams the app.
+                // The map is not visible then, so leave it out of the hierarchy.
+                if scenePhase == .background {
+                    BermsBackground()
+                } else {
+                    liveMap
+                }
 
                 // Fit the panel to its content. Scroll only when large text or
                 // landscape leaves too little room for all the metrics.
