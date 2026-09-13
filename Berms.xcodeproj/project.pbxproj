@@ -15,7 +15,6 @@
 		100000000000000000000005 /* RideRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000005 /* RideRecorder.swift */; };
 		100000000000000000000006 /* TrackingServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000006 /* TrackingServices.swift */; };
 		100000000000000000000007 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000007 /* Theme.swift */; };
-		100000000000000000000008 /* Views.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000008 /* Views.swift */; };
 		100000000000000000000009 /* BermsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000009 /* BermsTests.swift */; };
 		100000000000000000000012 /* JumpDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000012 /* JumpDetector.swift */; };
 		100000000000000000000013 /* ParkDayTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000013 /* ParkDayTests.swift */; };
@@ -46,6 +45,20 @@
 		100000000000000000000039 /* BermsWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 300000000000000000000006 /* BermsWatch.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		100000000000000000000040 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000038 /* PrivacyInfo.xcprivacy */; };
 		100000000000000000000041 /* Assets.xcassets in Watch Resources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000039 /* Assets.xcassets */; };
+		100000000000000000000042 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000041 /* RootView.swift */; };
+		100000000000000000000043 /* TrackView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000042 /* TrackView.swift */; };
+		100000000000000000000044 /* DaysView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000043 /* DaysView.swift */; };
+		100000000000000000000045 /* DayRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000044 /* DayRow.swift */; };
+		100000000000000000000046 /* DayDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000045 /* DayDetailView.swift */; };
+		100000000000000000000047 /* RunMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000046 /* RunMapView.swift */; };
+		100000000000000000000048 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000047 /* SettingsView.swift */; };
+		100000000000000000000049 /* TrailLibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000048 /* TrailLibraryView.swift */; };
+		100000000000000000000050 /* TrailMappingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000049 /* TrailMappingView.swift */; };
+		100000000000000000000051 /* TrailMapKit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000050 /* TrailMapKit.swift */; };
+		100000000000000000000052 /* MapControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000051 /* MapControls.swift */; };
+		100000000000000000000053 /* MapConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000052 /* MapConfiguration.swift */; };
+		100000000000000000000054 /* SessionDetailPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000053 /* SessionDetailPresentation.swift */; };
+		100000000000000000000055 /* BermsFormat.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000054 /* BermsFormat.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -56,7 +69,6 @@
 		200000000000000000000005 /* RideRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RideRecorder.swift; sourceTree = "<group>"; };
 		200000000000000000000006 /* TrackingServices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackingServices.swift; sourceTree = "<group>"; };
 		200000000000000000000007 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
-		200000000000000000000008 /* Views.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views.swift; sourceTree = "<group>"; };
 		200000000000000000000009 /* BermsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BermsTests.swift; sourceTree = "<group>"; };
 		200000000000000000000010 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		200000000000000000000011 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -94,7 +106,21 @@
 		200000000000000000000038 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		200000000000000000000039 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		200000000000000000000040 /* WatchLifecycleChecks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchLifecycleChecks.swift; sourceTree = "<group>"; };
-	/* End PBXFileReference section */
+			200000000000000000000041 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		200000000000000000000042 /* TrackView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackView.swift; sourceTree = "<group>"; };
+		200000000000000000000043 /* DaysView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DaysView.swift; sourceTree = "<group>"; };
+		200000000000000000000044 /* DayRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayRow.swift; sourceTree = "<group>"; };
+		200000000000000000000045 /* DayDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayDetailView.swift; sourceTree = "<group>"; };
+		200000000000000000000046 /* RunMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunMapView.swift; sourceTree = "<group>"; };
+		200000000000000000000047 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		200000000000000000000048 /* TrailLibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrailLibraryView.swift; sourceTree = "<group>"; };
+		200000000000000000000049 /* TrailMappingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrailMappingView.swift; sourceTree = "<group>"; };
+		200000000000000000000050 /* TrailMapKit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrailMapKit.swift; sourceTree = "<group>"; };
+		200000000000000000000051 /* MapControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapControls.swift; sourceTree = "<group>"; };
+		200000000000000000000052 /* MapConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapConfiguration.swift; sourceTree = "<group>"; };
+		200000000000000000000053 /* SessionDetailPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionDetailPresentation.swift; sourceTree = "<group>"; };
+		200000000000000000000054 /* BermsFormat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BermsFormat.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		400000000000000000000001 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
@@ -125,7 +151,7 @@
 		500000000000000000000013 /* Trails */ = {isa = PBXGroup; children = (200000000000000000000024 /* TrailImport.swift */, 200000000000000000000015 /* TrailMapper.swift */); path = Trails; sourceTree = "<group>"; };
 		500000000000000000000014 /* Connectivity */ = {isa = PBXGroup; children = (200000000000000000000026 /* WatchConnectivityCoordinator.swift */, 200000000000000000000025 /* WatchRideProtocol.swift */); path = Connectivity; sourceTree = "<group>"; };
 		500000000000000000000015 /* LiveActivity */ = {isa = PBXGroup; children = (200000000000000000000018 /* BermsActivityAttributes.swift */, 200000000000000000000019 /* BermsLiveActivityCoordinator.swift */, 200000000000000000000020 /* BermsLiveActivityIntent.swift */); path = LiveActivity; sourceTree = "<group>"; };
-		500000000000000000000016 /* UI */ = {isa = PBXGroup; children = (200000000000000000000008 /* Views.swift */, 200000000000000000000007 /* Theme.swift */); path = UI; sourceTree = "<group>"; };
+		500000000000000000000016 /* UI */ = {isa = PBXGroup; children = (500000000000000000000024 /* Root */, 500000000000000000000025 /* Track */, 500000000000000000000026 /* Days */, 500000000000000000000027 /* Run */, 500000000000000000000028 /* Settings */, 500000000000000000000029 /* DevMapping */, 500000000000000000000030 /* Shared */, 500000000000000000000031 /* Presentation */, 500000000000000000000032 /* Support */, 200000000000000000000007 /* Theme.swift */); path = UI; sourceTree = "<group>"; };
 		500000000000000000000017 /* Resources */ = {isa = PBXGroup; children = (200000000000000000000011 /* Assets.xcassets */, 200000000000000000000023 /* mountain-creek-ridepal-trails-with-metadata.geojson */, 200000000000000000000038 /* PrivacyInfo.xcprivacy */); path = Resources; sourceTree = "<group>"; };
 		500000000000000000000018 /* App */ = {isa = PBXGroup; children = (200000000000000000000033 /* BermsWatchApp.swift */); path = App; sourceTree = "<group>"; };
 		500000000000000000000019 /* Views */ = {isa = PBXGroup; children = (200000000000000000000032 /* WatchDashboardView.swift */); path = Views; sourceTree = "<group>"; };
@@ -133,6 +159,15 @@
 		500000000000000000000021 /* Connectivity */ = {isa = PBXGroup; children = (200000000000000000000027 /* WatchRideTransport.swift */, 200000000000000000000028 /* WatchConnectivityClient.swift */, 200000000000000000000031 /* WatchDemoTransport.swift */); path = Connectivity; sourceTree = "<group>"; };
 		500000000000000000000022 /* Health */ = {isa = PBXGroup; children = (200000000000000000000029 /* WatchHealthManager.swift */); path = Health; sourceTree = "<group>"; };
 		500000000000000000000023 /* Resources */ = {isa = PBXGroup; children = (200000000000000000000039 /* Assets.xcassets */); path = Resources; sourceTree = "<group>"; };
+		500000000000000000000024 /* Root */ = {isa = PBXGroup; children = (200000000000000000000041 /* RootView.swift */); path = Root; sourceTree = "<group>"; };
+		500000000000000000000025 /* Track */ = {isa = PBXGroup; children = (200000000000000000000042 /* TrackView.swift */); path = Track; sourceTree = "<group>"; };
+		500000000000000000000026 /* Days */ = {isa = PBXGroup; children = (200000000000000000000043 /* DaysView.swift */, 200000000000000000000044 /* DayRow.swift */, 200000000000000000000045 /* DayDetailView.swift */); path = Days; sourceTree = "<group>"; };
+		500000000000000000000027 /* Run */ = {isa = PBXGroup; children = (200000000000000000000046 /* RunMapView.swift */); path = Run; sourceTree = "<group>"; };
+		500000000000000000000028 /* Settings */ = {isa = PBXGroup; children = (200000000000000000000047 /* SettingsView.swift */, 200000000000000000000048 /* TrailLibraryView.swift */); path = Settings; sourceTree = "<group>"; };
+		500000000000000000000029 /* DevMapping */ = {isa = PBXGroup; children = (200000000000000000000049 /* TrailMappingView.swift */); path = DevMapping; sourceTree = "<group>"; };
+		500000000000000000000030 /* Shared */ = {isa = PBXGroup; children = (200000000000000000000050 /* TrailMapKit.swift */, 200000000000000000000051 /* MapControls.swift */, 200000000000000000000052 /* MapConfiguration.swift */); path = Shared; sourceTree = "<group>"; };
+		500000000000000000000031 /* Presentation */ = {isa = PBXGroup; children = (200000000000000000000053 /* SessionDetailPresentation.swift */); path = Presentation; sourceTree = "<group>"; };
+		500000000000000000000032 /* Support */ = {isa = PBXGroup; children = (200000000000000000000054 /* BermsFormat.swift */); path = Support; sourceTree = "<group>"; };
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -152,7 +187,7 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		400000000000000000000003 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (100000000000000000000001, 100000000000000000000002, 100000000000000000000003, 100000000000000000000004, 100000000000000000000005, 100000000000000000000006, 100000000000000000000007, 100000000000000000000008, 100000000000000000000012, 100000000000000000000014, 100000000000000000000015, 100000000000000000000016, 100000000000000000000017, 100000000000000000000018, 100000000000000000000019, 100000000000000000000020, 100000000000000000000026, 100000000000000000000027, 100000000000000000000028); runOnlyForDeploymentPostprocessing = 0; };
+		400000000000000000000003 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (100000000000000000000001, 100000000000000000000002, 100000000000000000000003, 100000000000000000000004, 100000000000000000000005, 100000000000000000000006, 100000000000000000000007, 100000000000000000000012, 100000000000000000000014, 100000000000000000000015, 100000000000000000000016, 100000000000000000000017, 100000000000000000000018, 100000000000000000000019, 100000000000000000000020, 100000000000000000000026, 100000000000000000000027, 100000000000000000000028, 100000000000000000000042, 100000000000000000000043, 100000000000000000000044, 100000000000000000000045, 100000000000000000000046, 100000000000000000000047, 100000000000000000000048, 100000000000000000000049, 100000000000000000000050, 100000000000000000000051, 100000000000000000000052, 100000000000000000000053, 100000000000000000000054, 100000000000000000000055); runOnlyForDeploymentPostprocessing = 0; };
 		400000000000000000000005 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (100000000000000000000009, 100000000000000000000013); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXSourcesBuildPhase section */
 
