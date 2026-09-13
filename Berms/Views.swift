@@ -433,6 +433,7 @@ struct RootView: View {
     @StateObject private var trailCatalogSelection = TrailCatalogSelection()
     @State private var selectedTab: Tab = .track
     @State private var pendingDayID: UUID?
+    @State private var storeIssue: PersistenceController.StoreIssue? = PersistenceController.shared.storeIssue
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -456,6 +457,14 @@ struct RootView: View {
             guard url.scheme == "berms" else { return }
             selectedTab = .track
             recorder.handleLiveActivityOpen()
+        }
+        .alert("Storage problem", isPresented: Binding(
+            get: { storeIssue != nil },
+            set: { if !$0 { storeIssue = nil } }
+        ), presenting: storeIssue) { _ in
+            Button("OK", role: .cancel) {}
+        } message: { issue in
+            Text(issue.message)
         }
     }
 }

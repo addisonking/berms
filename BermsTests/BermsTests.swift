@@ -1559,6 +1559,32 @@ final class BermsTests: XCTestCase {
     }
 
     @MainActor
+    func testLiveActivityOpenKeepsAutoRestoredRide() throws {
+        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try ModelContainer(for: RideDay.self, RideSegment.self, configurations: configuration)
+        let context = ModelContext(container)
+        let day = RideDay(startedAt: Date(timeIntervalSince1970: 2_000))
+        context.insert(day)
+        try context.save()
+
+        let previousRecordingState = UserDefaults.standard.bool(forKey: "berms.recordingActive")
+        defer { UserDefaults.standard.set(previousRecordingState, forKey: "berms.recordingActive") }
+        UserDefaults.standard.set(true, forKey: "berms.recordingActive")
+
+        let recorder = RideRecorder(context: context,
+                                    watchStateSink: nil,
+                                    authorizationOverride: .authorizedAlways)
+        recorder.resumeIfNeeded(autoResume: true)
+        XCTAssertTrue(recorder.isRecording)
+
+        recorder.handleLiveActivityOpen()
+
+        XCTAssertTrue(recorder.isRecording)
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<RideDay>()), 1)
+        XCTAssertNotNil(recorder.stop())
+    }
+
+    @MainActor
     func testRecorderStartAndStopSurvivesMotionCallbacks() throws {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
         let container = try ModelContainer(for: RideDay.self, RideSegment.self,

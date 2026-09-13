@@ -146,27 +146,83 @@ final class RawLogWriter: @unchecked Sendable {
 @MainActor
 final class PersistenceController {
     static let shared = PersistenceController()
+
+    struct StoreIssue: Identifiable, Equatable {
+        let id = UUID()
+        let message: String
+    }
+
     let container: ModelContainer
+    private(set) var storeIssue: StoreIssue?
 
     private init() {
+        let schema = Schema([RideDay.self, RideSegment.self, Trail.self, TrailPass.self, LearnedLift.self])
+        let configuration = ModelConfiguration("Berms", schema: schema, isStoredInMemoryOnly: false)
+
+        if let container = try? ModelContainer(for: schema, configurations: [configuration]) {
+            self.container = container
+            importCatalogs(into: container.mainContext)
+            return
+        }
+
+        let movedAside = Self.moveStoreAside()
+        if let container = try? ModelContainer(for: schema, configurations: [configuration]) {
+            self.container = container
+            storeIssue = StoreIssue(
+                message: movedAside
+                    ? "Berms could not open its saved data, so it started fresh. The previous data was kept on this device."
+                    : "Berms could not open its saved data, so it started fresh."
+            )
+            importCatalogs(into: container.mainContext)
+            return
+        }
+
+        let memoryConfiguration = ModelConfiguration("Berms", schema: schema, isStoredInMemoryOnly: true)
+        guard let container = try? ModelContainer(for: schema, configurations: [memoryConfiguration]) else {
+            fatalError("Could not create Berms storage schema")
+        }
+        self.container = container
+        storeIssue = StoreIssue(
+            message: "Berms could not open its saved data and is running without saving. Restart the app to try again."
+        )
+        importCatalogs(into: container.mainContext)
+    }
+
+    private func importCatalogs(into context: ModelContext) {
         do {
-            let schema = Schema([RideDay.self, RideSegment.self, Trail.self, TrailPass.self, LearnedLift.self])
-            let configuration = ModelConfiguration("Berms", schema: schema, isStoredInMemoryOnly: false)
-            container = try ModelContainer(for: schema, configurations: [configuration])
-            do {
-                for result in try TrailCatalogImporter.importCatalogsIfNeeded(
-                    into: container.mainContext
-                ) {
-                    print("Imported \(result.catalog.resortName) trails: "
-                        + "\(result.summary.trailsCreated) trails, "
-                        + "\(result.summary.passesCreated) passes")
-                }
-            } catch {
-                print("Trail catalog import skipped: \(error.localizedDescription)")
+            for result in try TrailCatalogImporter.importCatalogsIfNeeded(into: context) {
+                print("Imported \(result.catalog.resortName) trails: "
+                    + "\(result.summary.trailsCreated) trails, "
+                    + "\(result.summary.passesCreated) passes")
             }
         } catch {
-            fatalError("Could not create Berms storage: \(error)")
+            print("Trail catalog import skipped: \(error.localizedDescription)")
         }
+    }
+
+    private static func moveStoreAside() -> Bool {
+        let fileManager = FileManager.default
+        guard let support = try? fileManager.url(for: .applicationSupportDirectory,
+                                                 in: .userDomainMask,
+                                                 appropriateFor: nil,
+                                                 create: true) else {
+            return false
+        }
+        let stamp = ISO8601DateFormatter().string(from: .now)
+            .replacingOccurrences(of: ":", with: "-")
+        var movedAny = false
+        for suffix in ["", "-shm", "-wal"] {
+            let source = support.appendingPathComponent("Berms.store\(suffix)")
+            guard fileManager.fileExists(atPath: source.path) else { continue }
+            let destination = support.appendingPathComponent("Berms-recovered-\(stamp).store\(suffix)")
+            do {
+                try fileManager.moveItem(at: source, to: destination)
+                movedAny = true
+            } catch {
+                print("Could not move store file \(source.lastPathComponent): \(error.localizedDescription)")
+            }
+        }
+        return movedAny
     }
 }
 
@@ -219,7 +275,6 @@ final class RideRecorder: ObservableObject {
     private var authorizationSubscription: AnyCancellable?
     private var liveActivityNotificationObserver: NSObjectProtocol?
     private var pendingRecoveryDay: RideDay?
-    private var automaticallyRestoredOnLaunch = false
 
     init(context: ModelContext? = nil,
          watchStateSink: WatchRideStateSink? = WatchConnectivityCoordinator.shared,
@@ -635,15 +690,13 @@ final class RideRecorder: ObservableObject {
             needsRecoveryPrompt = true
             return
         }
-        automaticallyRestoredOnLaunch = true
         restore(day: day)
     }
 
     func handleLiveActivityOpen() {
-        if automaticallyRestoredOnLaunch, let day = activeDay {
-            automaticallyRestoredOnLaunch = false
-            discardUnfinishedSession(day)
-        } else if !isRecording {
+        // Opening the app from a Live Activity is not a request to end the ride.
+        // Only clean up activities that no longer have a running session.
+        if !isRecording {
             BermsLiveActivityCoordinator.shared.endAll()
         }
     }
