@@ -238,10 +238,89 @@ struct RecorderCheckpoint: Codable, Sendable {
     }
 }
 
+struct RebuiltSegmentSummary: Sendable {
+    let kind: SegmentKind
+    let startedAt: Date
+    let endedAt: Date
+    let routeData: Data
+    let distanceMeters: Double
+    let verticalMeters: Double
+    let maximumSpeedMetersPerSecond: Double
+    let jumps: [JumpEvent]
+}
+
+struct RebuiltDaySummary: Sendable {
+    let dayID: UUID
+    let segments: [RebuiltSegmentSummary]
+}
+
+struct RepairedRoute: Sendable {
+    let id: UUID
+    let routeData: Data
+    let distanceMeters: Double
+    let verticalMeters: Double
+    let maximumSpeedMetersPerSecond: Double
+}
+
+enum DiagnosticSummaryRebuilder {
+    static func rebuild(dayID: UUID, logURL: URL) -> RebuiltDaySummary? {
+        guard let data = try? Data(contentsOf: logURL),
+              let result = try? DiagnosticLogReplayer().replay(data: data),
+              !result.segments.isEmpty else {
+            return nil
+        }
+
+        var summaries: [RebuiltSegmentSummary] = []
+        for draft in result.segments {
+            guard let cleaned = cleanedRoute(samples: draft.points, kind: draft.kind) else {
+                return nil
+            }
+            summaries.append(RebuiltSegmentSummary(
+                kind: draft.kind,
+                startedAt: draft.startedAt,
+                endedAt: draft.endedAt,
+                routeData: cleaned.routeData,
+                distanceMeters: cleaned.distance,
+                verticalMeters: cleaned.vertical,
+                maximumSpeedMetersPerSecond: cleaned.maximumSpeed,
+                jumps: draft.jumps
+            ))
+        }
+        return RebuiltDaySummary(dayID: dayID, segments: summaries)
+    }
+
+    static func cleanedRoute(samples: [TrackSample],
+                             kind: SegmentKind) -> (routeData: Data, distance: Double,
+                                                    vertical: Double, maximumSpeed: Double)? {
+        let cleanedPoints = RouteCleaner().clean(samples).map(\.routePoint)
+        guard cleanedPoints.count >= 2, let routeData = try? RouteCodec.encode(cleanedPoints) else {
+            return nil
+        }
+        return (routeData,
+                RouteMetrics.distance(of: cleanedPoints),
+                RouteMetrics.vertical(of: cleanedPoints, kind: kind),
+                RouteMetrics.maximumSpeed(of: cleanedPoints))
+    }
+
+    static func cleanedRoute(points: [RoutePoint],
+                             kind: SegmentKind) -> (routeData: Data, distance: Double,
+                                                    vertical: Double, maximumSpeed: Double)? {
+        let cleanedPoints = RouteCleaner().clean(points)
+        guard cleanedPoints.count >= 2, let routeData = try? RouteCodec.encode(cleanedPoints) else {
+            return nil
+        }
+        return (routeData,
+                RouteMetrics.distance(of: cleanedPoints),
+                RouteMetrics.vertical(of: cleanedPoints, kind: kind),
+                RouteMetrics.maximumSpeed(of: cleanedPoints))
+    }
+}
+
 @MainActor
 final class RideRecorder: ObservableObject {
     static let shared = RideRecorder()
     private static let diagnosticSummaryVersion = "6"
+    private static let diagnosticSummaryVersionKey = "berms.diagnosticSummaryVersion"
 
     @Published private(set) var activeDay: RideDay?
     @Published private(set) var phase: DetectorPhase = .idle
@@ -275,6 +354,7 @@ final class RideRecorder: ObservableObject {
     private var authorizationSubscription: AnyCancellable?
     private var liveActivityNotificationObserver: NSObjectProtocol?
     private var pendingRecoveryDay: RideDay?
+    private(set) var migrationTask: Task<Void, Never>?
 
     init(context: ModelContext? = nil,
          watchStateSink: WatchRideStateSink? = WatchConnectivityCoordinator.shared,
@@ -305,7 +385,7 @@ final class RideRecorder: ObservableObject {
         BermsLiveActivityCoordinator.shared.reconcile()
     }
 
-    static func debugLogURL(for dayID: UUID) -> URL {
+    nonisolated static func debugLogURL(for dayID: UUID) -> URL {
         let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         return documents.appendingPathComponent("Berms Diagnostics", isDirectory: true)
             .appendingPathComponent("Berms-\(dayID.uuidString).jsonl")
@@ -575,97 +655,166 @@ final class RideRecorder: ObservableObject {
     @discardableResult
     func rebuildSummaryFromDiagnosticLog(for day: RideDay, from url: URL) -> Bool {
         guard day.isFinished,
-              let data = try? Data(contentsOf: url),
-              let result = try? DiagnosticLogReplayer().replay(data: data),
-              !result.segments.isEmpty else {
+              let summary = DiagnosticSummaryRebuilder.rebuild(dayID: day.id, logURL: url) else {
             return false
         }
+        apply(summary, to: day)
+        return saveContext(detail: "diagnostic_summary_rebuild")
+    }
 
-        var rebuiltSegments: [RideSegment] = []
-        for draft in result.segments {
-            let cleanedPoints = RouteCleaner().clean(draft.points).map(\.routePoint)
-            guard cleanedPoints.count >= 2,
-                  let routeData = try? RouteCodec.encode(cleanedPoints) else {
-                return false
-            }
-            let segment = RideSegment(kind: draft.kind, startedAt: draft.startedAt,
-                                      endedAt: draft.endedAt, routeData: routeData,
-                                      jumps: draft.jumps)
-            segment.distanceMeters = RouteMetrics.distance(of: cleanedPoints)
-            segment.verticalMeters = RouteMetrics.vertical(of: cleanedPoints, kind: draft.kind)
-            segment.maximumSpeedMetersPerSecond = RouteMetrics.maximumSpeed(of: cleanedPoints)
-            rebuiltSegments.append(segment)
-        }
-
+    private func apply(_ summary: RebuiltDaySummary, to day: RideDay) {
+        guard !summary.segments.isEmpty else { return }
         for segment in day.segments {
             context.delete(segment)
         }
         day.segments.removeAll()
-        for segment in rebuiltSegments {
+        for rebuilt in summary.segments {
+            let segment = RideSegment(kind: rebuilt.kind, startedAt: rebuilt.startedAt,
+                                      endedAt: rebuilt.endedAt, routeData: rebuilt.routeData,
+                                      jumps: rebuilt.jumps)
+            segment.distanceMeters = rebuilt.distanceMeters
+            segment.verticalMeters = rebuilt.verticalMeters
+            segment.maximumSpeedMetersPerSecond = rebuilt.maximumSpeedMetersPerSecond
             segment.day = day
             day.segments.append(segment)
             context.insert(segment)
         }
         day.recalculateTotals()
-        return saveContext(detail: "diagnostic_summary_rebuild")
     }
 
-    private func migrateDiagnosticSummariesIfNeeded() -> Bool {
-        guard UserDefaults.standard.string(forKey: "berms.diagnosticSummaryVersion")
-                != Self.diagnosticSummaryVersion else { return true }
-        guard let days = try? context.fetch(FetchDescriptor<RideDay>()) else {
+    private struct SegmentRepairInput: Sendable {
+        let id: UUID
+        let kind: SegmentKind
+        let routeData: Data
+    }
+
+    private struct PassRepairInput: Sendable {
+        let id: UUID
+        let routeData: Data
+    }
+
+    private func startDiagnosticMigrationIfNeeded() {
+        guard UserDefaults.standard.string(forKey: Self.diagnosticSummaryVersionKey)
+                != Self.diagnosticSummaryVersion,
+              migrationTask == nil else { return }
+
+        let dayIDs: [UUID]
+        let segmentInputs: [SegmentRepairInput]
+        let passInputs: [PassRepairInput]
+        do {
+            dayIDs = try context.fetch(FetchDescriptor<RideDay>())
+                .filter(\.isFinished)
+                .map(\.id)
+            segmentInputs = try context.fetch(FetchDescriptor<RideSegment>()).map {
+                SegmentRepairInput(id: $0.id, kind: $0.kind, routeData: $0.routeData)
+            }
+            passInputs = try context.fetch(FetchDescriptor<TrailPass>()).map {
+                PassRepairInput(id: $0.id, routeData: $0.routeData)
+            }
+        } catch {
             errorMessage = "Could not update saved session summaries. Please try again."
-            return false
+            return
         }
 
-        for day in days where day.isFinished {
-            if let url = debugLogURL(for: day) {
-                _ = rebuildSummaryFromDiagnosticLog(for: day, from: url)
-            }
-            for segment in day.segments where segment.kind == .lift {
-                learnLiftProfile(from: segment)
-            }
+        migrationTask = Task { [weak self] in
+            let work = await Task.detached(priority: .utility) {
+                () -> ([RebuiltDaySummary], [RepairedRoute], [RepairedRoute]) in
+                let rebuiltDays = dayIDs.compactMap {
+                    DiagnosticSummaryRebuilder.rebuild(dayID: $0,
+                                                       logURL: RideRecorder.debugLogURL(for: $0))
+                }
+                let repairedSegments = segmentInputs.compactMap { input -> RepairedRoute? in
+                    guard let points = try? RouteCodec.decode(input.routeData),
+                          let cleaned = DiagnosticSummaryRebuilder.cleanedRoute(points: points,
+                                                                                 kind: input.kind) else {
+                        return nil
+                    }
+                    return RepairedRoute(id: input.id,
+                                         routeData: cleaned.routeData,
+                                         distanceMeters: cleaned.distance,
+                                         verticalMeters: cleaned.vertical,
+                                         maximumSpeedMetersPerSecond: cleaned.maximumSpeed)
+                }
+                let repairedPasses = passInputs.compactMap { input -> RepairedRoute? in
+                    guard let points = try? RouteCodec.decode(input.routeData),
+                          let cleaned = DiagnosticSummaryRebuilder.cleanedRoute(points: points,
+                                                                                 kind: .lift) else {
+                        return nil
+                    }
+                    return RepairedRoute(id: input.id,
+                                         routeData: cleaned.routeData,
+                                         distanceMeters: cleaned.distance,
+                                         verticalMeters: cleaned.vertical,
+                                         maximumSpeedMetersPerSecond: cleaned.maximumSpeed)
+                }
+                return (rebuiltDays, repairedSegments, repairedPasses)
+            }.value
+            guard let self else { return }
+            self.applyDiagnosticMigration(rebuiltDays: work.0,
+                                          repairedSegments: work.1,
+                                          repairedPasses: work.2)
         }
-        repairStoredRoutes()
-        guard saveContext(detail: "diagnostic_summary_migration") else { return false }
-        UserDefaults.standard.set(Self.diagnosticSummaryVersion,
-                                   forKey: "berms.diagnosticSummaryVersion")
-        return true
     }
 
-    private func repairStoredRoutes() {
-        let cleaner = RouteCleaner()
+    private func applyDiagnosticMigration(rebuiltDays: [RebuiltDaySummary],
+                                          repairedSegments: [RepairedRoute],
+                                          repairedPasses: [RepairedRoute]) {
+        defer { migrationTask = nil }
+
+        if let days = try? context.fetch(FetchDescriptor<RideDay>()) {
+            let daysByID = Dictionary(days.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            for summary in rebuiltDays {
+                guard let day = daysByID[summary.dayID] else { continue }
+                apply(summary, to: day)
+            }
+        }
+
         if let segments = try? context.fetch(FetchDescriptor<RideSegment>()) {
-            for segment in segments {
-                let cleaned = cleaner.clean(segment.points)
-                guard cleaned.count >= 2, let data = try? RouteCodec.encode(cleaned) else { continue }
-                segment.routeData = data
-                segment.distanceMeters = RouteMetrics.distance(of: cleaned)
-                segment.verticalMeters = RouteMetrics.vertical(of: cleaned, kind: segment.kind)
-                segment.maximumSpeedMetersPerSecond = RouteMetrics.maximumSpeed(of: cleaned)
-                segment.day?.recalculateTotals()
+            let segmentsByID = Dictionary(segments.map { ($0.id, $0) },
+                                          uniquingKeysWith: { first, _ in first })
+            for repair in repairedSegments {
+                guard let segment = segmentsByID[repair.id] else { continue }
+                segment.routeData = repair.routeData
+                segment.distanceMeters = repair.distanceMeters
+                segment.verticalMeters = repair.verticalMeters
+                segment.maximumSpeedMetersPerSecond = repair.maximumSpeedMetersPerSecond
             }
         }
 
         if let passes = try? context.fetch(FetchDescriptor<TrailPass>()) {
-            for pass in passes {
-                let cleaned = cleaner.clean(pass.points)
-                guard cleaned.count >= 2, let data = try? RouteCodec.encode(cleaned) else { continue }
-                pass.routeData = data
-                pass.distanceMeters = RouteMetrics.distance(of: cleaned)
+            let passesByID = Dictionary(passes.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            for repair in repairedPasses {
+                guard let pass = passesByID[repair.id] else { continue }
+                pass.routeData = repair.routeData
+                pass.distanceMeters = repair.distanceMeters
+            }
+        }
+
+        if let days = try? context.fetch(FetchDescriptor<RideDay>()) {
+            for day in days where day.isFinished {
+                day.recalculateTotals()
+                for segment in day.segments where segment.kind == .lift {
+                    learnLiftProfile(from: segment)
+                }
             }
         }
         if let trails = try? context.fetch(FetchDescriptor<Trail>()) {
             trails.forEach { $0.recalculateAverage() }
         }
+
+        guard saveContext(detail: "diagnostic_summary_migration") else { return }
+        UserDefaults.standard.set(Self.diagnosticSummaryVersion,
+                                  forKey: Self.diagnosticSummaryVersionKey)
     }
 
     func resumeIfNeeded(autoResume: Bool = false) {
         guard !hasResumed else { return }
+        hasResumed = true
+
+        startDiagnosticMigrationIfNeeded()
 
         isRestoring = true
         defer { isRestoring = false }
-        guard migrateDiagnosticSummariesIfNeeded() else { return }
         guard UserDefaults.standard.bool(forKey: "berms.recordingActive"), activeDay == nil else {
             if !UserDefaults.standard.bool(forKey: "berms.recordingActive") {
                 BermsLiveActivityCoordinator.shared.endAll()

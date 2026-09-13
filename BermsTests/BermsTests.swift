@@ -955,6 +955,26 @@ final class BermsTests: XCTestCase {
         XCTAssertFalse(state.isStale(at: Date(timeIntervalSince1970: 146)))
     }
 
+    func testWatchRideStateDecodesLegacyPayloadWithoutVersion() throws {
+        let payload = Data("""
+        {"status":"recording","rideID":"ride-1","phase":"run","elapsedSeconds":42,
+         "distanceMeters":1250,"descentMeters":210,"speedMetersPerSecond":12}
+        """.utf8)
+        let state = try WatchRideCodec.decode(WatchRideState.self, from: payload)
+        XCTAssertEqual(state.version, 1)
+        XCTAssertEqual(state.status, .recording)
+        XCTAssertEqual(state.updatedAt, .distantPast)
+        XCTAssertTrue(state.isStale(at: Date(timeIntervalSince1970: 10_000)))
+    }
+
+    func testWatchCommandRequestDecodesLegacyPayloadWithoutVersion() throws {
+        let payload = Data(#"{"command":"pause","rideID":"ride-1"}"#.utf8)
+        let request = try WatchRideCodec.decode(WatchRideCommandRequest.self, from: payload)
+        XCTAssertEqual(request.version, 1)
+        XCTAssertEqual(request.command, .pause)
+        XCTAssertEqual(request.rideID, "ride-1")
+    }
+
     @MainActor
     func testManualLaunchPromptsForUnfinishedSession() throws {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
@@ -1378,7 +1398,7 @@ final class BermsTests: XCTestCase {
     }
 
     @MainActor
-    func testSavedRoutesAndTrailPassesRepairDuringMigration() throws {
+    func testSavedRoutesAndTrailPassesRepairDuringMigration() async throws {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
         let container = try ModelContainer(for: RideDay.self, RideSegment.self,
                                            Trail.self, TrailPass.self, LearnedLift.self,
@@ -1422,7 +1442,9 @@ final class BermsTests: XCTestCase {
         UserDefaults.standard.set("5", forKey: "berms.diagnosticSummaryVersion")
         UserDefaults.standard.set(false, forKey: "berms.recordingActive")
 
-        RideRecorder(context: context).resumeIfNeeded()
+        let recorder = RideRecorder(context: context, watchStateSink: nil)
+        recorder.resumeIfNeeded()
+        await recorder.migrationTask?.value
 
         let savedSegment = try XCTUnwrap(context.fetch(FetchDescriptor<RideSegment>()).first)
         XCTAssertLessThan(savedSegment.points.count, route.count)
