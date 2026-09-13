@@ -2075,10 +2075,16 @@ struct DaysView: View {
     private func dayDeleteAction(for day: RideDay) -> some View {
         if day.isFinished {
             Button(role: .destructive) {
-                dayToDelete = day
+                let pending = day
+                Task { @MainActor in
+                    // Let the swipe finish closing before the alert takes over.
+                    try? await Task.sleep(for: .milliseconds(200))
+                    dayToDelete = pending
+                }
             } label: {
                 Label("Delete", systemImage: "trash")
             }
+            .tint(.red)
         }
     }
 
@@ -2271,28 +2277,15 @@ struct DayDetailView: View {
         } message: {
             Text(saveErrorMessage ?? "")
         }
-        .sheet(isPresented: $showingNameEditor) {
-            NavigationStack {
-                Form {
-                    TextField("Session name", text: $nameDraft)
-                        .textInputAutocapitalization(.words)
-                }
-                .navigationTitle(day.hasCustomName ? "Edit name" : "Add name")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") {
-                            showingNameEditor = false
-                        }
-                    }
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("Save") {
-                            saveName()
-                        }
-                    }
-                }
+        .alert(day.hasCustomName ? "Edit name" : "Add name", isPresented: $showingNameEditor) {
+            TextField("Session name", text: $nameDraft)
+                .textInputAutocapitalization(.words)
+            Button("Cancel", role: .cancel) {}
+            Button("Save") {
+                saveName()
             }
-            .presentationDetents([.medium])
+        } message: {
+            Text("Name this day so it is easy to find later.")
         }
         .onChange(of: selectedSegmentID) { _, segmentID in
             guard let segmentID,
