@@ -1904,7 +1904,6 @@ struct DaysView: View {
     @Query(sort: \Trail.updatedAt, order: .reverse) private var trails: [Trail]
     @Binding private var pendingDayID: UUID?
     let onStartTracking: () -> Void
-    @State private var dayToDelete: RideDay?
     @State private var deleteError: String?
     @State private var navigationPath = NavigationPath()
 
@@ -1962,18 +1961,6 @@ struct DaysView: View {
         }
         .task(id: latestRunPreheatKey) {
             await preheatLatestRun()
-        }
-        .alert("Delete day?", isPresented: Binding(
-            get: { dayToDelete != nil },
-            set: { if !$0 { dayToDelete = nil } }
-        )) {
-            Button("Cancel", role: .cancel) { dayToDelete = nil }
-            Button("Delete day", role: .destructive) {
-                if let dayToDelete, dayToDelete.isFinished {
-                    deleteDay(dayToDelete)
-                }
-                dayToDelete = nil
-            }
         }
         .alert("Couldn't delete day", isPresented: Binding(
             get: { deleteError != nil },
@@ -2075,12 +2062,7 @@ struct DaysView: View {
     private func dayDeleteAction(for day: RideDay) -> some View {
         if day.isFinished {
             Button(role: .destructive) {
-                let pending = day
-                Task { @MainActor in
-                    // Let the swipe finish closing before the alert takes over.
-                    try? await Task.sleep(for: .milliseconds(200))
-                    dayToDelete = pending
-                }
+                deleteDay(day)
             } label: {
                 Label("Delete", systemImage: "trash")
             }
