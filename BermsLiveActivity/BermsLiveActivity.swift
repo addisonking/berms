@@ -61,29 +61,14 @@ struct BermsLiveActivity: Widget {
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(context.isStale ? .secondary : .primary)
             }
-            ViewThatFits(in: .horizontal) {
-                HStack {
-                    timeMetric(context)
-                    Spacer()
-                    metric("Runs", "\(context.state.runCount)")
-                    Spacer()
-                    metric("Descent", elevation(context.state.descentMeters))
-                    pauseButton(context)
-                        .padding(.leading, 8)
-                }
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        timeMetric(context)
-                        Spacer()
-                        pauseButton(context)
-                    }
-                    HStack {
-                        metric("Runs", "\(context.state.runCount)")
-                        Spacer()
-                        metric("Descent", elevation(context.state.descentMeters))
-                        Spacer()
-                    }
-                }
+            HStack {
+                timeMetric(context)
+                Spacer()
+                metric("Runs", "\(context.state.runCount)")
+                Spacer()
+                metric("Descent", elevation(context.state.descentMeters))
+                pauseButton(context)
+                    .padding(.leading, 8)
             }
         }
         .padding(16)
