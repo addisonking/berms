@@ -203,6 +203,7 @@ final class RideRecorder: ObservableObject {
 
     private let context: ModelContext
     private let watchStateSink: WatchRideStateSink?
+    private let authorizationOverride: CLAuthorizationStatus?
     private let detector = ParkLapDetector()
     private let jumpDetector: JumpDetector
     private var normalizer = TrackSampleNormalizer()
@@ -221,19 +222,21 @@ final class RideRecorder: ObservableObject {
     private var automaticallyRestoredOnLaunch = false
 
     init(context: ModelContext? = nil,
-         watchStateSink: WatchRideStateSink? = WatchConnectivityCoordinator.shared) {
+         watchStateSink: WatchRideStateSink? = WatchConnectivityCoordinator.shared,
+         authorizationOverride: CLAuthorizationStatus? = nil) {
         let storedSensitivity = JumpSensitivity(rawValue: UserDefaults.standard.string(forKey: "berms.jumpSensitivity") ?? "")
             ?? .standard
         jumpSensitivity = storedSensitivity
         jumpDetector = JumpDetector(configuration: storedSensitivity.configuration)
         self.context = context ?? PersistenceController.shared.container.mainContext
         self.watchStateSink = watchStateSink
+        self.authorizationOverride = authorizationOverride
         if let lifts = try? self.context.fetch(FetchDescriptor<LearnedLift>()) {
             detector.setLearnedLifts(lifts.map(\.profile))
         }
-        locationAuthorization = locationService.authorizationStatus
+        locationAuthorization = authorizationOverride ?? locationService.authorizationStatus
         authorizationSubscription = locationService.$authorizationStatus.sink { [weak self] status in
-            self?.locationAuthorization = status
+            self?.locationAuthorization = self?.authorizationOverride ?? status
         }
         liveActivityNotificationObserver = NotificationCenter.default.addObserver(
             forName: BermsLiveActivityCoordinator.togglePauseNotification,
@@ -260,6 +263,10 @@ final class RideRecorder: ObservableObject {
     }
 
     var isRecording: Bool { activeDay != nil }
+
+    private var effectiveAuthorizationStatus: CLAuthorizationStatus {
+        authorizationOverride ?? locationService.authorizationStatus
+    }
 
     var currentWatchRideState: WatchRideState {
         guard let day = activeDay else { return .idle }
@@ -333,9 +340,9 @@ final class RideRecorder: ObservableObject {
     @discardableResult
     func start() -> Bool {
         guard activeDay == nil else { return false }
-        guard locationService.authorizationStatus != .denied,
-              locationService.authorizationStatus != .restricted else { return false }
-        guard locationService.authorizationStatus != .notDetermined else {
+        guard effectiveAuthorizationStatus != .denied,
+              effectiveAuthorizationStatus != .restricted else { return false }
+        guard effectiveAuthorizationStatus != .notDetermined else {
             requestPermissionsIfNeeded()
             return false
         }
@@ -416,8 +423,8 @@ final class RideRecorder: ObservableObject {
     @discardableResult
     func resume() -> Bool {
         guard let day = activeDay, day.isPaused else { return false }
-        guard locationService.authorizationStatus != .denied,
-              locationService.authorizationStatus != .restricted else { return false }
+        guard effectiveAuthorizationStatus != .denied,
+              effectiveAuthorizationStatus != .restricted else { return false }
         let resumeDate = Date.now
         let pausedDuration = day.endPause(at: resumeDate)
         objectWillChange.send()

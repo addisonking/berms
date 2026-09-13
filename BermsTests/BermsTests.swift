@@ -1510,7 +1510,9 @@ final class BermsTests: XCTestCase {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
         let container = try ModelContainer(for: RideDay.self, RideSegment.self, configurations: configuration)
         let context = ModelContext(container)
-        let recorder = RideRecorder(context: context)
+        let recorder = RideRecorder(context: context,
+                                    watchStateSink: nil,
+                                    authorizationOverride: .authorizedAlways)
         let wasRecording = UserDefaults.standard.bool(forKey: "berms.recordingActive")
         defer { UserDefaults.standard.set(wasRecording, forKey: "berms.recordingActive") }
         XCTAssertTrue(recorder.start())
@@ -1562,12 +1564,13 @@ final class BermsTests: XCTestCase {
         let container = try ModelContainer(for: RideDay.self, RideSegment.self,
                                            Trail.self, TrailPass.self,
                                            configurations: configuration)
-        let recorder = RideRecorder(context: ModelContext(container))
+        let recorder = RideRecorder(context: ModelContext(container),
+                                    watchStateSink: nil,
+                                    authorizationOverride: .authorizedAlways)
         let previousRecordingState = UserDefaults.standard.bool(forKey: "berms.recordingActive")
         defer { UserDefaults.standard.set(previousRecordingState, forKey: "berms.recordingActive") }
 
         XCTAssertTrue(recorder.start())
-        Thread.sleep(forTimeInterval: 1)
         XCTAssertNotNil(recorder.stop())
         XCTAssertFalse(recorder.isRecording)
     }
