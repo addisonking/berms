@@ -373,7 +373,7 @@ final class BermsTests: XCTestCase {
         unrelated.averagedRouteData = Data([0xFF])
 
         for catalogID in [nil, TrailCatalogRegistry.defaultCatalog.id] as [String?] {
-            let input = SessionDetailPresentationPreheater.makeInput(
+            let input = SessionDetailPresentationBuilder.makeInput(
                 segment: segment, trails: [unrelated, local], manualCatalogID: catalogID
             )
 
@@ -396,7 +396,7 @@ final class BermsTests: XCTestCase {
         let key = SessionDetailPresentationPreheater.runCacheKey(
             dayID: dayID, segmentID: segment.id, selectionID: selectionID, trails: [trail]
         )
-        let input = SessionDetailPresentationPreheater.makeInput(
+        let input = SessionDetailPresentationBuilder.makeInput(
             segment: segment, trails: [trail], manualCatalogID: nil
         )
         let entry = try await SessionDetailPresentationPreheater.build(input)
@@ -433,6 +433,46 @@ final class BermsTests: XCTestCase {
         } catch is CancellationError {
             // Expected when navigation cancels a pending preheat.
         }
+    }
+
+    @MainActor
+    func testRunPreparationReadsItsOwnModelContext() async throws {
+        let container = try ModelContainer(for: RideDay.self, RideSegment.self,
+                                           Trail.self, TrailPass.self, LearnedLift.self,
+                                           configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let context = ModelContext(container)
+        let base = Date(timeIntervalSince1970: 33_000)
+        let route = (0...4).map { index in
+            RoutePoint(latitude: 41.2505 + Double(index) * 0.0001, longitude: -74.5012,
+                       altitude: 100 - Double(index), speed: 8,
+                       timestamp: base.addingTimeInterval(Double(index)))
+        }
+        let day = RideDay(startedAt: base)
+        day.endedAt = base.addingTimeInterval(60)
+        let segment = RideSegment(kind: .run, startedAt: base,
+                                  endedAt: base.addingTimeInterval(5),
+                                  routeData: try RouteCodec.encode(route))
+        let trail = Trail(name: "Stored trail", difficulty: .blue,
+                          resort: TrailCatalogRegistry.defaultCatalog.resortName)
+        let pass = TrailPass(routePoints: route, recordedAt: base)
+        segment.day = day
+        day.segments = [segment]
+        pass.trail = trail
+        trail.passes.append(pass)
+        trail.recalculateAverage()
+        context.insert(day)
+        context.insert(trail)
+        try context.save()
+        TrailRouteMatchCache.shared.invalidate()
+
+        let entry = try await SessionDetailPresentationPreheater.prepareRun(
+            segmentID: segment.id,
+            manualCatalogID: nil,
+            container: container
+        )
+
+        XCTAssertEqual(entry?.detail.id, segment.id)
+        XCTAssertEqual(entry?.trailDetails.sequenceBySegmentID[segment.id], trail.name)
     }
 
     func testLiveMapPresentationSelectsOnlyTheRelevantPath() {

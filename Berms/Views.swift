@@ -132,40 +132,42 @@ enum SessionDetailPresentationPreheater {
         "\(dayID.uuidString)|\(segmentID.uuidString)|\(selectionID)|\(trailRevision(for: trails))"
     }
 
+    /// Snapshots the day on its own model context so navigation is never blocked by
+    /// SwiftData reads or route decoding. Returns nil when the day no longer exists.
     static func makeInput(
-        day: RideDay,
-        trails: [Trail],
-        manualCatalogID: String?
-    ) -> SessionDetailPreparationInput {
-        let segments = day.segments
-            .filter { $0.kind == .run || $0.kind == .lift }
-            .sorted { $0.startedAt < $1.startedAt }
-            .map(makeSegmentInput)
-        return SessionDetailPreparationInput(
-            segments: segments,
-            trails: makeTrailInputs(trails),
-            manualCatalogID: manualCatalogID
-        )
+        dayID: UUID,
+        manualCatalogID: String?,
+        container: ModelContainer
+    ) async -> SessionDetailPreparationInput? {
+        await Task.detached(priority: .userInitiated) {
+            SessionDetailPresentationBuilder.makeInput(
+                dayID: dayID,
+                manualCatalogID: manualCatalogID,
+                container: container
+            )
+        }.value
     }
 
+    /// Snapshots the run on its own model context so navigation is never blocked by
+    /// SwiftData reads or route decoding. Returns nil when the run no longer exists.
     static func makeInput(
-        segment: RideSegment,
-        trails: [Trail],
-        manualCatalogID: String?
-    ) -> SessionDetailPreparationInput {
-        let routePoints = (try? RouteCodec.decode(segment.routeData)) ?? []
-        let activeResort = SessionDetailPresentationBuilder.activeResort(
-            for: routePoints.first,
-            manualCatalogID: manualCatalogID
-        )
-        return SessionDetailPreparationInput(
-            segments: [makeSegmentInput(segment)],
-            trails: makeTrailInputs(trails.filter { $0.resort == activeResort }),
-            manualCatalogID: manualCatalogID
-        )
+        segmentID: UUID,
+        manualCatalogID: String?,
+        container: ModelContainer
+    ) async -> SessionDetailPreparationInput? {
+        await Task.detached(priority: .userInitiated) {
+            SessionDetailPresentationBuilder.makeInput(
+                segmentID: segmentID,
+                manualCatalogID: manualCatalogID,
+                container: container
+            )
+        }.value
     }
 
-    static func build(_ input: SessionDetailPreparationInput) async throws -> SessionDetailPresentationCache.Entry {
+    static func build(
+        _ input: SessionDetailPreparationInput,
+        onBase: @MainActor (SessionDetailBase) -> Void = { _ in }
+    ) async throws -> SessionDetailPresentationCache.Entry {
         let baseTask = Task.detached(priority: .utility) {
             try SessionDetailPresentationBuilder.buildBase(input)
         }
@@ -175,6 +177,7 @@ enum SessionDetailPresentationPreheater {
             baseTask.cancel()
         }
         try Task.checkCancellation()
+        onBase(base)
 
         let trailTask = Task.detached(priority: .utility) {
             try SessionDetailPresentationBuilder.buildTrailDetails(base: base, input: input)
@@ -190,31 +193,21 @@ enum SessionDetailPresentationPreheater {
         return .init(base: base, trailDetails: trailDetails)
     }
 
-    private static func makeSegmentInput(_ segment: RideSegment) -> SessionDetailSegmentInput {
-        SessionDetailSegmentInput(
-            id: segment.id,
-            kind: segment.kind,
-            startedAt: segment.startedAt,
-            endedAt: segment.endedAt,
-            distanceMeters: segment.distanceMeters,
-            verticalMeters: segment.verticalMeters,
-            maximumSpeedMetersPerSecond: segment.maximumSpeedMetersPerSecond,
-            routeData: segment.routeData,
-            jumpData: segment.jumpData
-        )
-    }
-
-    private static func makeTrailInputs(_ trails: [Trail]) -> [SessionDetailTrailInput] {
-        trails.map { trail in
-            SessionDetailTrailInput(
-                id: trail.id,
-                name: trail.name,
-                difficulty: trail.difficulty,
-                resort: trail.resort,
-                averagedRouteData: trail.averagedRouteData,
-                passRouteData: trail.orderedPasses.map(\.routeData)
-            )
+    /// Prepares one run's presentation off the caller's actor.
+    static func prepareRun(
+        segmentID: UUID,
+        manualCatalogID: String?,
+        container: ModelContainer,
+        onBase: @MainActor (SessionDetailBase) -> Void = { _ in }
+    ) async throws -> SessionDetailPresentationCache.RunEntry? {
+        guard let input = await makeInput(segmentID: segmentID,
+                                          manualCatalogID: manualCatalogID,
+                                          container: container) else {
+            return nil
         }
+        let entry = try await build(input, onBase: onBase)
+        guard let detail = entry.base.segmentsByID[segmentID] else { return nil }
+        return .init(base: entry.base, detail: detail, trailDetails: entry.trailDetails)
     }
 
     static func trailRevision(for trails: [Trail]) -> String {
@@ -287,20 +280,6 @@ private struct TrailMapOverlay: Identifiable {
         points.map {
             CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
         }
-    }
-}
-
-@MainActor
-private func trailOverlays(for segment: RideSegment, trails: [Trail]) -> [TrailMapOverlay] {
-    guard segment.kind == .run else { return [] }
-    return TrailRouteMatchCache.shared.matchingSections(for: segment, trails: trails).compactMap { section in
-        guard let trail = trails.first(where: { $0.id == section.trailID }) else { return nil }
-        let routes = trail.matcherRoutes
-        guard routes.indices.contains(section.routeIndex) else { return nil }
-        let points = TrailRouteSlice.slice(routes[section.routeIndex], progress: section.trailProgress)
-        guard points.count > 1 else { return nil }
-        return TrailMapOverlay(id: section.id, trailID: trail.id, name: trail.name,
-                               difficulty: trail.difficulty, points: points, score: section.score)
     }
 }
 
@@ -2027,19 +2006,14 @@ struct DaysView: View {
             return
         }
 
-        let input = SessionDetailPresentationPreheater.makeInput(
-            segment: latestRun,
-            trails: trails,
-            manualCatalogID: trailCatalogSelection.manualCatalogID
-        )
         do {
-            let entry = try await SessionDetailPresentationPreheater.build(input)
+            guard let entry = try await SessionDetailPresentationPreheater.prepareRun(
+                segmentID: latestRun.id,
+                manualCatalogID: trailCatalogSelection.manualCatalogID,
+                container: modelContext.container
+            ) else { return }
             guard !Task.isCancelled else { return }
-            guard let detail = entry.base.segmentsByID[latestRun.id] else { return }
-            SessionDetailPresentationCache.shared.storeRun(
-                .init(base: entry.base, detail: detail, trailDetails: entry.trailDetails),
-                for: cacheKey
-            )
+            SessionDetailPresentationCache.shared.storeRun(entry, for: cacheKey)
         } catch is CancellationError {
             return
         } catch {
@@ -2444,8 +2418,6 @@ struct DayDetailView: View {
         .fullScreenCover(isPresented: $showingFullScreenMap) {
             FullScreenSummaryMap(title: "Ride Map", base: detailBase,
                                  trailDetails: trailDetails,
-                                 fallbackSegments: day.segments,
-                                 fallbackTrails: trails,
                                  focusedSegmentID: nil,
                                  focusedRunNumber: nil)
         }
@@ -2460,7 +2432,6 @@ struct DayDetailView: View {
         try? await Task.sleep(nanoseconds: 100_000_000)
         guard !Task.isCancelled else { return }
 
-        let trails = (try? modelContext.fetch(FetchDescriptor<Trail>())) ?? []
         let cacheKey = preparationCacheKey(for: trails)
         if let cached = SessionDetailPresentationCache.shared.entry(for: cacheKey) {
             detailBase = cached.base
@@ -2468,11 +2439,11 @@ struct DayDetailView: View {
             return
         }
 
-        let input = SessionDetailPresentationPreheater.makeInput(
-            day: day,
-            trails: trails,
-            manualCatalogID: trailCatalogSelection.manualCatalogID
-        )
+        guard let input = await SessionDetailPresentationPreheater.makeInput(
+            dayID: day.id,
+            manualCatalogID: trailCatalogSelection.manualCatalogID,
+            container: modelContext.container
+        ) else { return }
         guard !Task.isCancelled else { return }
 
         do {
@@ -2549,111 +2520,54 @@ struct DayDetailView: View {
 struct FullScreenSummaryMap: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let title: String
-    let segments: [RideSegment]
-    let trails: [Trail]
+    let base: SessionDetailBase?
+    let trailDetails: SessionDetailTrailDetails?
     let focusedSegmentID: UUID?
     let focusedRunNumber: Int?
-    private let preparedBase: SessionDetailBase?
-    private let preparedTrailDetails: SessionDetailTrailDetails?
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var mapLayerPreferences: MapLayerPreferences
-    @EnvironmentObject private var trailCatalogSelection: TrailCatalogSelection
     @State private var mapPosition: MapCameraPosition = .automatic
 
-    init(title: String,
-         segments: [RideSegment],
-         trails: [Trail],
-         focusedSegmentID: UUID?,
-         focusedRunNumber: Int?) {
-        self.title = title
-        self.segments = segments
-        self.trails = trails
-        self.focusedSegmentID = focusedSegmentID
-        self.focusedRunNumber = focusedRunNumber
-        self.preparedBase = nil
-        self.preparedTrailDetails = nil
-    }
-
-    init(title: String,
-         base: SessionDetailBase,
-         trailDetails: SessionDetailTrailDetails?,
-         fallbackSegments: [RideSegment] = [],
-         fallbackTrails: [Trail] = [],
-         focusedSegmentID: UUID?,
-         focusedRunNumber: Int?) {
-        self.title = title
-        self.segments = fallbackSegments
-        self.trails = fallbackTrails
-        self.focusedSegmentID = focusedSegmentID
-        self.focusedRunNumber = focusedRunNumber
-        self.preparedBase = base
-        self.preparedTrailDetails = trailDetails
-    }
-
-    private var visibleSegments: [RideSegment] {
+    private var visibleSegments: [SessionDetailSegment] {
+        guard let base else { return [] }
         if let focusedSegmentID {
-            return segments.filter { $0.id == focusedSegmentID }
+            return base.mapSegments.filter { $0.id == focusedSegmentID }
         }
-        return segments
-            .filter { $0.kind == .run || (mapLayerPreferences.showsLiftPaths && $0.kind == .lift) }
-            .sorted { $0.startedAt < $1.startedAt }
-    }
-
-    private var preparedVisibleSegments: [SessionDetailSegment] {
-        guard let preparedBase else { return [] }
-        if let focusedSegmentID {
-            return preparedBase.mapSegments.filter { $0.id == focusedSegmentID }
-        }
-        return preparedBase.mapSegments.filter {
+        return base.mapSegments.filter {
             $0.kind == .run || (mapLayerPreferences.showsLiftPaths && $0.kind == .lift)
         }
     }
 
     private var mapConfiguration: RouteMapConfiguration? {
-        if preparedBase != nil {
-            return RouteMapConfiguration(points: preparedVisibleSegments.flatMap(\.routePoints))
-        }
-        return RouteMapConfiguration(points: visibleSegments.flatMap(\.points))
+        RouteMapConfiguration(points: visibleSegments.flatMap(\.routePoints))
     }
 
     private var jumpMarkers: [SummaryMapJump] {
-        if let preparedBase {
-            let markers = focusedSegmentID.map { segmentID in
-                preparedBase.jumpMarkers.filter { $0.segmentID == segmentID }
-            } ?? preparedBase.summaryJumpMarkers
-            return markers.map {
-                SummaryMapJump(id: $0.id,
-                               number: $0.number,
-                               label: "Jump \($0.number)",
-                               coordinate: coordinate(for: $0.coordinate),
-                               airtime: $0.airtime)
-            }
+        guard let base else { return [] }
+        let markers = focusedSegmentID.map { segmentID in
+            base.jumpMarkers.filter { $0.segmentID == segmentID }
+        } ?? base.summaryJumpMarkers
+        return markers.map {
+            SummaryMapJump(id: $0.id,
+                           number: $0.number,
+                           label: "Jump \($0.number)",
+                           coordinate: coordinate(for: $0.coordinate),
+                           airtime: $0.airtime)
         }
-        return summaryMapJumps(
-            for: visibleSegments,
-            maximumCount: focusedSegmentID == nil ? SessionDetailBase.summaryJumpMarkerLimit : nil
-        )
     }
 
     private var matchedTrailOverlays: [TrailMapOverlay] {
-        if let preparedTrailDetails {
-            return preparedTrailDetails.overlays
-                .filter { focusedSegmentID == nil || $0.segmentID == focusedSegmentID }
-                .map {
-                    TrailMapOverlay(id: $0.id,
-                                    trailID: $0.trailID,
-                                    name: $0.name,
-                                    difficulty: $0.difficulty,
-                                    points: $0.points,
-                                    score: $0.score)
-                }
-        }
-        // Staged preparation publishes the base first; while the trail details are
-        // still matching, showing no overlays beats matching synchronously here.
-        guard preparedBase == nil else { return [] }
-        return visibleSegments.flatMap { segment in
-            trailOverlays(for: segment, trails: trailsFor(segment))
-        }
+        guard let trailDetails else { return [] }
+        return trailDetails.overlays
+            .filter { focusedSegmentID == nil || $0.segmentID == focusedSegmentID }
+            .map {
+                TrailMapOverlay(id: $0.id,
+                                trailID: $0.trailID,
+                                name: $0.name,
+                                difficulty: $0.difficulty,
+                                points: $0.points,
+                                score: $0.score)
+            }
     }
 
     private var hasMatchedTrailOverlays: Bool {
@@ -2661,88 +2575,54 @@ struct FullScreenSummaryMap: View {
     }
 
     private var liftPathsAvailable: Bool {
-        if let preparedBase {
-            return preparedBase.mapSegments.contains { $0.kind == .lift }
-        }
-        return segments.contains { $0.kind == .lift }
+        base?.mapSegments.contains { $0.kind == .lift } ?? false
     }
 
     var body: some View {
         NavigationStack {
+            if base == nil {
+                VStack(spacing: BermsSpacing.compact) {
+                    ProgressView()
+                    Text("Loading map…")
+                        .font(.subheadline)
+                        .foregroundStyle(Color.bermsMuted)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(BermsBackground())
+            } else {
             ZStack(alignment: .topTrailing) {
                 ZStack {
                 Map(position: $mapPosition, bounds: mapConfiguration?.bounds,
                     interactionModes: [.pan, .zoom]) {
-                        if preparedBase != nil {
-                            ForEach(Array(preparedVisibleSegments.enumerated()), id: \.element.id) { index, segment in
-                                if segment.routePoints.count > 1 {
-                                    if segment.kind == .lift {
-                                        if mapLayerPreferences.showsLiftPaths {
-                                            MapPolyline(coordinates: coordinates(for: segment.routePoints))
-                                                .stroke(Color.bermsLift.opacity(0.78), style: StrokeStyle(
-                                                    lineWidth: 2.25, lineCap: .round, lineJoin: .round, dash: [5, 4]
-                                                ))
-                                        }
-                                    } else if mapLayerPreferences.showsRidePath {
+                        ForEach(Array(visibleSegments.enumerated()), id: \.element.id) { index, segment in
+                            if segment.routePoints.count > 1 {
+                                if segment.kind == .lift {
+                                    if mapLayerPreferences.showsLiftPaths {
                                         MapPolyline(coordinates: coordinates(for: segment.routePoints))
-                                            .stroke(focusedSegmentID == nil
-                                                    ? Color.gray.opacity(RideMapPresentation.summaryRunOpacity(
-                                                        index: index, count: preparedVisibleSegments.count))
-                                                    : Color.bermsTrail, lineWidth: 4)
-                                    }
-                                }
-                            }
-                            ForEach(Array(preparedVisibleSegments.filter { $0.kind == .run }.enumerated()), id: \.element.id) { index, segment in
-                                if let coordinate = segment.routePoints.first.map({
-                                    CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
-                                }) {
-                                    Annotation("", coordinate: coordinate) {
-                                        RunNumberMarker(
-                                            number: focusedSegmentID == nil
-                                                ? index + 1
-                                                : (focusedRunNumber ?? index + 1),
-                                            isSelected: focusedSegmentID == segment.id
-                                        )
-                                    }
-                                }
-                            }
-                        } else {
-                            ForEach(Array(visibleSegments.enumerated()), id: \.element.id) { index, segment in
-                                if segment.points.count > 1 {
-                                    if segment.kind == .lift {
-                                        if mapLayerPreferences.showsLiftPaths {
-                                            MapPolyline(coordinates: segment.points.map {
-                                                CLLocationCoordinate2D(latitude: $0.latitude,
-                                                                       longitude: $0.longitude)
-                                            })
                                             .stroke(Color.bermsLift.opacity(0.78), style: StrokeStyle(
                                                 lineWidth: 2.25, lineCap: .round, lineJoin: .round, dash: [5, 4]
                                             ))
-                                        }
-                                    } else if mapLayerPreferences.showsRidePath {
-                                        MapPolyline(coordinates: segment.points.map {
-                                            CLLocationCoordinate2D(latitude: $0.latitude,
-                                                                   longitude: $0.longitude)
-                                        })
+                                    }
+                                } else if mapLayerPreferences.showsRidePath {
+                                    MapPolyline(coordinates: coordinates(for: segment.routePoints))
                                         .stroke(focusedSegmentID == nil
                                                 ? Color.gray.opacity(RideMapPresentation.summaryRunOpacity(
                                                     index: index, count: visibleSegments.count))
                                                 : Color.bermsTrail, lineWidth: 4)
-                                    }
                                 }
                             }
-                            ForEach(Array(visibleSegments.filter { $0.kind == .run }.enumerated()), id: \.element.id) { index, segment in
-                                if let coordinate = segment.points.first.map({
-                                    CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
-                                }) {
-                                    Annotation("", coordinate: coordinate) {
-                                        RunNumberMarker(
-                                            number: focusedSegmentID == nil
-                                                ? index + 1
-                                                : (focusedRunNumber ?? index + 1),
-                                            isSelected: focusedSegmentID == segment.id
-                                        )
-                                    }
+                        }
+                        ForEach(Array(visibleSegments.filter { $0.kind == .run }.enumerated()), id: \.element.id) { index, segment in
+                            if let coordinate = segment.routePoints.first.map({
+                                CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
+                            }) {
+                                Annotation("", coordinate: coordinate) {
+                                    RunNumberMarker(
+                                        number: focusedSegmentID == nil
+                                            ? index + 1
+                                            : (focusedRunNumber ?? index + 1),
+                                        isSelected: focusedSegmentID == segment.id
+                                    )
                                 }
                             }
                         }
@@ -2809,18 +2689,12 @@ struct FullScreenSummaryMap: View {
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .onAppear { recenterMap() }
+            }
         }
     }
 
     private func recenterMap() {
         mapPosition = mapConfiguration?.initialPosition ?? .automatic
-    }
-
-    private func trailsFor(_ segment: RideSegment) -> [Trail] {
-        let coordinate = segment.points.first.map {
-            Coordinate(latitude: $0.latitude, longitude: $0.longitude)
-        }
-        return trailCatalogSelection.trails(trails, near: coordinate)
     }
 
     private func coordinates(for points: [RoutePoint]) -> [CLLocationCoordinate2D] {
@@ -2916,35 +2790,11 @@ private struct SummaryMapJump: Identifiable {
     let airtime: TimeInterval
 }
 
-private func summaryMapJumps(for segments: [RideSegment], maximumCount: Int? = nil) -> [SummaryMapJump] {
-    let markers = segments.flatMap { segment in
-        segment.jumps.enumerated().compactMap { index, jump -> SummaryMapJump? in
-            guard let point = segment.points.min(by: {
-                abs($0.timestamp.timeIntervalSince(jump.takeoffTimestamp))
-                    < abs($1.timestamp.timeIntervalSince(jump.takeoffTimestamp))
-            }) else { return nil }
-            return SummaryMapJump(
-                id: "\(segment.id.uuidString)-\(index)",
-                number: index + 1,
-                label: "Jump \(index + 1)",
-                coordinate: CLLocationCoordinate2D(latitude: point.latitude, longitude: point.longitude),
-                airtime: jump.airtime
-            )
-        }
-    }
 
-    guard let maximumCount, markers.count > maximumCount, maximumCount > 1 else {
-        return markers
-    }
-    return (0..<maximumCount).map { index in
-        let sourceIndex = Int((Double(index) * Double(markers.count - 1)
-            / Double(maximumCount - 1)).rounded())
-        return markers[sourceIndex]
-    }
-}
 
 struct RunMapView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.modelContext) private var modelContext
     let number: Int
     let segment: RideSegment
     let preparedBase: SessionDetailBase?
@@ -2955,6 +2805,9 @@ struct RunMapView: View {
     @EnvironmentObject private var trailCatalogSelection: TrailCatalogSelection
     @State private var mapPosition: MapCameraPosition = .automatic
     @State private var showingFullScreenMap = false
+    @State private var ownBase: SessionDetailBase?
+    @State private var ownTrailDetails: SessionDetailTrailDetails?
+    @State private var isPreparing = false
 
     init(number: Int,
          segment: RideSegment,
@@ -2968,42 +2821,46 @@ struct RunMapView: View {
         self.preparedTrailDetails = preparedTrailDetails
     }
 
+    private var activeBase: SessionDetailBase? {
+        preparedBase ?? ownBase
+    }
+
+    private var activeDetail: SessionDetailSegment? {
+        preparedDetail ?? ownBase?.segmentsByID[segment.id]
+    }
+
+    private var activeTrailDetails: SessionDetailTrailDetails? {
+        preparedTrailDetails ?? ownTrailDetails
+    }
+
     private var routePoints: [RoutePoint] {
-        preparedDetail?.routePoints ?? segment.points
+        activeDetail?.routePoints ?? []
+    }
+
+    private var isLoaded: Bool {
+        activeDetail != nil
     }
 
     private var mapConfiguration: RouteMapConfiguration? {
         RouteMapConfiguration(points: routePoints)
     }
 
-    private var activeTrails: [Trail] {
-        let coordinate = routePoints.first.map {
-            Coordinate(latitude: $0.latitude, longitude: $0.longitude)
-        }
-        return trailCatalogSelection.trails(trails, near: coordinate)
-    }
-
     private var matchedTrailOverlays: [TrailMapOverlay] {
-        if let preparedDetail, let preparedTrailDetails {
-            return preparedTrailDetails.overlays
-                .filter { $0.segmentID == preparedDetail.id }
-                .map {
-                    TrailMapOverlay(id: $0.id,
-                                    trailID: $0.trailID,
-                                    name: $0.name,
-                                    difficulty: $0.difficulty,
-                                    points: $0.points,
-                                    score: $0.score)
-                }
-        }
-        // The prepared base arrives before its trail details; matching synchronously
-        // in that window would reintroduce the work this preparation moves off-main.
-        guard preparedDetail == nil else { return [] }
-        return trailOverlays(for: segment, trails: activeTrails)
+        guard let activeDetail, let activeTrailDetails else { return [] }
+        return activeTrailDetails.overlays
+            .filter { $0.segmentID == activeDetail.id }
+            .map {
+                TrailMapOverlay(id: $0.id,
+                                trailID: $0.trailID,
+                                name: $0.name,
+                                difficulty: $0.difficulty,
+                                points: $0.points,
+                                score: $0.score)
+            }
     }
 
     private var jumpMarkers: [JumpMarker] {
-        let jumps = preparedDetail?.jumps ?? segment.jumps
+        guard let jumps = activeDetail?.jumps else { return [] }
         return jumps.enumerated().compactMap { index, jump in
             guard let point = routePoints.min(by: {
                 abs($0.timestamp.timeIntervalSince(jump.takeoffTimestamp))
@@ -3019,7 +2876,15 @@ struct RunMapView: View {
     var body: some View {
         ZStack {
             BermsBackground()
-            if routePoints.isEmpty {
+            if !isLoaded {
+                VStack(spacing: BermsSpacing.compact) {
+                    ProgressView()
+                    Text("Loading map…")
+                        .font(.subheadline)
+                        .foregroundStyle(Color.bermsMuted)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if routePoints.isEmpty {
                 VStack(spacing: BermsSpacing.compact) {
                     Image(systemName: "map")
                         .font(.title2)
@@ -3091,7 +2956,7 @@ struct RunMapView: View {
                     }
                     .frame(minHeight: 380, idealHeight: 460, maxHeight: 560)
                     .clipShape(RoundedRectangle(cornerRadius: 22))
-                    RunStatsCard(segment: segment, detail: preparedDetail)
+                    RunStatsCard(segment: segment, detail: activeDetail)
 
                     TrailSequenceCard(sequence: trailSequence, runNumber: number)
                     }
@@ -3100,38 +2965,71 @@ struct RunMapView: View {
                 .contentMargins(.horizontal, BermsSpacing.content, for: .scrollContent)
                 .contentMargins(.vertical, BermsSpacing.content, for: .scrollContent)
                 .fullScreenCover(isPresented: $showingFullScreenMap) {
-                    if let preparedBase {
-                        FullScreenSummaryMap(title: trailSequence, base: preparedBase,
-                                             trailDetails: preparedTrailDetails,
-                                             fallbackSegments: [segment],
-                                             fallbackTrails: trails,
-                                             focusedSegmentID: segment.id,
-                                             focusedRunNumber: number)
-                    } else {
-                        FullScreenSummaryMap(title: trailSequence, segments: [segment],
-                                             trails: trails, focusedSegmentID: segment.id,
-                                             focusedRunNumber: number)
-                    }
+                    FullScreenSummaryMap(title: trailSequence, base: activeBase,
+                                         trailDetails: activeTrailDetails,
+                                         focusedSegmentID: segment.id,
+                                         focusedRunNumber: number)
                 }
             }
         }
         .navigationTitle(trailSequence)
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { recenterMap() }
+        .task(id: preparedDetail == nil) { await prepareIfNeeded() }
     }
 
     private var trailSequence: String {
-        if let preparedDetail, let preparedTrailDetails {
-            return preparedTrailDetails.sequenceBySegmentID[preparedDetail.id] ?? "Trail not identified"
+        guard let activeDetail, let activeTrailDetails else { return "Loading trails…" }
+        return activeTrailDetails.sequenceBySegmentID[activeDetail.id] ?? "Trail not identified"
+    }
+
+    /// Prepares this run off the main actor when the caller has no presentation for
+    /// it, so decoding and trail matching never run on the rendering path.
+    @MainActor
+    private func prepareIfNeeded() async {
+        guard preparedDetail == nil, activeDetail == nil, !isPreparing else { return }
+        let selectionID = trailCatalogSelection.selectionID
+        var runKey: String?
+        if let dayID = segment.day?.id {
+            runKey = SessionDetailPresentationPreheater.runCacheKey(dayID: dayID,
+                                                                     segmentID: segment.id,
+                                                                     selectionID: selectionID,
+                                                                     trails: trails)
+            // A prepared day already covers every run in it, so reuse it before matching again.
+            let dayKey = SessionDetailPresentationPreheater.cacheKey(dayID: dayID,
+                                                                     selectionID: selectionID,
+                                                                     trails: trails)
+            if let dayEntry = SessionDetailPresentationCache.shared.entry(for: dayKey),
+               dayEntry.base.segmentsByID[segment.id] != nil {
+                ownBase = dayEntry.base
+                ownTrailDetails = dayEntry.trailDetails
+                return
+            }
         }
-        // The base lands before the trail details do; resolve the title only for the
-        // destinations that have no prepared presentation at all.
-        guard preparedDetail == nil else { return "Loading trails…" }
-        let coordinate = routePoints.first.map {
-            Coordinate(latitude: $0.latitude, longitude: $0.longitude)
+        if let runKey, let cached = SessionDetailPresentationCache.shared.runEntry(for: runKey) {
+            ownBase = cached.base
+            ownTrailDetails = cached.trailDetails
+            return
         }
-        let activeTrails = trailCatalogSelection.trails(trails, near: coordinate)
-        return TrailSequenceResolver.title(for: segment, trails: activeTrails) ?? "Trail not identified"
+        isPreparing = true
+        defer { isPreparing = false }
+        do {
+            guard let entry = try await SessionDetailPresentationPreheater.prepareRun(
+                segmentID: segment.id,
+                manualCatalogID: trailCatalogSelection.manualCatalogID,
+                container: modelContext.container,
+                onBase: { ownBase = $0 }
+            ) else { return }
+            guard !Task.isCancelled else { return }
+            ownTrailDetails = entry.trailDetails
+            if let runKey {
+                SessionDetailPresentationCache.shared.storeRun(entry, for: runKey)
+            }
+        } catch is CancellationError {
+            return
+        } catch {
+            return
+        }
     }
 
     private var recenterButton: some View {
@@ -3163,18 +3061,24 @@ private struct RunStatsCard: View {
             Text("Run stats")
                 .font(.headline)
             LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: dynamicTypeSize.isAccessibilitySize ? 1 : 2), alignment: .leading, spacing: BermsSpacing.content) {
-                SummaryStat(label: "Duration", value: BermsFormat.duration(detail?.duration ?? segment.duration))
+                // Decoded values wait for the prepared detail; reading them from the
+                // segment would decode its route and jumps on the rendering path.
+                SummaryStat(label: "Duration", value: detail.map { BermsFormat.duration($0.duration) } ?? "…")
                 SummaryStat(label: "Distance", value: BermsFormat.distance(segment.distanceMeters))
                 SummaryStat(label: "Descent", value: BermsFormat.elevation(segment.verticalMeters))
                 SummaryStat(label: "Top speed", value: BermsFormat.speed(segment.maximumSpeedMetersPerSecond))
-                SummaryStat(label: "Jumps", value: "\((detail?.jumps ?? segment.jumps).count)")
-                SummaryStat(label: "Best airtime", value: (detail?.jumps ?? segment.jumps).isEmpty
-                            ? "—"
-                            : BermsFormat.airtime((detail?.jumps ?? segment.jumps).map(\.airtime).max() ?? 0))
+                SummaryStat(label: "Jumps", value: detail.map { "\($0.jumps.count)" } ?? "…")
+                SummaryStat(label: "Best airtime", value: bestAirtime)
             }
         }
         .padding(BermsSpacing.content)
         .accessibilityElement(children: .contain)
+    }
+
+    private var bestAirtime: String {
+        guard let detail else { return "…" }
+        guard let airtime = detail.jumps.map(\.airtime).max() else { return "—" }
+        return BermsFormat.airtime(airtime)
     }
 }
 
@@ -3307,10 +3211,9 @@ struct SegmentRow: View {
     }
 
     private var durationTitle: String {
-        if let detail { return BermsFormat.duration(detail.duration) }
-        // Reading the segment duration decodes its route, which is the work being
-        // moved off the main actor while preparation runs.
-        return isPreparingDetails ? "…" : BermsFormat.duration(segment.duration)
+        // Reading the segment duration decodes its route, which is the work moved off
+        // the main actor while preparation runs.
+        detail.map { BermsFormat.duration($0.duration) } ?? "…"
     }
 
     private var kind: SegmentKind {

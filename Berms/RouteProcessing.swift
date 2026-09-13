@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 
 struct RouteCleaner: Sendable {
     struct Configuration: Sendable {
@@ -384,6 +385,94 @@ enum SessionDetailPresentationBuilder {
             jumpMarkers: jumpMarkers,
             segmentsByID: Dictionary(uniqueKeysWithValues: segments.map { ($0.id, $0) })
         )
+    }
+
+    static func makeInput(
+        day: RideDay,
+        trails: [Trail],
+        manualCatalogID: String?
+    ) -> SessionDetailPreparationInput {
+        let segments = day.segments
+            .filter { $0.kind == .run || $0.kind == .lift }
+            .sorted { $0.startedAt < $1.startedAt }
+            .map(makeSegmentInput)
+        return SessionDetailPreparationInput(
+            segments: segments,
+            trails: makeTrailInputs(trails),
+            manualCatalogID: manualCatalogID
+        )
+    }
+
+    static func makeInput(
+        segment: RideSegment,
+        trails: [Trail],
+        manualCatalogID: String?
+    ) -> SessionDetailPreparationInput {
+        let routePoints = (try? RouteCodec.decode(segment.routeData)) ?? []
+        let activeResort = activeResort(for: routePoints.first,
+                                        manualCatalogID: manualCatalogID)
+        return SessionDetailPreparationInput(
+            segments: [makeSegmentInput(segment)],
+            trails: makeTrailInputs(trails.filter { $0.resort == activeResort }),
+            manualCatalogID: manualCatalogID
+        )
+    }
+
+    /// Reads the day and its trail data on a context owned by this call, so the
+    /// caller's actor never touches route storage. Returns nil when the day is gone.
+    static func makeInput(
+        dayID: UUID,
+        manualCatalogID: String?,
+        container: ModelContainer
+    ) -> SessionDetailPreparationInput? {
+        let context = ModelContext(container)
+        guard let day = try? context.fetch(
+            FetchDescriptor<RideDay>(predicate: #Predicate { $0.id == dayID })
+        ).first else { return nil }
+        let trails = (try? context.fetch(FetchDescriptor<Trail>())) ?? []
+        return makeInput(day: day, trails: trails, manualCatalogID: manualCatalogID)
+    }
+
+    /// Reads the run and its trail data on a context owned by this call, so the
+    /// caller's actor never touches route storage. Returns nil when the run is gone.
+    static func makeInput(
+        segmentID: UUID,
+        manualCatalogID: String?,
+        container: ModelContainer
+    ) -> SessionDetailPreparationInput? {
+        let context = ModelContext(container)
+        guard let segment = try? context.fetch(
+            FetchDescriptor<RideSegment>(predicate: #Predicate { $0.id == segmentID })
+        ).first else { return nil }
+        let trails = (try? context.fetch(FetchDescriptor<Trail>())) ?? []
+        return makeInput(segment: segment, trails: trails, manualCatalogID: manualCatalogID)
+    }
+
+    private static func makeSegmentInput(_ segment: RideSegment) -> SessionDetailSegmentInput {
+        SessionDetailSegmentInput(
+            id: segment.id,
+            kind: segment.kind,
+            startedAt: segment.startedAt,
+            endedAt: segment.endedAt,
+            distanceMeters: segment.distanceMeters,
+            verticalMeters: segment.verticalMeters,
+            maximumSpeedMetersPerSecond: segment.maximumSpeedMetersPerSecond,
+            routeData: segment.routeData,
+            jumpData: segment.jumpData
+        )
+    }
+
+    private static func makeTrailInputs(_ trails: [Trail]) -> [SessionDetailTrailInput] {
+        trails.map { trail in
+            SessionDetailTrailInput(
+                id: trail.id,
+                name: trail.name,
+                difficulty: trail.difficulty,
+                resort: trail.resort,
+                averagedRouteData: trail.averagedRouteData,
+                passRouteData: trail.orderedPasses.map(\.routeData)
+            )
+        }
     }
 
     static func buildTrailDetails(
