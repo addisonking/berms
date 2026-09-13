@@ -67,6 +67,7 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("Settings")
+            .navigationSubtitle("Beta")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
