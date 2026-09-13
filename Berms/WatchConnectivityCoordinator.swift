@@ -25,7 +25,10 @@ final class WatchConnectivityCoordinator: NSObject, ObservableObject, WatchRideS
     private let session: WCSession?
     private var latestState = WatchRideState.idle
     private var lastImmediateSend = Date.distantPast
+    private var lastContextSend = Date.distantPast
     private var launchedRideID: String?
+    private var launchAttempts = 0
+    private var watchLaunchSucceeded = false
 
     private override init() {
         session = WCSession.isSupported() ? .default : nil
@@ -43,19 +46,35 @@ final class WatchConnectivityCoordinator: NSObject, ObservableObject, WatchRideS
 
         guard let encodedState = try? WatchRideCodec.encode(state) else { return }
         guard session.isPaired, session.isWatchAppInstalled else { return }
-        try? session.updateApplicationContext([WatchRideWire.state: encodedState])
-        if state.status == .recording, let rideID = state.rideID, launchedRideID != rideID {
-            launchedRideID = rideID
-            let configuration = HKWorkoutConfiguration()
-            configuration.activityType = .snowSports
-            configuration.locationType = .outdoor
-            HKHealthStore().startWatchApp(with: configuration) { _, error in
-                if let error { print("Watch launch unavailable: \(error.localizedDescription)") }
+        let now = Date.now
+        if force || !session.isReachable
+            || now.timeIntervalSince(lastContextSend) >= 5 {
+            lastContextSend = now
+            try? session.updateApplicationContext([WatchRideWire.state: encodedState])
+        }
+        if state.status == .recording, let rideID = state.rideID {
+            if launchedRideID != rideID {
+                launchedRideID = rideID
+                launchAttempts = 0
+                watchLaunchSucceeded = false
+            }
+            if !watchLaunchSucceeded, launchAttempts < 4 {
+                launchAttempts += 1
+                let configuration = HKWorkoutConfiguration()
+                configuration.activityType = .snowSports
+                configuration.locationType = .outdoor
+                HKHealthStore().startWatchApp(with: configuration) { [weak self] _, error in
+                    Task { @MainActor [weak self] in
+                        guard let self, self.launchedRideID == rideID else { return }
+                        if error == nil {
+                            self.watchLaunchSucceeded = true
+                        }
+                    }
+                }
             }
         }
 
         guard session.isReachable else { return }
-        let now = Date.now
         guard force || now.timeIntervalSince(lastImmediateSend) >= 1 else { return }
         lastImmediateSend = now
         session.sendMessage([WatchRideWire.state: encodedState], replyHandler: nil) { @Sendable error in

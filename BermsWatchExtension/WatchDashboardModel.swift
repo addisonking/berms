@@ -16,6 +16,7 @@ final class WatchDashboardModel: ObservableObject {
     private var healthStatus: WatchRideStatus = .idle
     private var healthRideID: String?
     private var healthTask: Task<Void, Never>?
+    private var commandTimeoutTask: Task<Void, Never>?
 
     init(transport: WatchRideTransportClient? = nil,
          healthProvider: WatchHealthProvider? = nil) {
@@ -84,6 +85,14 @@ final class WatchDashboardModel: ObservableObject {
         if !transport.send(command: command) {
             commandInFlight = false
             message = "Phone unavailable"
+            return
+        }
+        commandTimeoutTask?.cancel()
+        commandTimeoutTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(5))
+            guard let self, !Task.isCancelled, self.commandInFlight else { return }
+            self.commandInFlight = false
+            self.message = "Phone did not respond"
         }
     }
 
@@ -108,6 +117,8 @@ final class WatchDashboardModel: ObservableObject {
     }
 
     private func receiveCommandResult(accepted: Bool, state: WatchRideState?) {
+        commandTimeoutTask?.cancel()
+        commandTimeoutTask = nil
         commandInFlight = false
         if let state {
             apply(state: state)

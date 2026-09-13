@@ -28,8 +28,10 @@ final class WatchConnectivityClient: NSObject, WatchRideTransportClient, WCSessi
         guard refreshTask == nil else { return }
         refreshTask = Task { @MainActor [weak self] in
             while !Task.isCancelled {
-                self?.requestLatestState()
-                try? await Task.sleep(for: .seconds(2))
+                guard let self else { return }
+                self.requestLatestState()
+                let interval: Duration = self.state.isActive ? .seconds(2) : .seconds(10)
+                try? await Task.sleep(for: interval)
             }
         }
     }
