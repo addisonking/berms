@@ -106,6 +106,33 @@ final class BermsTests: XCTestCase {
     }
 
     @MainActor
+    func testTrailCatalogImportSkipsMalformedFeatures() throws {
+        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try ModelContainer(for: Trail.self, TrailPass.self,
+                                            configurations: configuration)
+        let context = container.mainContext
+        let suiteName = "BermsTests.lossyImport.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let data = Data("""
+        {"type":"FeatureCollection","features":[
+        {"type":"Feature","properties":{"name":"Broken","slug":"broken","difficulty":"green"},"geometry":null},
+        {"type":"Feature","properties":null,"geometry":{"type":"LineString","coordinates":[[-105,40],[-105,40.001]]}},
+        {"type":"Feature","properties":{"name":"Good","slug":"good","difficulty":"blue"},"geometry":{"type":"LineString","coordinates":[[-105,40],[-105,40.002]]}}
+        ]}
+        """.utf8)
+
+        let summary = try TrailCatalogImporter.import(data: data, into: context,
+                                                       defaults: defaults)
+        XCTAssertEqual(summary.trailsCreated, 1)
+        XCTAssertEqual(summary.passesCreated, 1)
+        let trails = try context.fetch(FetchDescriptor<Trail>())
+        XCTAssertEqual(trails.count, 1)
+        XCTAssertEqual(trails.first?.name, "Good")
+    }
+
+    @MainActor
     func testMountainCreekCatalogAppliesOfficialDifficultyCorrectionsAndMergesDuplicates() throws {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
         let container = try ModelContainer(for: Trail.self, TrailPass.self,

@@ -105,10 +105,19 @@ struct RawDiagnosticRecord: Codable, Sendable {
 final class RawLogWriter: @unchecked Sendable {
     private let queue = DispatchQueue(label: "com.addis.berms.raw-log", qos: .utility)
     private var handle: FileHandle?
+    private let encoder: JSONEncoder = {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        return encoder
+    }()
 
     init(url: URL) {
-        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
+        var directory = url.deletingLastPathComponent()
+        try? FileManager.default.createDirectory(at: directory,
                                                    withIntermediateDirectories: true)
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try? directory.setResourceValues(values)
         if !FileManager.default.fileExists(atPath: url.path) {
             FileManager.default.createFile(atPath: url.path, contents: nil)
         }
@@ -117,8 +126,6 @@ final class RawLogWriter: @unchecked Sendable {
     }
 
     func append(_ record: RawDiagnosticRecord) {
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
         guard let encoded = try? encoder.encode(record) else { return }
         var lineData = encoded
         lineData.append(0x0A)
@@ -154,6 +161,7 @@ final class PersistenceController {
 
     let container: ModelContainer
     private(set) var storeIssue: StoreIssue?
+    private(set) var catalogImportIssue: String?
 
     private init() {
         let schema = Schema([RideDay.self, RideSegment.self, Trail.self, TrailPass.self, LearnedLift.self])
@@ -196,6 +204,7 @@ final class PersistenceController {
                     + "\(result.summary.passesCreated) passes")
             }
         } catch {
+            catalogImportIssue = "Trail catalog import failed: \(error.localizedDescription)"
             print("Trail catalog import skipped: \(error.localizedDescription)")
         }
     }
@@ -321,6 +330,7 @@ final class RideRecorder: ObservableObject {
     static let shared = RideRecorder()
     private static let diagnosticSummaryVersion = "6"
     private static let diagnosticSummaryVersionKey = "berms.diagnosticSummaryVersion"
+    private static let rawMotionLoggingKey = "berms.rawMotionLogging"
 
     @Published private(set) var activeDay: RideDay?
     @Published private(set) var phase: DetectorPhase = .idle
@@ -329,6 +339,7 @@ final class RideRecorder: ObservableObject {
     @Published private(set) var locationAuthorization: CLAuthorizationStatus = .notDetermined
     @Published private(set) var motionAvailable = true
     @Published private(set) var jumpSensitivity: JumpSensitivity
+    @Published private(set) var rawMotionLoggingEnabled: Bool
     @Published private(set) var isRestoring = false
     @Published private(set) var needsRecoveryPrompt = false
     @Published var errorMessage: String?
@@ -362,6 +373,7 @@ final class RideRecorder: ObservableObject {
         let storedSensitivity = JumpSensitivity(rawValue: UserDefaults.standard.string(forKey: "berms.jumpSensitivity") ?? "")
             ?? .standard
         jumpSensitivity = storedSensitivity
+        rawMotionLoggingEnabled = UserDefaults.standard.bool(forKey: Self.rawMotionLoggingKey)
         jumpDetector = JumpDetector(configuration: storedSensitivity.configuration)
         self.context = context ?? PersistenceController.shared.container.mainContext
         self.watchStateSink = watchStateSink
@@ -385,10 +397,13 @@ final class RideRecorder: ObservableObject {
         BermsLiveActivityCoordinator.shared.reconcile()
     }
 
+    nonisolated static var diagnosticsDirectory: URL {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Berms Diagnostics", isDirectory: true)
+    }
+
     nonisolated static func debugLogURL(for dayID: UUID) -> URL {
-        let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        return documents.appendingPathComponent("Berms Diagnostics", isDirectory: true)
-            .appendingPathComponent("Berms-\(dayID.uuidString).jsonl")
+        diagnosticsDirectory.appendingPathComponent("Berms-\(dayID.uuidString).jsonl")
     }
 
     func debugLogURL(for day: RideDay) -> URL? {
@@ -472,6 +487,32 @@ final class RideRecorder: ObservableObject {
         ))
     }
 
+    func setRawMotionLoggingEnabled(_ enabled: Bool) {
+        guard enabled != rawMotionLoggingEnabled else { return }
+        rawMotionLoggingEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: Self.rawMotionLoggingKey)
+        diagnosticLogger?.append(RawDiagnosticRecord(
+            kind: "raw_motion_logging_changed",
+            detail: "enabled=\(enabled)"
+        ))
+    }
+
+    private static func pruneOldDiagnosticLogs() {
+        let fileManager = FileManager.default
+        guard let urls = try? fileManager.contentsOfDirectory(
+            at: diagnosticsDirectory,
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            options: [.skipsHiddenFiles]
+        ) else { return }
+        let cutoff = Date.now.addingTimeInterval(-30 * 24 * 60 * 60)
+        for url in urls where url.pathExtension == "jsonl" {
+            guard let values = try? url.resourceValues(forKeys: [.contentModificationDateKey]),
+                  let modified = values.contentModificationDate,
+                  modified < cutoff else { continue }
+            try? fileManager.removeItem(at: url)
+        }
+    }
+
     @discardableResult
     func start() -> Bool {
         guard activeDay == nil else { return false }
@@ -486,6 +527,7 @@ final class RideRecorder: ObservableObject {
         context.insert(day)
         do {
             try context.save()
+            Self.pruneOldDiagnosticLogs()
             activeDay = day
             diagnosticLogger = RawLogWriter(url: Self.debugLogURL(for: day.id))
             diagnosticLogger?.append(RawDiagnosticRecord(kind: "session_started", timestamp: day.startedAt,
@@ -966,25 +1008,28 @@ final class RideRecorder: ObservableObject {
             }
         }
         let logger = diagnosticLogger
+        let logsRawMotion = rawMotionLoggingEnabled
         motionService.rawDeviceMotionHandler = { [weak self] sample in
-            logger?.append(RawDiagnosticRecord(
-                kind: "device_motion_raw",
-                timestamp: sample.recordedAt,
-                monotonicSeconds: sample.monotonicSeconds,
-                userAccelerationX: sample.userAccelerationX,
-                userAccelerationY: sample.userAccelerationY,
-                userAccelerationZ: sample.userAccelerationZ,
-                rotationRateX: sample.rotationRateX,
-                rotationRateY: sample.rotationRateY,
-                rotationRateZ: sample.rotationRateZ,
-                gravityX: sample.gravityX,
-                gravityY: sample.gravityY,
-                gravityZ: sample.gravityZ,
-                quaternionW: sample.quaternionW,
-                quaternionX: sample.quaternionX,
-                quaternionY: sample.quaternionY,
-                quaternionZ: sample.quaternionZ
-            ))
+            if logsRawMotion {
+                logger?.append(RawDiagnosticRecord(
+                    kind: "device_motion_raw",
+                    timestamp: sample.recordedAt,
+                    monotonicSeconds: sample.monotonicSeconds,
+                    userAccelerationX: sample.userAccelerationX,
+                    userAccelerationY: sample.userAccelerationY,
+                    userAccelerationZ: sample.userAccelerationZ,
+                    rotationRateX: sample.rotationRateX,
+                    rotationRateY: sample.rotationRateY,
+                    rotationRateZ: sample.rotationRateZ,
+                    gravityX: sample.gravityX,
+                    gravityY: sample.gravityY,
+                    gravityZ: sample.gravityZ,
+                    quaternionW: sample.quaternionW,
+                    quaternionX: sample.quaternionX,
+                    quaternionY: sample.quaternionY,
+                    quaternionZ: sample.quaternionZ
+                ))
+            }
             Task { @MainActor [weak self] in
                 self?.consume(deviceMotion: sample)
             }

@@ -433,7 +433,23 @@ struct RootView: View {
     @StateObject private var trailCatalogSelection = TrailCatalogSelection()
     @State private var selectedTab: Tab = .track
     @State private var pendingDayID: UUID?
-    @State private var storeIssue: PersistenceController.StoreIssue? = PersistenceController.shared.storeIssue
+    @State private var startupIssue: StartupIssue? = RootView.initialStartupIssue()
+
+    private struct StartupIssue: Identifiable {
+        let id = UUID()
+        let title: String
+        let message: String
+    }
+
+    private static func initialStartupIssue() -> StartupIssue? {
+        if let issue = PersistenceController.shared.storeIssue {
+            return StartupIssue(title: "Storage problem", message: issue.message)
+        }
+        if let issue = PersistenceController.shared.catalogImportIssue {
+            return StartupIssue(title: "Trail import problem", message: issue)
+        }
+        return nil
+    }
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -458,13 +474,10 @@ struct RootView: View {
             selectedTab = .track
             recorder.handleLiveActivityOpen()
         }
-        .alert("Storage problem", isPresented: Binding(
-            get: { storeIssue != nil },
-            set: { if !$0 { storeIssue = nil } }
-        ), presenting: storeIssue) { _ in
-            Button("OK", role: .cancel) {}
-        } message: { issue in
-            Text(issue.message)
+        .alert(item: $startupIssue) { issue in
+            Alert(title: Text(issue.title),
+                  message: Text(issue.message),
+                  dismissButton: .cancel(Text("OK")))
         }
     }
 }
@@ -519,6 +532,16 @@ struct SettingsView: View {
                         }
                     }
                     .pickerStyle(.inline)
+                }
+                Section {
+                    Toggle("Raw motion logging", isOn: Binding(
+                        get: { recorder.rawMotionLoggingEnabled },
+                        set: { recorder.setRawMotionLoggingEnabled($0) }
+                    ))
+                } header: {
+                    Text("Diagnostics")
+                } footer: {
+                    Text("Keeps high-rate motion samples with each ride so sessions can be re-analyzed. Uses extra storage and is off by default.")
                 }
             }
             .navigationTitle("Settings")

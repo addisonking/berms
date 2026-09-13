@@ -187,7 +187,8 @@ enum TrailCatalogImporter {
         }
 
         let existingTrails = try context.fetch(FetchDescriptor<Trail>())
-        var trailsByID = Dictionary(uniqueKeysWithValues: existingTrails.map { ($0.id, $0) })
+        var trailsByID = Dictionary(existingTrails.map { ($0.id, $0) },
+                                    uniquingKeysWith: { first, _ in first })
         var trailsCreated = 0
         var passesCreated = 0
         var existingTrailsSkipped = 0
@@ -367,6 +368,27 @@ typealias TrailSeedImporter = TrailCatalogImporter
 private struct GeoJSONFeatureCollection: Decodable {
     let type: String
     let features: [GeoJSONFeature]
+
+    private enum CodingKeys: String, CodingKey {
+        case type
+        case features
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        type = try container.decode(String.self, forKey: .type)
+        // Decode features lossily so one malformed entry cannot abort the catalog.
+        features = try container.decode([LossyFeature].self, forKey: .features)
+            .compactMap(\.feature)
+    }
+}
+
+private struct LossyFeature: Decodable {
+    let feature: GeoJSONFeature?
+
+    init(from decoder: Decoder) throws {
+        feature = try? GeoJSONFeature(from: decoder)
+    }
 }
 
 private struct GeoJSONFeature: Decodable {

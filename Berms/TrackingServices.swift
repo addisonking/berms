@@ -22,7 +22,7 @@ final class LocationService: NSObject, ObservableObject, @preconcurrency CLLocat
     override init() {
         super.init()
         manager.delegate = self
-        manager.desiredAccuracy = kCLLocationAccuracyBestForNavigation
+        manager.desiredAccuracy = kCLLocationAccuracyBest
         manager.distanceFilter = kCLDistanceFilterNone
         manager.activityType = .fitness
         manager.allowsBackgroundLocationUpdates = false
@@ -158,7 +158,9 @@ final class MotionService: ObservableObject, @unchecked Sendable {
     @Published private(set) var motionAvailable = true
 
     @MainActor private var generation = 0
+    @MainActor private var isRunning = false
     private let altimeter = CMAltimeter()
+    private let activityManager = CMMotionActivityManager()
     private let deviceMotionManager = CMMotionManager()
     private let callbackQueue: OperationQueue = {
         let queue = OperationQueue()
@@ -169,6 +171,8 @@ final class MotionService: ObservableObject, @unchecked Sendable {
 
     @MainActor
     func start() {
+        guard !isRunning else { return }
+        isRunning = true
         generation &+= 1
         let generation = generation
         relativeAltitude = nil
@@ -194,6 +198,28 @@ final class MotionService: ObservableObject, @unchecked Sendable {
                 to: callbackQueue,
                 withHandler: Self.altitudeCallback(for: self, generation: generation)
             )
+        }
+        if CMMotionActivityManager.isActivityAvailable() {
+            activityManager.startActivityUpdates(to: callbackQueue) { [weak self] activity in
+                guard let activity else { return }
+                let sample = MotionActivitySample(
+                    recordedAt: .now,
+                    activityStart: activity.startDate,
+                    stationary: activity.stationary,
+                    walking: activity.walking,
+                    running: activity.running,
+                    cycling: activity.cycling,
+                    automotive: activity.automotive,
+                    unknown: activity.unknown,
+                    confidence: activity.confidence.rawValue
+                )
+                Task { @MainActor [weak self] in
+                    guard let self, self.isRunning else { return }
+                    self.isCycling = sample.cycling
+                    self.isAutomotive = sample.automotive
+                    self.rawActivityHandler?(sample)
+                }
+            }
         }
     }
 
@@ -245,8 +271,10 @@ final class MotionService: ObservableObject, @unchecked Sendable {
 
     @MainActor
     func stop() {
+        isRunning = false
         generation &+= 1
         altimeter.stopRelativeAltitudeUpdates()
+        activityManager.stopActivityUpdates()
         deviceMotionManager.stopDeviceMotionUpdates()
         relativeAltitude = nil
         relativeAltitudeTimestamp = nil
