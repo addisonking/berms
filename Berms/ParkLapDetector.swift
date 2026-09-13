@@ -52,7 +52,8 @@ final class ParkLapDetector {
     func finish() -> DetectorEvent? {
         defer { reset() }
 
-        guard currentPoints.count >= configuration.minimumSamples,
+        guard phase != .idle,
+              currentPoints.count >= configuration.minimumSamples,
               let first = currentPoints.first,
               let last = currentPoints.last else {
             return nil
@@ -173,7 +174,9 @@ final class ParkLapDetector {
         }),
         sample.speed <= configuration.endpointSpeedThreshold,
         !sample.isAutomotive else {
-            endpointCandidate.removeAll(keepingCapacity: true)
+            // Not at a learned station after all: keep the buffered points
+            // instead of silently dropping that part of the route.
+            flushEndpointCandidate()
             return nil
         }
 
@@ -206,6 +209,15 @@ final class ParkLapDetector {
         }
         return [.finished(SegmentDraft(kind: expected, points: finishedPoints,
                                        startedAt: firstPoint.timestamp, endedAt: lastPoint.timestamp))]
+    }
+
+    private func flushEndpointCandidate() {
+        guard !endpointCandidate.isEmpty else { return }
+        currentPoints.append(contentsOf: endpointCandidate.filter {
+            !$0.isStationary && !$0.isAutomotive
+                && $0.timestamp > (currentPoints.last?.timestamp ?? .distantPast)
+        })
+        endpointCandidate.removeAll(keepingCapacity: true)
     }
 
     private func confirmedKind(in points: [TrackSample]) -> SegmentKind? {

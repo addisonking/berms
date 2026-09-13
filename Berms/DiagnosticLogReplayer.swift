@@ -20,7 +20,7 @@ struct DiagnosticLogReplayer {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         let detector = ParkLapDetector()
-        let jumpDetector = JumpDetector()
+        var jumpDetector = JumpDetector()
         var context: JumpTrackContext?
         var previousTrackSample: TrackSample?
         var jumpsForCurrentRun: [JumpEvent] = []
@@ -36,23 +36,33 @@ struct DiagnosticLogReplayer {
             jumpsForCurrentRun.removeAll(keepingCapacity: true)
         }
 
-        for (index, line) in contents.split(whereSeparator: \.isNewline).enumerated() {
+        func resetDetectors() {
+            detector.reset()
+            jumpDetector.reset()
+            context = nil
+            previousTrackSample = nil
+            jumpsForCurrentRun.removeAll(keepingCapacity: true)
+        }
+
+        for line in contents.split(whereSeparator: \.isNewline) {
+            // Skip torn or unknown lines instead of discarding the whole log.
             guard let record = try? decoder.decode(RawDiagnosticRecord.self, from: Data(line.utf8)) else {
-                throw DiagnosticReplayError.unreadableLine(index + 1)
+                continue
             }
 
             switch record.kind {
             case "session_paused", "session_stopped":
                 appendFinishedSegment()
-                context = nil
-                previousTrackSample = nil
-                jumpsForCurrentRun.removeAll(keepingCapacity: true)
+                resetDetectors()
+            case "tracking_gap":
+                appendFinishedSegment()
+                resetDetectors()
             case "session_resumed", "session_recovered":
-                detector.reset()
-                jumpDetector.reset()
-                context = nil
-                previousTrackSample = nil
-                jumpsForCurrentRun.removeAll(keepingCapacity: true)
+                resetDetectors()
+            case "jump_detector_config", "jump_detector_sensitivity_changed":
+                if let sensitivity = Self.sensitivity(from: record.detail) {
+                    jumpDetector.update(configuration: sensitivity.configuration)
+                }
             case "detector_input":
                 guard record.accepted == true,
                       let latitude = record.latitude,
@@ -60,7 +70,7 @@ struct DiagnosticLogReplayer {
                       let speed = record.speed else { continue }
                 let sample = TrackSample(
                     coordinate: Coordinate(latitude: latitude, longitude: longitude),
-                    altitude: record.fusedAltitude ?? record.gpsAltitude,
+                    altitude: record.fusedAltitude ?? record.gpsAltitude ?? previousTrackSample?.altitude,
                     speed: speed,
                     course: record.course ?? -1,
                     horizontalAccuracy: record.horizontalAccuracy ?? 0,
@@ -132,5 +142,12 @@ struct DiagnosticLogReplayer {
 
         appendFinishedSegment()
         return DiagnosticReplayResult(segments: segments)
+    }
+
+    static func sensitivity(from detail: String?) -> JumpSensitivity? {
+        guard let detail,
+              let range = detail.range(of: "sensitivity=") else { return nil }
+        let value = detail[range.upperBound...].prefix { $0 != "," }
+        return JumpSensitivity(rawValue: String(value))
     }
 }

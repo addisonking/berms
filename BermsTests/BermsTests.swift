@@ -1710,6 +1710,64 @@ final class BermsTests: XCTestCase {
         XCTAssertGreaterThan(saved.descentMeters, 0)
     }
 
+    func testDiagnosticReplaySkipsMalformedLines() throws {
+        let contents = """
+        {"kind":"session_started","timestamp":7000,"monotonicSeconds":0}
+        not json at all
+        {"kind":"detector_input","timestamp":7001,"monotonicSeconds":1,"latitude":40,"longitude":-105,
+         "fusedAltitude":100,"trackMonotonicSeconds":1,"speed":7,"horizontalAccuracy":5,"accepted":true}
+        """
+        let result = try DiagnosticLogReplayer().replay(contents: contents)
+        XCTAssertNotNil(result)
+    }
+
+    func testDiagnosticReplayParsesJumpSensitivity() {
+        XCTAssertEqual(DiagnosticLogReplayer.sensitivity(from: "sensitivity=high,summary"), .high)
+        XCTAssertEqual(DiagnosticLogReplayer.sensitivity(from: "sensitivity=low"), .low)
+        XCTAssertNil(DiagnosticLogReplayer.sensitivity(from: nil))
+        XCTAssertNil(DiagnosticLogReplayer.sensitivity(from: "no hint here"))
+    }
+
+    func testLearnedEndpointBufferedPointsReturnToRoute() {
+        let profile = LearnedLiftProfile(
+            id: UUID(),
+            bottom: Coordinate(latitude: 40.0, longitude: -105.0),
+            top: Coordinate(latitude: 40.01, longitude: -105.0),
+            bottomRadius: 50,
+            topRadius: 50,
+            observationCount: 3,
+            confidence: 1
+        )
+        var configuration = ParkLapDetector.Configuration()
+        configuration.learnedLifts = [profile]
+        let detector = ParkLapDetector(configuration: configuration)
+        let base = Date(timeIntervalSince1970: 9_000)
+        detector.restore(kind: .run, points: [
+            TrackSample(coordinate: Coordinate(latitude: 40.0, longitude: -105.0001),
+                        altitude: 100, speed: 7, timestamp: base)
+        ])
+
+        var dwellTimestamps: [Date] = []
+        for t in 1...3 {
+            let sample = TrackSample(coordinate: Coordinate(latitude: 40.0, longitude: -105.0),
+                                     altitude: 100, speed: 0.5,
+                                     timestamp: base.addingTimeInterval(Double(t)))
+            dwellTimestamps.append(sample.timestamp)
+            _ = detector.process(sample)
+        }
+        XCTAssertFalse(dwellTimestamps.allSatisfy { timestamp in
+            detector.currentPoints.contains { $0.timestamp == timestamp }
+        })
+
+        _ = detector.process(TrackSample(coordinate: Coordinate(latitude: 40.02, longitude: -105.0),
+                                         altitude: 95, speed: 7,
+                                         timestamp: base.addingTimeInterval(4)))
+
+        XCTAssertTrue(dwellTimestamps.allSatisfy { timestamp in
+            detector.currentPoints.contains { $0.timestamp == timestamp }
+        })
+    }
+
     private func runContext(at seconds: Double, base: Date, speed: Double = 8,
                              phase: DetectorPhase = .run) -> JumpTrackContext {
         JumpTrackContext(timestamp: base.addingTimeInterval(seconds), monotonicSeconds: seconds,
