@@ -28,7 +28,7 @@ extension Color {
         switch difficulty {
         case .green: .green
         case .blue: .blue
-        case .black, .doubleBlack: .black
+        case .black, .doubleBlack: .primary
         }
     }
 
@@ -70,26 +70,13 @@ struct SummaryStat: View {
     }
 }
 
-struct MetricTile: View {
-    let label: String
-    let value: String
-    var tint: Color = .primary
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(value)
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(tint)
-                .monospacedDigit()
-            Text(label)
-                .font(.caption)
-                .foregroundStyle(Color.bermsMuted)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(label)
-        .accessibilityValue(value)
-        .padding(BermsSpacing.control)
+/// Material circle used for map controls so they stay legible in either appearance.
+struct BermsMapControlButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(.primary)
+            .background(.regularMaterial, in: Circle())
+            .opacity(configuration.isPressed ? 0.7 : 1)
     }
 }
 

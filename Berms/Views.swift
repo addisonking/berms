@@ -374,12 +374,13 @@ private func trailDistance(from coordinate: Coordinate, to points: [RoutePoint])
 private struct RunNumberMarker: View {
     let number: Int
     let isSelected: Bool
+    @ScaledMetric(relativeTo: .caption) private var markerSize: CGFloat = 26
 
     var body: some View {
         Text("\(number)")
             .font(.caption.weight(.heavy))
             .foregroundStyle(isSelected ? Color.bermsOnAccent : Color.bermsTrail)
-            .frame(width: 26, height: 26)
+            .frame(width: markerSize, height: markerSize)
             .background(isSelected ? Color.bermsTrail : Color.bermsCard, in: Circle())
             .overlay(Circle().stroke(Color.bermsTrail, lineWidth: 1.5))
             .shadow(color: .black.opacity(0.2), radius: 2, y: 1)
@@ -391,13 +392,14 @@ private struct JumpMapMarker: View {
     let number: Int
     let airtime: TimeInterval
     var showsAirtime = false
+    @ScaledMetric(relativeTo: .caption2) private var markerSize: CGFloat = 20
 
     var body: some View {
         HStack(spacing: 4) {
             Text("\(number)")
                 .font(.caption2.weight(.heavy))
                 .foregroundStyle(.white)
-                .frame(width: 20, height: 20)
+                .frame(width: markerSize, height: markerSize)
                 .background(.orange, in: Circle())
             if showsAirtime {
                 Text(BermsFormat.airtime(airtime))
@@ -470,7 +472,7 @@ struct RootView: View {
         .environmentObject(trailCatalogSelection)
         .onAppear { recorder.resumeIfNeeded() }
         .onOpenURL { url in
-            guard url.scheme == "berms" else { return }
+            guard url.scheme == "berms", url.host == "track" else { return }
             selectedTab = .track
             recorder.handleLiveActivityOpen()
         }
@@ -649,8 +651,9 @@ struct TrackView: View {
                 VStack(spacing: BermsSpacing.section) {
                     VStack(spacing: BermsSpacing.compact) {
                         Image(systemName: "mountain.2.fill")
-                            .font(.system(size: 34, weight: .semibold))
+                            .font(.largeTitle.weight(.semibold))
                             .foregroundStyle(Color.bermsTrail)
+                            .accessibilityHidden(true)
                         Text("Ready to track")
                             .font(.title2.weight(.semibold))
                         Text("Track runs, lifts, and routes.")
@@ -1182,9 +1185,7 @@ struct TrailLibraryView: View {
                             .font(.headline)
                             .frame(minWidth: BermsSpacing.target, minHeight: BermsSpacing.target)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.black.opacity(0.7))
-                    .foregroundStyle(.white)
+                    .buttonStyle(BermsMapControlButtonStyle())
                     .accessibilityLabel("Recenter map")
                 }
                 .padding(BermsSpacing.control)
@@ -1221,6 +1222,7 @@ struct TrailLibraryView: View {
             }
         }
         .buttonStyle(.bordered)
+        .controlSize(.large)
         .tint(selectedDifficulty == difficulty ? .bermsTrail : .bermsMuted)
         .accessibilityAddTraits(selectedDifficulty == difficulty ? .isSelected : [])
     }
@@ -1554,9 +1556,7 @@ struct TrailMappingView: View {
                 .font(.headline)
                 .frame(minWidth: 44, minHeight: 44)
         }
-        .buttonStyle(.borderedProminent)
-        .tint(.black.opacity(0.7))
-        .foregroundStyle(.white)
+        .buttonStyle(BermsMapControlButtonStyle())
         .accessibilityLabel("Recenter map")
     }
 }
@@ -1905,6 +1905,7 @@ struct DaysView: View {
     @Binding private var pendingDayID: UUID?
     let onStartTracking: () -> Void
     @State private var dayToDelete: RideDay?
+    @State private var deleteError: String?
     @State private var navigationPath = NavigationPath()
 
     init(pendingDayID: Binding<UUID?> = .constant(nil),
@@ -1969,38 +1970,43 @@ struct DaysView: View {
             Button("Cancel", role: .cancel) { dayToDelete = nil }
             Button("Delete day", role: .destructive) {
                 if let dayToDelete, dayToDelete.isFinished {
-                    let diagnosticURL = RideRecorder.debugLogURL(for: dayToDelete.id)
-                    modelContext.delete(dayToDelete)
-                    try? modelContext.save()
-                    try? FileManager.default.removeItem(at: diagnosticURL)
+                    deleteDay(dayToDelete)
                 }
                 dayToDelete = nil
             }
         }
+        .alert("Couldn't delete day", isPresented: Binding(
+            get: { deleteError != nil },
+            set: { if !$0 { deleteError = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(deleteError ?? "")
+        }
+    }
+
+    private func deleteDay(_ day: RideDay) {
+        let diagnosticURL = RideRecorder.debugLogURL(for: day.id)
+        modelContext.delete(day)
+        do {
+            try modelContext.save()
+            try? FileManager.default.removeItem(at: diagnosticURL)
+        } catch {
+            modelContext.rollback()
+            deleteError = "The day could not be deleted. \(error.localizedDescription)"
+        }
     }
 
     private var emptyDaysView: some View {
-        VStack(spacing: BermsSpacing.section) {
-            VStack(spacing: BermsSpacing.compact) {
-                Image(systemName: "mountain.2.fill")
-                    .font(.system(size: 34, weight: .semibold))
-                    .foregroundStyle(Color.bermsTrail)
-                Text("No days yet")
-                    .font(.title2.weight(.semibold))
-                Text("Finish a ride and it will appear here.")
-                    .font(.subheadline)
-                    .foregroundStyle(Color.bermsMuted)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 300)
-            }
-
+        ContentUnavailableView {
+            Label("No days yet", systemImage: "mountain.2.fill")
+        } description: {
+            Text("Finish a ride and it will appear here.")
+        } actions: {
             Button("Start tracking", action: onStartTracking)
                 .buttonStyle(.borderedProminent)
-                .tint(.bermsTrail)
                 .controlSize(.large)
         }
-        .padding(.horizontal, BermsSpacing.content)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
     }
 
     private var finishedDays: [RideDay] {
@@ -2025,8 +2031,6 @@ struct DaysView: View {
         let day = target.day
         let latestRun = target.run
         await Task.yield()
-        try? await Task.sleep(nanoseconds: 100_000_000)
-        guard !Task.isCancelled else { return }
 
         let cacheKey = SessionDetailPresentationPreheater.runCacheKey(
             dayID: day.id,
@@ -2070,12 +2074,11 @@ struct DaysView: View {
     @ViewBuilder
     private func dayDeleteAction(for day: RideDay) -> some View {
         if day.isFinished {
-            Button {
+            Button(role: .destructive) {
                 dayToDelete = day
             } label: {
                 Label("Delete", systemImage: "trash")
             }
-            .tint(.red)
         }
     }
 
@@ -2141,6 +2144,9 @@ struct DayDetailView: View {
     @State private var showingDeleteConfirmation = false
     @State private var detailBase: SessionDetailBase?
     @State private var trailDetails: SessionDetailTrailDetails?
+    @State private var notesSaveTask: Task<Void, Never>?
+    @State private var saveErrorMessage: String?
+    @State private var prepareFailed = false
 
     init(day: RideDay, onRunSelected: @escaping (RunMapDestination) -> Void = { _ in }) {
         self.day = day
@@ -2251,15 +2257,19 @@ struct DayDetailView: View {
         }
         .alert("Delete day?", isPresented: $showingDeleteConfirmation) {
             Button("Delete day", role: .destructive) {
-                let diagnosticURL = RideRecorder.debugLogURL(for: day.id)
-                modelContext.delete(day)
-                try? modelContext.save()
-                try? FileManager.default.removeItem(at: diagnosticURL)
-                dismiss()
+                deleteDay()
             }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This removes the day and all of its runs, lifts, and map data.")
+        }
+        .alert("Couldn't save", isPresented: Binding(
+            get: { saveErrorMessage != nil },
+            set: { if !$0 { saveErrorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(saveErrorMessage ?? "")
         }
         .sheet(isPresented: $showingNameEditor) {
             NavigationStack {
@@ -2298,14 +2308,55 @@ struct DayDetailView: View {
         }
         .onChange(of: notesDraft) { _, value in
             day.setNotes(value)
-            try? modelContext.save()
+            scheduleNotesSave()
+        }
+        .onDisappear { commitNotesSave() }
+    }
+
+    private func scheduleNotesSave() {
+        notesSaveTask?.cancel()
+        notesSaveTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(400))
+            guard !Task.isCancelled else { return }
+            saveNotes()
+        }
+    }
+
+    private func commitNotesSave() {
+        notesSaveTask?.cancel()
+        notesSaveTask = nil
+        saveNotes()
+    }
+
+    private func saveNotes() {
+        do {
+            try modelContext.save()
+        } catch {
+            saveErrorMessage = "Your journal note could not be saved. \(error.localizedDescription)"
         }
     }
 
     private func saveName() {
         day.setName(nameDraft)
-        try? modelContext.save()
-        showingNameEditor = false
+        do {
+            try modelContext.save()
+            showingNameEditor = false
+        } catch {
+            saveErrorMessage = "The name could not be saved. \(error.localizedDescription)"
+        }
+    }
+
+    private func deleteDay() {
+        let diagnosticURL = RideRecorder.debugLogURL(for: day.id)
+        modelContext.delete(day)
+        do {
+            try modelContext.save()
+            try? FileManager.default.removeItem(at: diagnosticURL)
+            dismiss()
+        } catch {
+            modelContext.rollback()
+            saveErrorMessage = "The day could not be deleted. \(error.localizedDescription)"
+        }
     }
 
     private var summary: some View {
@@ -2349,6 +2400,18 @@ struct DayDetailView: View {
             .background(Color.bermsCard, in: RoundedRectangle(cornerRadius: 22))
         } else if let detailBase {
             preparedDayMap(detailBase)
+        } else if prepareFailed {
+            ContentUnavailableView {
+                Label("Map unavailable", systemImage: "exclamationmark.triangle")
+            } description: {
+                Text("This day's map could not be prepared.")
+            } actions: {
+                Button("Try Again") {
+                    Task { await prepareDetails() }
+                }
+            }
+            .frame(maxWidth: .infinity, minHeight: 280)
+            .background(Color.bermsCard, in: RoundedRectangle(cornerRadius: 22))
         } else {
             VStack(spacing: BermsSpacing.compact) {
                 ProgressView()
@@ -2437,9 +2500,7 @@ struct DayDetailView: View {
                         .font(.headline)
                         .frame(minWidth: BermsSpacing.target, minHeight: BermsSpacing.target)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(.black.opacity(0.7))
-                .foregroundStyle(.white)
+                .buttonStyle(BermsMapControlButtonStyle())
                 .accessibilityLabel("Open full-screen ride map")
             }
             .padding(BermsSpacing.control)
@@ -2459,10 +2520,8 @@ struct DayDetailView: View {
     private func prepareDetails() async {
         detailBase = nil
         trailDetails = nil
+        prepareFailed = false
         await Task.yield()
-        // Let the navigation transaction commit before touching SwiftData.
-        try? await Task.sleep(nanoseconds: 100_000_000)
-        guard !Task.isCancelled else { return }
 
         let cacheKey = preparationCacheKey(for: trails)
         if let cached = SessionDetailPresentationCache.shared.entry(for: cacheKey) {
@@ -2508,7 +2567,7 @@ struct DayDetailView: View {
         } catch is CancellationError {
             return
         } catch {
-            return
+            prepareFailed = true
         }
     }
 
@@ -2538,9 +2597,7 @@ struct DayDetailView: View {
                 .font(.headline)
                 .frame(minWidth: BermsSpacing.target, minHeight: BermsSpacing.target)
         }
-        .buttonStyle(.borderedProminent)
-        .tint(.black.opacity(0.7))
-        .foregroundStyle(.white)
+        .buttonStyle(BermsMapControlButtonStyle())
         .accessibilityLabel("Recenter map")
     }
 
@@ -2706,9 +2763,7 @@ struct FullScreenSummaryMap: View {
                             .font(.headline)
                             .frame(minWidth: BermsSpacing.target, minHeight: BermsSpacing.target)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.black.opacity(0.7))
-                    .foregroundStyle(.white)
+                    .buttonStyle(BermsMapControlButtonStyle())
                     .accessibilityLabel("Recenter map")
                 }
                 .padding(BermsSpacing.control)
@@ -2840,6 +2895,7 @@ struct RunMapView: View {
     @State private var ownBase: SessionDetailBase?
     @State private var ownTrailDetails: SessionDetailTrailDetails?
     @State private var isPreparing = false
+    @State private var prepareFailed = false
 
     init(number: Int,
          segment: RideSegment,
@@ -2914,13 +2970,26 @@ struct RunMapView: View {
         ZStack {
             BermsBackground()
             if !isLoaded {
-                VStack(spacing: BermsSpacing.compact) {
-                    ProgressView()
-                    Text("Loading map…")
-                        .font(.subheadline)
-                        .foregroundStyle(Color.bermsMuted)
+                if prepareFailed {
+                    ContentUnavailableView {
+                        Label("Map unavailable", systemImage: "exclamationmark.triangle")
+                    } description: {
+                        Text("This run's map could not be prepared.")
+                    } actions: {
+                        Button("Try Again") {
+                            Task { await prepareIfNeeded(force: true) }
+                        }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    VStack(spacing: BermsSpacing.compact) {
+                        ProgressView()
+                        Text("Loading map…")
+                            .font(.subheadline)
+                            .foregroundStyle(Color.bermsMuted)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if routePoints.isEmpty {
                 VStack(spacing: BermsSpacing.compact) {
                     Image(systemName: "map")
@@ -2984,9 +3053,7 @@ struct RunMapView: View {
                                     .font(.headline)
                                     .frame(minWidth: BermsSpacing.target, minHeight: BermsSpacing.target)
                             }
-                            .buttonStyle(.borderedProminent)
-                            .tint(.black.opacity(0.7))
-                            .foregroundStyle(.white)
+                            .buttonStyle(BermsMapControlButtonStyle())
                             .accessibilityLabel("Open full-screen run map")
                         }
                         .padding(BermsSpacing.control)
@@ -3023,8 +3090,9 @@ struct RunMapView: View {
     /// Prepares this run off the main actor when the caller has no presentation for
     /// it, so decoding and trail matching never run on the rendering path.
     @MainActor
-    private func prepareIfNeeded() async {
-        guard preparedDetail == nil, activeDetail == nil, !isPreparing else { return }
+    private func prepareIfNeeded(force: Bool = false) async {
+        guard preparedDetail == nil, activeDetail == nil, (!isPreparing || force) else { return }
+        if force { prepareFailed = false }
         let selectionID = trailCatalogSelection.selectionID
         var runKey: String?
         if let dayID = segment.day?.id {
@@ -3065,7 +3133,7 @@ struct RunMapView: View {
         } catch is CancellationError {
             return
         } catch {
-            return
+            prepareFailed = true
         }
     }
 
@@ -3077,9 +3145,7 @@ struct RunMapView: View {
                 .font(.headline)
                 .frame(minWidth: BermsSpacing.target, minHeight: BermsSpacing.target)
         }
-        .buttonStyle(.borderedProminent)
-        .tint(.black.opacity(0.7))
-        .foregroundStyle(.white)
+        .buttonStyle(BermsMapControlButtonStyle())
         .accessibilityLabel("Recenter map")
     }
 
