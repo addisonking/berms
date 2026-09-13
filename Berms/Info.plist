@@ -2,45 +2,47 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>NSHealthShareUsageDescription</key>
-    <string>Berms uses Apple Watch health data to display live heart rate and active energy during your ride.</string>
-    <key>NSHealthUpdateUsageDescription</key>
-    <string>Berms starts an Apple Watch workout session for live ride tracking without saving a separate workout.</string>
 	<key>CFBundleDisplayName</key>
 	<string>Berms</string>
-	<key>CFBundleName</key>
-	<string>Berms</string>
-	<key>CFBundleIdentifier</key>
-	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleName</key>
+	<string>Berms</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0</string>
-	<key>CFBundleVersion</key>
-	<string>$(CURRENT_PROJECT_VERSION)</string>
-	<key>LSRequiresIPhoneOS</key>
-	<true/>
-	<key>UILaunchScreen</key>
-	<dict/>
-	<key>NSSupportsLiveActivities</key>
-	<true/>
+	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
 			<key>CFBundleURLSchemes</key>
-			<array><string>berms</string></array>
+			<array>
+				<string>berms</string>
+			</array>
 		</dict>
 	</array>
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
+	<key>NSHealthShareUsageDescription</key>
+	<string>Berms uses Apple Watch health data to display live heart rate and active energy during your ride.</string>
+	<key>NSHealthUpdateUsageDescription</key>
+	<string>Berms starts an Apple Watch workout session for live ride tracking without saving a separate workout.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Berms uses your location to keep recording runs and lifts while your iPhone is locked.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Berms uses your location to record runs and lifts while the app is open.</string>
+	<key>NSMotionUsageDescription</key>
+	<string>Berms uses motion and barometer data to distinguish runs, lifts, and jumps.</string>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>location</string>
 	</array>
-    <key>NSLocationWhenInUseUsageDescription</key>
-    <string>Berms uses your location to record runs and lifts while the app is open.</string>
-	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-    <string>Berms uses your location to keep recording runs and lifts while your iPhone is locked.</string>
-	<key>NSMotionUsageDescription</key>
-    <string>Berms uses motion and barometer data to distinguish runs, lifts, and jumps.</string>
+	<key>UILaunchScreen</key>
+	<dict/>
 	<key>UIRequiredDeviceCapabilities</key>
 	<array>
 		<string>gps</string>

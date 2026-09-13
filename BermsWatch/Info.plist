@@ -4,21 +4,21 @@
 <dict>
 	<key>CFBundleDisplayName</key>
 	<string>Berms</string>
-	<key>CFBundleIdentifier</key>
-	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	<key>CFBundleName</key>
 	<string>Berms</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0</string>
+	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
-	<key>WKWatchKitApp</key>
-	<true/>
 	<key>WKCompanionAppBundleIdentifier</key>
 	<string>com.addis.berms</string>
+	<key>WKWatchKitApp</key>
+	<true/>
 </dict>
 </plist>

@@ -8,7 +8,9 @@ xcuserdata/
 *.xcuserstate
 *.xcscmblueprint
 *.xccurrentversion
-*.xcresult/
+*.xcresult
+*.xcarchive
+*.ipa
 
 # Swift Package Manager
 .build/
