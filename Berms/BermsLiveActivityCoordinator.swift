@@ -27,8 +27,10 @@ final class BermsLiveActivityCoordinator {
         }) {
             activity = BermsActivityHandle(existing)
             lastUpdate = .distantPast
+            endActivities(where: { $0.attributes.rideID != rideID.uuidString })
             return
         }
+        endActivities(where: { $0.attributes.rideID != rideID.uuidString })
         let attributes = BermsActivityAttributes(rideID: rideID)
         let state = BermsActivityAttributes.ContentState(
             phase: DetectorPhase.idle.rawValue,
@@ -43,13 +45,23 @@ final class BermsLiveActivityCoordinator {
         do {
             let requested = try Activity.request(
                 attributes: attributes,
-                content: ActivityContent(state: state, staleDate: nil),
+                content: ActivityContent(state: state,
+                                         staleDate: .now.addingTimeInterval(45)),
                 pushType: nil
             )
             activity = BermsActivityHandle(requested)
             lastUpdate = .distantPast
         } catch {
             activity = nil
+        }
+    }
+
+    private func endActivities(where matches: (Activity<BermsActivityAttributes>) -> Bool) {
+        for other in Activity<BermsActivityAttributes>.activities where matches(other) {
+            let handle = BermsActivityHandle(other)
+            Task.detached {
+                await handle.activity.end(nil, dismissalPolicy: .immediate)
+            }
         }
     }
 

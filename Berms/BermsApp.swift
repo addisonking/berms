@@ -30,6 +30,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         // Best-effort cleanup for a normal process termination. The background
         // callback above handles the usual app-switcher force-close path.
         RideRecorder.shared.locationService.stop()
+        BermsLiveActivityCoordinator.shared.endAll()
 #if DEBUG
         TrailMapper.shared.locationService.stop()
 #endif
