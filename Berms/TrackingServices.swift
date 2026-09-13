@@ -200,7 +200,7 @@ final class MotionService: ObservableObject, @unchecked Sendable {
             )
         }
         if CMMotionActivityManager.isActivityAvailable() {
-            activityManager.startActivityUpdates(to: callbackQueue) { [weak self] activity in
+            activityManager.startActivityUpdates(to: callbackQueue) { @Sendable [weak self] activity in
                 guard let activity else { return }
                 let sample = MotionActivitySample(
                     recordedAt: .now,
