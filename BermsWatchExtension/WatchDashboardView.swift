@@ -5,16 +5,26 @@ struct WatchDashboardView: View {
     @State private var page = 0
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 1)) { _ in
-            TabView(selection: $page) {
-                ridePage
-                    .tag(0)
-                healthPage
-                    .tag(1)
+        Group {
+            if model.state.status == .recording, !model.isStale {
+                TimelineView(.periodic(from: .now, by: 1)) { _ in
+                    content
+                }
+            } else {
+                content
             }
-            .tabViewStyle(.page(indexDisplayMode: .automatic))
-            .background(Color.black.ignoresSafeArea())
         }
+    }
+
+    private var content: some View {
+        TabView(selection: $page) {
+            ridePage
+                .tag(0)
+            healthPage
+                .tag(1)
+        }
+        .tabViewStyle(.page(indexDisplayMode: .automatic))
+        .background(Color.black.ignoresSafeArea())
     }
 
     private var ridePage: some View {
@@ -22,12 +32,12 @@ struct WatchDashboardView: View {
             if model.state.status == .idle {
                 idleContent
             } else {
-                metricRow(label: "Descent", value: feetText(model.state.descentMeters), unit: "ft",
-                          symbol: "arrow.down", color: .green)
-                metricRow(label: "Distance", value: distanceText(model.state.distanceMeters), unit: "mi",
-                          symbol: "arrow.right", color: .cyan)
-                metricRow(label: "Speed", value: speedText, unit: "mph",
-                          symbol: "figure.outdoor.cycle", color: .blue)
+                metricRow(label: "Descent", value: elevationValue(model.state.descentMeters),
+                          unit: elevationUnit, symbol: "arrow.down", color: .green)
+                metricRow(label: "Distance", value: distanceValue(model.state.distanceMeters),
+                          unit: distanceUnit, symbol: "arrow.right", color: .cyan)
+                metricRow(label: "Speed", value: speedValue(model.state.speedMetersPerSecond),
+                          unit: speedUnit, symbol: "figure.outdoor.cycle", color: .blue)
                 pauseButton
             }
         }
@@ -82,7 +92,7 @@ struct WatchDashboardView: View {
                     .foregroundStyle(.secondary)
                 Spacer(minLength: 6)
             }
-            Text(model.isStale ? "Phone disconnected" : "Elapsed " + elapsedText)
+            Text(headerSubtitle)
                 .font(.caption2.monospacedDigit())
                 .foregroundStyle(model.isStale ? .orange : .secondary)
         }
@@ -153,12 +163,49 @@ struct WatchDashboardView: View {
     }
 
     private var elapsedText: String {
-        let total = max(0, Int(model.state.elapsedSeconds.rounded()))
-        return String(format: "%02d:%02d", total / 60, total % 60)
+        let total = max(0, Int(liveElapsedSeconds.rounded()))
+        let hours = total / 3600
+        let minutes = (total % 3600) / 60
+        let seconds = total % 60
+        return hours > 0
+            ? String(format: "%d:%02d:%02d", hours, minutes, seconds)
+            : String(format: "%02d:%02d", minutes, seconds)
     }
 
-    private var speedText: String {
-        String(format: "%.1f", model.state.speedMetersPerSecond * 2.23694)
+    private var liveElapsedSeconds: TimeInterval {
+        let base = model.state.elapsedSeconds
+        guard model.state.status == .recording, !model.isStale else { return base }
+        return base + max(0, Date.now.timeIntervalSince(model.state.updatedAt))
+    }
+
+    private var headerSubtitle: String {
+        guard model.state.isActive else { return "Start a ride on iPhone" }
+        return model.isStale ? "Phone disconnected" : "Elapsed " + elapsedText
+    }
+
+    private var usesMetric: Bool {
+        Locale.current.measurementSystem == .metric
+    }
+
+    private var speedUnit: String { usesMetric ? "km/h" : "mph" }
+
+    private var distanceUnit: String { usesMetric ? "km" : "mi" }
+
+    private var elevationUnit: String { usesMetric ? "m" : "ft" }
+
+    private func speedValue(_ metersPerSecond: Double) -> String {
+        let value = usesMetric ? metersPerSecond * 3.6 : metersPerSecond * 2.23694
+        return String(format: "%.1f", value)
+    }
+
+    private func distanceValue(_ meters: Double) -> String {
+        let value = usesMetric ? meters / 1_000 : meters * 0.000621371
+        return String(format: "%.2f", value)
+    }
+
+    private func elevationValue(_ meters: Double) -> String {
+        let value = usesMetric ? meters : meters * 3.28084
+        return String(format: "%.0f", value)
     }
 
     private var heartRateText: String {
@@ -169,13 +216,5 @@ struct WatchDashboardView: View {
     private var caloriesText: String {
         guard let calories = model.health.activeCalories else { return "—" }
         return String(format: "%.0f", calories)
-    }
-
-    private func distanceText(_ meters: Double) -> String {
-        String(format: "%.2f", meters * 0.000621371)
-    }
-
-    private func feetText(_ meters: Double) -> String {
-        String(format: "%.0f", meters * 3.28084)
     }
 }
