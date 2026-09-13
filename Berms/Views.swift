@@ -540,6 +540,7 @@ struct SettingsView: View {
                         get: { recorder.rawMotionLoggingEnabled },
                         set: { recorder.setRawMotionLoggingEnabled($0) }
                     ))
+                    .tint(.green)
                 } header: {
                     Text("Diagnostics")
                 } footer: {
