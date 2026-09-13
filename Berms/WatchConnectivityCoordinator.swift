@@ -104,8 +104,14 @@ final class WatchConnectivityCoordinator: NSObject, ObservableObject, WatchRideS
         }
         guard let data = message[WatchRideWire.command] as? Data,
               let request = try? WatchRideCodec.decode(WatchRideCommandRequest.self, from: data) else {
-            let reply = WatchRideCommandReply(accepted: false, state: .idle)
-            replyHandler([WatchRideWire.reply: (try? WatchRideCodec.encode(reply)) ?? Data()])
+            // Never answer with a fresh idle state: that would clobber whatever
+            // the watch is showing. Reply with the recorder's real state instead.
+            let reply = WatchReplyHandler(replyHandler)
+            Task { @MainActor in
+                let response = WatchRideCommandReply(accepted: false,
+                                                     state: RideRecorder.shared.currentWatchRideState)
+                reply.send([WatchRideWire.reply: (try? WatchRideCodec.encode(response)) ?? Data()])
+            }
             return
         }
 

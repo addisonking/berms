@@ -7,6 +7,9 @@ enum WatchRideStatus: String, Codable, Equatable, Sendable {
 }
 
 struct WatchRideState: Codable, Equatable, Sendable {
+    static let currentVersion = 1
+
+    let version: Int
     let status: WatchRideStatus
     let rideID: String?
     let phase: String
@@ -16,6 +19,43 @@ struct WatchRideState: Codable, Equatable, Sendable {
     let descentMeters: Double
     let speedMetersPerSecond: Double
     let updatedAt: Date
+
+    init(version: Int = WatchRideState.currentVersion,
+         status: WatchRideStatus,
+         rideID: String?,
+         phase: String,
+         startedAt: Date?,
+         elapsedSeconds: TimeInterval,
+         distanceMeters: Double,
+         descentMeters: Double,
+         speedMetersPerSecond: Double,
+         updatedAt: Date) {
+        self.version = version
+        self.status = status
+        self.rideID = rideID
+        self.phase = phase
+        self.startedAt = startedAt
+        self.elapsedSeconds = elapsedSeconds
+        self.distanceMeters = distanceMeters
+        self.descentMeters = descentMeters
+        self.speedMetersPerSecond = speedMetersPerSecond
+        self.updatedAt = updatedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        version = try container.decodeIfPresent(Int.self, forKey: .version) ?? 1
+        status = try container.decode(WatchRideStatus.self, forKey: .status)
+        rideID = try container.decodeIfPresent(String.self, forKey: .rideID)
+        phase = try container.decodeIfPresent(String.self, forKey: .phase) ?? "idle"
+        startedAt = try container.decodeIfPresent(Date.self, forKey: .startedAt)
+        elapsedSeconds = try container.decodeIfPresent(TimeInterval.self, forKey: .elapsedSeconds) ?? 0
+        distanceMeters = try container.decodeIfPresent(Double.self, forKey: .distanceMeters) ?? 0
+        descentMeters = try container.decodeIfPresent(Double.self, forKey: .descentMeters) ?? 0
+        speedMetersPerSecond = try container.decodeIfPresent(Double.self, forKey: .speedMetersPerSecond) ?? 0
+        // A missing timestamp must never look newer than what the watch already shows.
+        updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? .distantPast
+    }
 
     static var idle: WatchRideState { WatchRideState(
         status: .idle,
@@ -42,8 +82,24 @@ enum WatchRideCommand: String, Codable, Equatable, Sendable {
 }
 
 struct WatchRideCommandRequest: Codable, Sendable {
+    let version: Int
     let command: WatchRideCommand
     let rideID: String
+
+    init(version: Int = WatchRideState.currentVersion,
+         command: WatchRideCommand,
+         rideID: String) {
+        self.version = version
+        self.command = command
+        self.rideID = rideID
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        version = try container.decodeIfPresent(Int.self, forKey: .version) ?? 1
+        command = try container.decode(WatchRideCommand.self, forKey: .command)
+        rideID = try container.decode(String.self, forKey: .rideID)
+    }
 }
 
 struct WatchRideCommandReply: Codable, Equatable, Sendable {
