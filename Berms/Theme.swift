@@ -70,13 +70,11 @@ struct SummaryStat: View {
     }
 }
 
-/// Material circle used for map controls so they stay legible in either appearance.
-struct BermsMapControlButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .foregroundStyle(.primary)
-            .background(.regularMaterial, in: Circle())
-            .opacity(configuration.isPressed ? 0.7 : 1)
+/// Consistently sized hit targets for map controls.
+extension View {
+    func bermsMapControl() -> some View {
+        buttonStyle(.glass)
+            .buttonBorderShape(.circle)
     }
 }
 

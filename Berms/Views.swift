@@ -259,7 +259,7 @@ private struct MapLayersMenu: View {
                 .font(.headline)
                 .frame(minWidth: BermsSpacing.target, minHeight: BermsSpacing.target)
         }
-        .buttonStyle(.glass)
+        .bermsMapControl()
         .accessibilityLabel("Map layers")
     }
 }
@@ -1185,7 +1185,7 @@ struct TrailLibraryView: View {
                             .font(.headline)
                             .frame(minWidth: BermsSpacing.target, minHeight: BermsSpacing.target)
                     }
-                    .buttonStyle(BermsMapControlButtonStyle())
+                    .bermsMapControl()
                     .accessibilityLabel("Recenter map")
                 }
                 .padding(BermsSpacing.control)
@@ -1556,7 +1556,7 @@ struct TrailMappingView: View {
                 .font(.headline)
                 .frame(minWidth: 44, minHeight: 44)
         }
-        .buttonStyle(BermsMapControlButtonStyle())
+        .bermsMapControl()
         .accessibilityLabel("Recenter map")
     }
 }
@@ -2475,7 +2475,7 @@ struct DayDetailView: View {
                         .font(.headline)
                         .frame(minWidth: BermsSpacing.target, minHeight: BermsSpacing.target)
                 }
-                .buttonStyle(BermsMapControlButtonStyle())
+                .bermsMapControl()
                 .accessibilityLabel("Open full-screen ride map")
             }
             .padding(BermsSpacing.control)
@@ -2572,7 +2572,7 @@ struct DayDetailView: View {
                 .font(.headline)
                 .frame(minWidth: BermsSpacing.target, minHeight: BermsSpacing.target)
         }
-        .buttonStyle(BermsMapControlButtonStyle())
+        .bermsMapControl()
         .accessibilityLabel("Recenter map")
     }
 
@@ -2738,7 +2738,7 @@ struct FullScreenSummaryMap: View {
                             .font(.headline)
                             .frame(minWidth: BermsSpacing.target, minHeight: BermsSpacing.target)
                     }
-                    .buttonStyle(BermsMapControlButtonStyle())
+                    .bermsMapControl()
                     .accessibilityLabel("Recenter map")
                 }
                 .padding(BermsSpacing.control)
@@ -3028,7 +3028,7 @@ struct RunMapView: View {
                                     .font(.headline)
                                     .frame(minWidth: BermsSpacing.target, minHeight: BermsSpacing.target)
                             }
-                            .buttonStyle(BermsMapControlButtonStyle())
+                            .bermsMapControl()
                             .accessibilityLabel("Open full-screen run map")
                         }
                         .padding(BermsSpacing.control)
@@ -3120,7 +3120,7 @@ struct RunMapView: View {
                 .font(.headline)
                 .frame(minWidth: BermsSpacing.target, minHeight: BermsSpacing.target)
         }
-        .buttonStyle(BermsMapControlButtonStyle())
+        .bermsMapControl()
         .accessibilityLabel("Recenter map")
     }
 
