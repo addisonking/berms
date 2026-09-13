@@ -952,7 +952,8 @@ final class BermsTests: XCTestCase {
         let state = BermsActivityAttributes.ContentState(
             phase: "run", isPaused: false, runCount: 2, startedAt: .now,
             elapsedSeconds: 120, distanceMeters: 2_000, descentMeters: 300,
-            speedMetersPerSecond: 10
+            topSpeedMetersPerSecond: 14, metric: .totalAirtime, jumpCount: 4,
+            liftCount: 1, longestAirtime: 0.84, totalAirtime: 2.4
         )
         let data = try JSONEncoder().encode(state)
         let decoded = try JSONDecoder().decode(BermsActivityAttributes.ContentState.self, from: data)

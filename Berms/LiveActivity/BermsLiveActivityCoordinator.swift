@@ -20,7 +20,7 @@ final class BermsLiveActivityCoordinator {
 
     private init() {}
 
-    func start(rideID: UUID, startedAt: Date) {
+    func start(rideID: UUID, startedAt: Date, metric: BermsLiveActivityMetric) {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
         if let existing = Activity<BermsActivityAttributes>.activities.first(where: {
             $0.attributes.rideID == rideID.uuidString
@@ -40,7 +40,8 @@ final class BermsLiveActivityCoordinator {
             elapsedSeconds: 0,
             distanceMeters: 0,
             descentMeters: 0,
-            speedMetersPerSecond: 0
+            topSpeedMetersPerSecond: 0,
+            metric: metric
         )
         do {
             let requested = try Activity.request(
@@ -66,8 +67,9 @@ final class BermsLiveActivityCoordinator {
     }
 
     func update(phase: DetectorPhase, isPaused: Bool, runCount: Int, startedAt: Date,
-                elapsed: TimeInterval, distance: Double, descent: Double, speed: Double,
-                force: Bool = false) {
+                elapsed: TimeInterval, distance: Double, descent: Double, topSpeed: Double,
+                metric: BermsLiveActivityMetric, jumpCount: Int, liftCount: Int,
+                longestAirtime: TimeInterval, totalAirtime: TimeInterval, force: Bool = false) {
         guard let handle = activity,
               force || Date.now.timeIntervalSince(lastUpdate) >= 10 else { return }
         lastUpdate = .now
@@ -79,7 +81,12 @@ final class BermsLiveActivityCoordinator {
             elapsedSeconds: elapsed,
             distanceMeters: distance,
             descentMeters: descent,
-            speedMetersPerSecond: speed
+            topSpeedMetersPerSecond: topSpeed,
+            metric: metric,
+            jumpCount: jumpCount,
+            liftCount: liftCount,
+            longestAirtime: longestAirtime,
+            totalAirtime: totalAirtime
         )
         let content = ActivityContent(state: state, staleDate: .now.addingTimeInterval(30))
         Task.detached {

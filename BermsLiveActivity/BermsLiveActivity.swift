@@ -26,7 +26,7 @@ struct BermsLiveActivity: Widget {
                     HStack {
                         metric("Time", duration(context.state.elapsedSeconds))
                         Spacer()
-                        metric("Descent", elevation(context.state.descentMeters))
+                        detailMetric(context)
                         Spacer()
                         Button(intent: ToggleBermsPauseIntent()) {
                             Image(systemName: context.state.isPaused ? "play.fill" : "pause.fill")
@@ -67,7 +67,7 @@ struct BermsLiveActivity: Widget {
                 metric("Runs", "\(context.state.runCount)")
                     .frame(maxWidth: .infinity, alignment: .center)
                 HStack(spacing: 8) {
-                    metric("Descent", elevation(context.state.descentMeters))
+                    metric(context.state.metric.title, detailValue(context))
                     pauseButton(context)
                 }
                 .frame(maxWidth: .infinity, alignment: .trailing)
@@ -118,6 +118,23 @@ struct BermsLiveActivity: Widget {
         .accessibilityElement(children: .combine)
     }
 
+    private func detailMetric(_ context: ActivityViewContext<BermsActivityAttributes>) -> some View {
+        metric(context.state.metric.title, detailValue(context))
+    }
+
+    private func detailValue(_ context: ActivityViewContext<BermsActivityAttributes>) -> String {
+        let state = context.state
+        switch state.metric {
+        case .descent: return elevation(state.descentMeters)
+        case .jumps: return "\(state.jumpCount)"
+        case .distance: return distance(state.distanceMeters)
+        case .topSpeed: return speed(state.topSpeedMetersPerSecond)
+        case .lifts: return "\(state.liftCount)"
+        case .longestAirtime: return airtime(state.longestAirtime)
+        case .totalAirtime: return airtime(state.totalAirtime)
+        }
+    }
+
     private func duration(_ seconds: TimeInterval) -> String {
         let total = max(0, Int(seconds.rounded()))
         let hours = total / 3600
@@ -129,10 +146,33 @@ struct BermsLiveActivity: Widget {
     }
 
     private func elevation(_ meters: Double) -> String {
-        Locale.current.measurementSystem == .metric
+        isMetric
             ? String(format: "%.0f m", meters)
             : String(format: "%.0f ft", meters * 3.28084)
     }
+
+    private func distance(_ meters: Double) -> String {
+        if isMetric {
+            return meters >= 1000
+                ? String(format: "%.1f km", meters / 1000)
+                : String(format: "%.0f m", meters)
+        }
+        let miles = meters / 1609.344
+        return miles >= 0.1
+            ? String(format: "%.1f mi", miles)
+            : String(format: "%.0f ft", meters * 3.28084)
+    }
+
+    private func speed(_ metersPerSecond: Double) -> String {
+        let value = isMetric ? metersPerSecond * 3.6 : metersPerSecond * 2.23694
+        return String(format: "%.0f %@", value, isMetric ? "km/h" : "mph")
+    }
+
+    private func airtime(_ seconds: TimeInterval) -> String {
+        String(format: "%.2fs", max(0, seconds))
+    }
+
+    private var isMetric: Bool { Locale.current.measurementSystem == .metric }
 }
 
 @main

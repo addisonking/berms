@@ -15,6 +15,13 @@ struct SettingsView: View {
         )
     }
 
+    private var liveActivityMetricBinding: Binding<BermsLiveActivityMetric> {
+        Binding(
+            get: { recorder.liveActivityMetric },
+            set: { recorder.setLiveActivityMetric($0) }
+        )
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -53,6 +60,18 @@ struct SettingsView: View {
                         }
                     }
                     .pickerStyle(.inline)
+                }
+                Section {
+                    Picker("Right field", selection: liveActivityMetricBinding) {
+                        ForEach(BermsLiveActivityMetric.allCases) { metric in
+                            Text(metric.title).tag(metric)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                } header: {
+                    Text("Live Activity")
+                } footer: {
+                    Text("Shown at the right of the Live Activity and Dynamic Island while recording.")
                 }
                 Section {
                     Toggle("Raw motion logging", isOn: Binding(

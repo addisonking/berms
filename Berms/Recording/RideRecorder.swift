@@ -331,6 +331,7 @@ final class RideRecorder: ObservableObject {
     private static let diagnosticSummaryVersion = "6"
     private static let diagnosticSummaryVersionKey = "berms.diagnosticSummaryVersion"
     private static let rawMotionLoggingKey = "berms.rawMotionLogging"
+    private static let liveActivityMetricKey = "berms.liveActivityMetric"
 
     @Published private(set) var activeDay: RideDay?
     @Published private(set) var phase: DetectorPhase = .idle
@@ -340,6 +341,7 @@ final class RideRecorder: ObservableObject {
     @Published private(set) var motionAvailable = true
     @Published private(set) var jumpSensitivity: JumpSensitivity
     @Published private(set) var rawMotionLoggingEnabled: Bool
+    @Published private(set) var liveActivityMetric: BermsLiveActivityMetric
     @Published private(set) var isRestoring = false
     @Published private(set) var needsRecoveryPrompt = false
     @Published var errorMessage: String?
@@ -374,6 +376,9 @@ final class RideRecorder: ObservableObject {
             ?? .standard
         jumpSensitivity = storedSensitivity
         rawMotionLoggingEnabled = UserDefaults.standard.bool(forKey: Self.rawMotionLoggingKey)
+        liveActivityMetric = BermsLiveActivityMetric(
+            rawValue: UserDefaults.standard.string(forKey: Self.liveActivityMetricKey) ?? ""
+        ) ?? .descent
         jumpDetector = JumpDetector(configuration: storedSensitivity.configuration)
         self.context = context ?? PersistenceController.shared.container.mainContext
         self.watchStateSink = watchStateSink
@@ -468,6 +473,20 @@ final class RideRecorder: ObservableObject {
         max(activeDay?.longestJumpAirtime ?? 0, jumpsForCurrentRun.map(\.airtime).max() ?? 0)
     }
 
+    var activeTotalJumpAirtime: TimeInterval {
+        let completed = (activeDay?.segments ?? [])
+            .filter { $0.kind == .run }
+            .flatMap(\.jumps)
+            .reduce(0) { $0 + $1.airtime }
+        return completed + jumpsForCurrentRun.reduce(0) { $0 + $1.airtime }
+    }
+
+    var activeTopSpeed: Double {
+        let currentRunPoints = phase == .run ? activePoints.map(\.routePoint) : []
+        return max(activeDay?.maximumSpeedMetersPerSecond ?? 0,
+                   RouteMetrics.maximumSpeed(of: currentRunPoints))
+    }
+
     var currentMapPoints: [RoutePoint] {
         RouteCleaner().clean(activePoints.map(\.routePoint))
     }
@@ -495,6 +514,13 @@ final class RideRecorder: ObservableObject {
             kind: "raw_motion_logging_changed",
             detail: "enabled=\(enabled)"
         ))
+    }
+
+    func setLiveActivityMetric(_ metric: BermsLiveActivityMetric) {
+        guard metric != liveActivityMetric else { return }
+        liveActivityMetric = metric
+        UserDefaults.standard.set(metric.rawValue, forKey: Self.liveActivityMetricKey)
+        updateLiveActivity(force: true)
     }
 
     private static func pruneOldDiagnosticLogs() {
@@ -546,7 +572,8 @@ final class RideRecorder: ObservableObject {
             activePoints = []
             phase = .idle
             UserDefaults.standard.set(true, forKey: "berms.recordingActive")
-            BermsLiveActivityCoordinator.shared.start(rideID: day.id, startedAt: day.startedAt)
+            BermsLiveActivityCoordinator.shared.start(rideID: day.id, startedAt: day.startedAt,
+                                                      metric: liveActivityMetric)
             startSensors()
             updateLiveActivity(force: true)
             return true
@@ -935,7 +962,8 @@ final class RideRecorder: ObservableObject {
                                                      detail: day.isPaused
                                                      ? "Recovered paused day after relaunch"
                                                      : "Recovered active day after relaunch"))
-        BermsLiveActivityCoordinator.shared.start(rideID: day.id, startedAt: day.startedAt)
+        BermsLiveActivityCoordinator.shared.start(rideID: day.id, startedAt: day.startedAt,
+                                                  metric: liveActivityMetric)
         if day.isPaused {
             resetTrackingState(clearLastSample: true)
             updateLiveActivity(force: true)
@@ -1238,7 +1266,12 @@ final class RideRecorder: ObservableObject {
             elapsed: day.duration,
             distance: day.distanceMeters,
             descent: day.descentMeters,
-            speed: currentSpeed,
+            topSpeed: activeTopSpeed,
+            metric: liveActivityMetric,
+            jumpCount: activeJumpCount,
+            liftCount: completedLiftCount,
+            longestAirtime: activeLongestJumpAirtime,
+            totalAirtime: activeTotalJumpAirtime,
             force: force
         )
         watchStateSink?.publish(currentWatchRideState, force: force)
@@ -1250,6 +1283,7 @@ final class RideRecorder: ObservableObject {
             guard activeDay != nil, latestTrackContext?.phase == .run else { return }
             objectWillChange.send()
             jumpsForCurrentRun.append(jump)
+            updateLiveActivity(force: true)
             diagnosticLogger?.append(RawDiagnosticRecord(
                 kind: "jump_detected",
                 timestamp: jump.landingTimestamp,
