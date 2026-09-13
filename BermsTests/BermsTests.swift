@@ -212,6 +212,269 @@ final class BermsTests: XCTestCase {
         TrailRouteMatchCache.shared.invalidate()
     }
 
+    func testSessionDetailPresentationBuilderBuildsStableBaseMarkers() throws {
+        let id = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
+        let base = Date(timeIntervalSince1970: 10_000)
+        let route = (0...10).map { index in
+            RoutePoint(latitude: 41.2505 + Double(index) * 0.0001,
+                       longitude: -74.5012,
+                       altitude: 100 - Double(index),
+                       speed: 8,
+                       timestamp: base.addingTimeInterval(Double(index)))
+        }
+        let jump = JumpEvent(takeoffTimestamp: base.addingTimeInterval(5),
+                             landingTimestamp: base.addingTimeInterval(5.2),
+                             takeoffMonotonicSeconds: 5,
+                             landingMonotonicSeconds: 5.2)
+        let input = SessionDetailPreparationInput(
+            segments: [SessionDetailSegmentInput(
+                id: id,
+                kind: .run,
+                startedAt: route[0].timestamp,
+                endedAt: route[10].timestamp,
+                distanceMeters: 1_000,
+                verticalMeters: 100,
+                maximumSpeedMetersPerSecond: 8,
+                routeData: try RouteCodec.encode(route),
+                jumpData: try JSONEncoder().encode([jump])
+            )],
+            trails: [],
+            manualCatalogID: nil
+        )
+
+        let result = try SessionDetailPresentationBuilder.buildBase(input)
+
+        XCTAssertEqual(result.runs.map(\.id), [id])
+        XCTAssertEqual(result.runs.first?.routePoints, route)
+        XCTAssertEqual(result.runs.first?.jumps, [jump])
+        XCTAssertEqual(result.runs.first?.duration ?? .nan, 10, accuracy: 0.001)
+        XCTAssertEqual(result.jumpMarkers.map(\.id), ["\(id.uuidString)-0"])
+        XCTAssertEqual(result.jumpMarkers.first?.segmentID, id)
+    }
+
+    func testSessionDetailPresentationBuilderBuildsTrailNamesAndOverlays() throws {
+        let segmentID = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
+        let trailID = UUID(uuidString: "33333333-3333-3333-3333-333333333333")!
+        let base = Date(timeIntervalSince1970: 20_000)
+        let route = (0...10).map { index in
+            RoutePoint(latitude: 41.2505 + Double(index) * 0.0001,
+                       longitude: -74.5012,
+                       altitude: 100 - Double(index),
+                       speed: 8,
+                       timestamp: base.addingTimeInterval(Double(index)))
+        }
+        let routeData = try RouteCodec.encode(route)
+        let offsetRoute = route.map { point in
+            RoutePoint(latitude: point.latitude + 0.002,
+                       longitude: point.longitude,
+                       altitude: point.altitude,
+                       speed: point.speed,
+                       timestamp: point.timestamp)
+        }
+        let input = SessionDetailPreparationInput(
+            segments: [SessionDetailSegmentInput(
+                id: segmentID,
+                kind: .run,
+                startedAt: route[0].timestamp,
+                endedAt: route[10].timestamp,
+                distanceMeters: 1_000,
+                verticalMeters: 100,
+                maximumSpeedMetersPerSecond: 8,
+                routeData: routeData,
+                jumpData: nil
+            )],
+            trails: [SessionDetailTrailInput(
+                id: trailID,
+                name: "Test Trail",
+                difficulty: .blue,
+                resort: TrailCatalogRegistry.defaultCatalog.resortName,
+                averagedRouteData: try RouteCodec.encode(offsetRoute),
+                passRouteData: [routeData]
+            )],
+            manualCatalogID: nil
+        )
+        let baseResult = try SessionDetailPresentationBuilder.buildBase(input)
+
+        let details = try SessionDetailPresentationBuilder.buildTrailDetails(
+            base: baseResult,
+            input: input
+        )
+
+        XCTAssertEqual(details.sequenceBySegmentID[segmentID], "Test Trail")
+        XCTAssertEqual(details.overlays.count, 1)
+        XCTAssertEqual(details.overlays.first?.trailID, trailID)
+        XCTAssertEqual(details.overlays.first?.name, "Test Trail")
+        XCTAssertGreaterThan(details.overlays.first?.points.count ?? 0, 1)
+        XCTAssertEqual(details.overlays.first?.points.first?.latitude ?? .nan,
+                       route.first?.latitude ?? .nan,
+                       accuracy: 0.0001)
+    }
+
+    func testSessionDetailBaseLimitsOverviewJumpMarkersDeterministically() {
+        let markers = (0..<100).map { index in
+            SessionDetailJumpMarker(
+                id: "jump-\(index)",
+                segmentID: UUID(uuidString: "44444444-4444-4444-4444-444444444444")!,
+                number: index + 1,
+                coordinate: Coordinate(latitude: 41.25 + Double(index) * 0.0001,
+                                        longitude: -74.50),
+                airtime: 0.2
+            )
+        }
+        let base = SessionDetailBase(runs: [], mapSegments: [], jumpMarkers: markers, segmentsByID: [:])
+
+        XCTAssertEqual(base.jumpMarkers.count, 100)
+        XCTAssertEqual(base.summaryJumpMarkers.count, SessionDetailBase.summaryJumpMarkerLimit)
+        XCTAssertEqual(base.summaryJumpMarkers.first?.id, "jump-0")
+        XCTAssertEqual(base.summaryJumpMarkers.last?.id, "jump-99")
+    }
+
+    @MainActor
+    func testLatestRunPreheatSkipsEmptyLiftOnlyAndUnfinishedDays() throws {
+        let start = Date(timeIntervalSince1970: 30_000)
+        let olderDay = RideDay(startedAt: start)
+        let newerDay = RideDay(startedAt: start.addingTimeInterval(100))
+        let emptyDay = RideDay(startedAt: start.addingTimeInterval(200))
+        let liftOnlyDay = RideDay(startedAt: start.addingTimeInterval(300))
+        let unfinishedDay = RideDay(startedAt: start.addingTimeInterval(400))
+        for day in [olderDay, newerDay, emptyDay, liftOnlyDay] {
+            day.endedAt = day.startedAt.addingTimeInterval(60)
+        }
+        for day in [olderDay, newerDay, liftOnlyDay, unfinishedDay] {
+            day.segments = [RideSegment(
+                kind: day === liftOnlyDay ? .lift : .run,
+                startedAt: day.startedAt,
+                endedAt: day.startedAt.addingTimeInterval(30),
+                routeData: Data()
+            )]
+        }
+        let days = [unfinishedDay, emptyDay, olderDay, liftOnlyDay, newerDay]
+
+        let target = try XCTUnwrap(SessionDetailPresentationPreheater.latestCompletedRun(in: days))
+
+        XCTAssertEqual(target.day.id, newerDay.id)
+        XCTAssertEqual(target.run.id, newerDay.segments[0].id)
+        XCTAssertNil(SessionDetailPresentationPreheater.latestCompletedRun(
+            in: [emptyDay, liftOnlyDay, unfinishedDay]
+        ))
+    }
+
+    @MainActor
+    func testRunPreheatSnapshotsOnlyTheActiveResort() throws {
+        let start = Date(timeIntervalSince1970: 31_000)
+        let point = RoutePoint(latitude: 41.2505, longitude: -74.5012,
+                               altitude: 100, speed: 8, timestamp: start)
+        let segment = RideSegment(kind: .run, startedAt: start, endedAt: start,
+                                  routeData: try RouteCodec.encode([point]))
+        let local = Trail(name: "Local", difficulty: .blue,
+                          resort: TrailCatalogRegistry.defaultCatalog.resortName)
+        let unrelated = Trail(name: "Unrelated", difficulty: .black, resort: "Other resort")
+        local.averagedRouteData = segment.routeData
+        unrelated.averagedRouteData = Data([0xFF])
+
+        for catalogID in [nil, TrailCatalogRegistry.defaultCatalog.id] as [String?] {
+            let input = SessionDetailPresentationBuilder.makeInput(
+                segment: segment, trails: [unrelated, local], manualCatalogID: catalogID
+            )
+
+            XCTAssertEqual(input.segments.map(\.id), [segment.id])
+            XCTAssertEqual(input.trails.map(\.id), [local.id])
+            XCTAssertEqual(input.trails.first?.averagedRouteData, segment.routeData)
+        }
+    }
+
+    @MainActor
+    func testRunPreheatCacheRejectsEditedAndRemovedTrails() async throws {
+        let start = Date(timeIntervalSince1970: 32_000)
+        let segment = RideSegment(kind: .run, startedAt: start, endedAt: start,
+                                  routeData: try RouteCodec.encode([]))
+        let trail = Trail(name: "Original", difficulty: .blue,
+                          resort: TrailCatalogRegistry.defaultCatalog.resortName,
+                          createdAt: start)
+        let dayID = UUID()
+        let selectionID = TrailCatalogRegistry.automaticSelectionID
+        let key = SessionDetailPresentationPreheater.runCacheKey(
+            dayID: dayID, segmentID: segment.id, selectionID: selectionID, trails: [trail]
+        )
+        let input = SessionDetailPresentationBuilder.makeInput(
+            segment: segment, trails: [trail], manualCatalogID: nil
+        )
+        let entry = try await SessionDetailPresentationPreheater.build(input)
+        let cache = SessionDetailPresentationCache()
+        let detail = try XCTUnwrap(entry.base.segmentsByID[segment.id])
+        cache.storeRun(.init(base: entry.base, detail: detail, trailDetails: entry.trailDetails),
+                       for: key)
+        XCTAssertNotNil(cache.runEntry(for: key))
+
+        trail.name = "Renamed"
+        trail.updatedAt = start.addingTimeInterval(1)
+        let editedKey = SessionDetailPresentationPreheater.runCacheKey(
+            dayID: dayID, segmentID: segment.id, selectionID: selectionID, trails: [trail]
+        )
+        let removedKey = SessionDetailPresentationPreheater.runCacheKey(
+            dayID: dayID, segmentID: segment.id, selectionID: selectionID, trails: []
+        )
+
+        XCTAssertNil(cache.runEntry(for: editedKey))
+        XCTAssertNil(cache.runEntry(for: removedKey))
+    }
+
+    @MainActor
+    func testRunPreheatCancellationDoesNotPublishAPresentation() async throws {
+        let input = SessionDetailPreparationInput(segments: [], trails: [], manualCatalogID: nil)
+        let preparation = Task { @MainActor in
+            try await SessionDetailPresentationPreheater.build(input)
+        }
+        preparation.cancel()
+
+        do {
+            _ = try await preparation.value
+            XCTFail("Cancelled preheating must not return a presentation")
+        } catch is CancellationError {
+            // Expected when navigation cancels a pending preheat.
+        }
+    }
+
+    @MainActor
+    func testRunPreparationReadsItsOwnModelContext() async throws {
+        let container = try ModelContainer(for: RideDay.self, RideSegment.self,
+                                           Trail.self, TrailPass.self, LearnedLift.self,
+                                           configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let context = ModelContext(container)
+        let base = Date(timeIntervalSince1970: 33_000)
+        let route = (0...4).map { index in
+            RoutePoint(latitude: 41.2505 + Double(index) * 0.0001, longitude: -74.5012,
+                       altitude: 100 - Double(index), speed: 8,
+                       timestamp: base.addingTimeInterval(Double(index)))
+        }
+        let day = RideDay(startedAt: base)
+        day.endedAt = base.addingTimeInterval(60)
+        let segment = RideSegment(kind: .run, startedAt: base,
+                                  endedAt: base.addingTimeInterval(5),
+                                  routeData: try RouteCodec.encode(route))
+        let trail = Trail(name: "Stored trail", difficulty: .blue,
+                          resort: TrailCatalogRegistry.defaultCatalog.resortName)
+        let pass = TrailPass(routePoints: route, recordedAt: base)
+        segment.day = day
+        day.segments = [segment]
+        pass.trail = trail
+        trail.passes.append(pass)
+        trail.recalculateAverage()
+        context.insert(day)
+        context.insert(trail)
+        try context.save()
+        TrailRouteMatchCache.shared.invalidate()
+
+        let entry = try await SessionDetailPresentationPreheater.prepareRun(
+            segmentID: segment.id,
+            manualCatalogID: nil,
+            container: container
+        )
+
+        XCTAssertEqual(entry?.detail.id, segment.id)
+        XCTAssertEqual(entry?.trailDetails.sequenceBySegmentID[segment.id], trail.name)
+    }
+
     func testLiveMapPresentationSelectsOnlyTheRelevantPath() {
         let point = RoutePoint(latitude: 40, longitude: -105, altitude: 100, speed: 8,
                                timestamp: Date(timeIntervalSince1970: 1))
@@ -451,7 +714,7 @@ final class BermsTests: XCTestCase {
                        altitude: point.altitude, speed: point.speed, timestamp: point.timestamp)
         }
         let trail = Trail(name: "Offset", difficulty: .black, resort: "Test")
-        let pass = TrailPass(routePoints: route)
+        let pass = TrailPass(routePoints: route, recordedAt: base)
         let offsetPass = TrailPass(routePoints: offsetRoute, recordedAt: base.addingTimeInterval(10))
         pass.trail = trail
         offsetPass.trail = trail
@@ -459,8 +722,37 @@ final class BermsTests: XCTestCase {
         trail.recalculateAverage()
 
         let match = TrailRouteMatcher().bestMatch(for: route, trails: [trail])
+        let section = TrailRouteMatcher().matchingSections(for: route, trails: [trail]).first
 
         XCTAssertEqual(match?.trailID, trail.id)
+        XCTAssertEqual(section?.routeIndex, 1)
+    }
+
+    func testTrailMatcherRouteIndexFollowsRecordedPassOrder() {
+        let base = Date(timeIntervalSince1970: 1_320)
+        let route = (0...4).map { index in
+            RoutePoint(latitude: 40 + Double(index) * 0.0001, longitude: -105,
+                       altitude: 100 - Double(index), speed: 8,
+                       timestamp: base.addingTimeInterval(Double(index)))
+        }
+        let offsetRoute = route.map { point in
+            RoutePoint(latitude: point.latitude + 0.002, longitude: point.longitude,
+                       altitude: point.altitude, speed: point.speed, timestamp: point.timestamp)
+        }
+        let trail = Trail(name: "Out of order", difficulty: .black, resort: "Test")
+        let olderPass = TrailPass(routePoints: route, recordedAt: base)
+        let newerPass = TrailPass(routePoints: offsetRoute, recordedAt: base.addingTimeInterval(20))
+        olderPass.trail = trail
+        newerPass.trail = trail
+        // Stored newest first so the raw relationship order disagrees with recorded date.
+        trail.passes.append(contentsOf: [newerPass, olderPass])
+        trail.recalculateAverage()
+
+        let section = TrailRouteMatcher().matchingSections(for: route, trails: [trail]).first
+
+        XCTAssertEqual(section?.routeIndex, 1)
+        guard let section else { return }
+        XCTAssertEqual(trail.matcherRoutes[section.routeIndex], route)
     }
 
     func testTrailMatcherReturnsMultipleContiguousTrailSections() {
