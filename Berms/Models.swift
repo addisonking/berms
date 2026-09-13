@@ -251,6 +251,8 @@ final class Trail {
     var updatedAt: Date
     @Attribute(.externalStorage) var averagedRouteData: Data?
 
+    @Transient private var cachedPoints: [RoutePoint]?
+
     @Relationship(deleteRule: .cascade, inverse: \TrailPass.trail)
     var passes: [TrailPass]
 
@@ -276,17 +278,23 @@ final class Trail {
     }
 
     var points: [RoutePoint] {
+        if let cachedPoints { return cachedPoints }
+        let resolved: [RoutePoint]
         if let averagedRouteData,
            let points = try? RouteCodec.decode(averagedRouteData),
            !points.isEmpty {
-            return points
+            resolved = points
+        } else {
+            resolved = passes.sorted { $0.recordedAt < $1.recordedAt }.first?.points ?? []
         }
-        return passes.sorted { $0.recordedAt < $1.recordedAt }.first?.points ?? []
+        cachedPoints = resolved
+        return resolved
     }
 
     var passCount: Int { passes.count }
 
     func recalculateAverage() {
+        cachedPoints = nil
         let paths = passes.map(\.points).filter { $0.count >= 2 }
         guard let firstPath = paths.first else {
             averagedRouteData = nil

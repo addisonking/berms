@@ -2892,17 +2892,22 @@ struct RunMapView: View {
     }
 
     private var jumpMarkers: [JumpMarker] {
-        guard let jumps = activeDetail?.jumps else { return [] }
-        return jumps.enumerated().compactMap { index, jump in
-            guard let point = routePoints.min(by: {
-                abs($0.timestamp.timeIntervalSince(jump.takeoffTimestamp))
-                    < abs($1.timestamp.timeIntervalSince(jump.takeoffTimestamp))
-            }) else { return nil }
-            return JumpMarker(number: index + 1,
-                              coordinate: CLLocationCoordinate2D(latitude: point.latitude,
-                                                                 longitude: point.longitude),
-                              airtime: jump.airtime)
+        guard let jumps = activeDetail?.jumps, !jumps.isEmpty, !routePoints.isEmpty else { return [] }
+        var markers: [JumpMarker] = []
+        var searchIndex = 0
+        for (index, jump) in jumps.enumerated() {
+            while searchIndex + 1 < routePoints.count,
+                  abs(routePoints[searchIndex + 1].timestamp.timeIntervalSince(jump.takeoffTimestamp))
+                    <= abs(routePoints[searchIndex].timestamp.timeIntervalSince(jump.takeoffTimestamp)) {
+                searchIndex += 1
+            }
+            let point = routePoints[searchIndex]
+            markers.append(JumpMarker(number: index + 1,
+                                      coordinate: CLLocationCoordinate2D(latitude: point.latitude,
+                                                                         longitude: point.longitude),
+                                      airtime: jump.airtime))
         }
+        return markers
     }
 
     var body: some View {
@@ -3128,17 +3133,29 @@ private struct RouteMapConfiguration {
     let bounds: MapCameraBounds
 
     init?(points: [RoutePoint]) {
-        let validPoints = points.filter {
-            $0.latitude.isFinite && $0.longitude.isFinite
-                && (-90...90).contains($0.latitude)
-                && (-180...180).contains($0.longitude)
+        var minLatitude = 0.0
+        var maxLatitude = 0.0
+        var minLongitude = 0.0
+        var maxLongitude = 0.0
+        var hasValidPoint = false
+        for point in points {
+            guard point.latitude.isFinite, point.longitude.isFinite,
+                  (-90...90).contains(point.latitude),
+                  (-180...180).contains(point.longitude) else { continue }
+            if !hasValidPoint {
+                minLatitude = point.latitude
+                maxLatitude = point.latitude
+                minLongitude = point.longitude
+                maxLongitude = point.longitude
+                hasValidPoint = true
+                continue
+            }
+            minLatitude = min(minLatitude, point.latitude)
+            maxLatitude = max(maxLatitude, point.latitude)
+            minLongitude = min(minLongitude, point.longitude)
+            maxLongitude = max(maxLongitude, point.longitude)
         }
-        guard let first = validPoints.first else { return nil }
-
-        let minLatitude = validPoints.map(\.latitude).min() ?? first.latitude
-        let maxLatitude = validPoints.map(\.latitude).max() ?? first.latitude
-        let minLongitude = validPoints.map(\.longitude).min() ?? first.longitude
-        let maxLongitude = validPoints.map(\.longitude).max() ?? first.longitude
+        guard hasValidPoint else { return nil }
         let centerLatitude = (minLatitude + maxLatitude) / 2
         let centerLongitude = (minLongitude + maxLongitude) / 2
         let latitudeMeters = max(100, (maxLatitude - minLatitude) * 111_000)

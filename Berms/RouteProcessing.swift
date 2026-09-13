@@ -24,12 +24,19 @@ struct RouteCleaner: Sendable {
                 && $0.horizontalAccuracy <= configuration.maximumHorizontalAccuracy
         }
         let cleanedPoints = clean(valid.map(\.routePoint))
-        return cleanedPoints.map { point in
-            let source = valid.min {
-                abs($0.timestamp.timeIntervalSince(point.timestamp))
-                    < abs($1.timestamp.timeIntervalSince(point.timestamp))
+        var result: [TrackSample] = []
+        result.reserveCapacity(cleanedPoints.count)
+        var searchIndex = 0
+        for point in cleanedPoints {
+            // Both arrays are time-ordered, so walk a single cursor instead of
+            // scanning every source sample for each cleaned point.
+            while searchIndex + 1 < valid.count,
+                  abs(valid[searchIndex + 1].timestamp.timeIntervalSince(point.timestamp))
+                    <= abs(valid[searchIndex].timestamp.timeIntervalSince(point.timestamp)) {
+                searchIndex += 1
             }
-            return TrackSample(
+            let source = valid.indices.contains(searchIndex) ? valid[searchIndex] : nil
+            result.append(TrackSample(
                 coordinate: Coordinate(latitude: point.latitude, longitude: point.longitude),
                 altitude: point.altitude,
                 speed: point.speed,
@@ -39,8 +46,9 @@ struct RouteCleaner: Sendable {
                 isStationary: source?.isStationary ?? false,
                 isCycling: source?.isCycling ?? false,
                 isAutomotive: source?.isAutomotive ?? false
-            )
+            ))
         }
+        return result
     }
 
     func clean(_ points: [RoutePoint]) -> [RoutePoint] {
