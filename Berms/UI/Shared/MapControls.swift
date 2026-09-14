@@ -3,6 +3,43 @@ import SwiftData
 import SwiftUI
 import UIKit
 
+struct MapControlStack<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        GlassEffectContainer(spacing: BermsSpacing.compact) {
+            VStack(spacing: BermsSpacing.compact) { content }
+        }
+    }
+}
+
+struct MapActionButton: View {
+    let title: LocalizedStringKey
+    let systemImage: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Label(title, systemImage: systemImage)
+                .labelStyle(.iconOnly)
+                .font(.headline)
+                .frame(minWidth: BermsSpacing.target, minHeight: BermsSpacing.target)
+        }
+        .bermsMapControl()
+    }
+}
+
+struct MapRecenterButton: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let action: () -> Void
+
+    var body: some View {
+        MapActionButton(title: "Show entire route", systemImage: "scope") {
+            withAnimation(reduceMotion ? nil : BermsMotion.recenter, action)
+        }
+    }
+}
+
 struct MapLayersMenu: View {
     @ObservedObject var preferences: MapLayerPreferences
     var showsRidePathControl = true
@@ -55,7 +92,6 @@ struct RunNumberMarker: View {
             .frame(width: markerSize, height: markerSize)
             .background(isSelected ? Color.bermsTrail : Color.bermsCard, in: Circle())
             .overlay(Circle().stroke(Color.bermsTrail, lineWidth: 1.5))
-            .shadow(color: .black.opacity(0.2), radius: 2, y: 1)
             .accessibilityLabel("Run \(number)")
     }
 }
@@ -70,7 +106,7 @@ struct JumpMapMarker: View {
         HStack(spacing: 4) {
             Text("\(number)")
                 .font(.caption2.weight(.heavy))
-                .foregroundStyle(.white)
+                .foregroundStyle(.black)
                 .frame(width: markerSize, height: markerSize)
                 .background(.orange, in: Circle())
             if showsAirtime {
@@ -91,7 +127,6 @@ struct JumpMapMarker: View {
                 Capsule().stroke(.orange, lineWidth: 1.5)
             }
         }
-        .shadow(color: .black.opacity(0.18), radius: 2, y: 1)
         .accessibilityLabel("Jump \(number), \(BermsFormat.airtime(airtime))")
     }
 }

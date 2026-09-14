@@ -4,17 +4,13 @@ import SwiftUI
 import UIKit
 
 struct DayDetailView: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let day: RideDay
     let onRunSelected: (RunMapDestination) -> Void
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
-    @EnvironmentObject private var mapLayerPreferences: MapLayerPreferences
     @EnvironmentObject private var trailCatalogSelection: TrailCatalogSelection
     @ObservedObject private var presentationCache = SessionDetailPresentationCache.shared
     @Query(sort: \Trail.updatedAt, order: .reverse) private var trails: [Trail]
-    @State private var mapPosition: MapCameraPosition = .automatic
-    @State private var selectedSegmentID: UUID?
     @State private var showingFullScreenMap = false
     @State private var showingNameEditor = false
     @State private var nameDraft = ""
@@ -60,7 +56,7 @@ struct DayDetailView: View {
 
     var body: some View {
         List {
-            Section {
+            Section("Day summary") {
                 summary
             }
             Section {
@@ -99,10 +95,6 @@ struct DayDetailView: View {
                     .textInputAutocapitalization(.sentences)
                     .accessibilityLabel("Session journal")
             }
-        }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            Color.clear
-                .frame(height: BermsSpacing.major)
         }
         .navigationTitle(day.displayName)
         .navigationBarTitleDisplayMode(.inline)
@@ -158,12 +150,6 @@ struct DayDetailView: View {
             }
         } message: {
             Text("Name this day so it is easy to find later.")
-        }
-        .onChange(of: selectedSegmentID) { _, segmentID in
-            guard let segmentID,
-                  let number = runs.firstIndex(where: { $0.id == segmentID }) else { return }
-            onRunSelected(RunMapDestination(dayID: day.id, runID: segmentID, number: number + 1))
-            selectedSegmentID = nil
         }
         .onAppear {
             notesDraft = day.notes ?? ""
@@ -226,9 +212,6 @@ struct DayDetailView: View {
 
     private var summary: some View {
         VStack(alignment: .leading, spacing: BermsSpacing.control) {
-            Text("Day summary")
-                .font(.title2.weight(.bold))
-
             VStack(spacing: BermsSpacing.content) {
                 AdaptiveStatRow {
                     SummaryStat(label: "Time", value: BermsFormat.duration(day.duration), tint: .primary)
@@ -255,14 +238,8 @@ struct DayDetailView: View {
     @ViewBuilder
     private var dayMap: some View {
         if runs.isEmpty {
-            VStack(spacing: BermsSpacing.compact) {
-                Image(systemName: "map")
-                    .font(.title2)
-                Text("No route")
-                    .font(.headline)
-            }
-            .frame(maxWidth: .infinity, minHeight: 280)
-            .background(Color.bermsCard, in: RoundedRectangle(cornerRadius: 22))
+            ContentUnavailableView("No route", systemImage: "map",
+                                   description: Text("This day has no recorded runs."))
         } else if let detailBase {
             preparedDayMap(detailBase)
         } else if prepareFailed {
@@ -276,7 +253,6 @@ struct DayDetailView: View {
                 }
             }
             .frame(maxWidth: .infinity, minHeight: 280)
-            .background(Color.bermsCard, in: RoundedRectangle(cornerRadius: 22))
         } else {
             VStack(spacing: BermsSpacing.compact) {
                 ProgressView()
@@ -285,91 +261,17 @@ struct DayDetailView: View {
                     .foregroundStyle(Color.bermsMuted)
             }
             .frame(maxWidth: .infinity, minHeight: 280)
-            .background(Color.bermsCard, in: RoundedRectangle(cornerRadius: 22))
         }
     }
 
     @ViewBuilder
     private func preparedDayMap(_ detailBase: SessionDetailBase) -> some View {
-        ZStack(alignment: .topTrailing) {
-            ZStack {
-                Map(position: $mapPosition, bounds: mapConfiguration?.bounds,
-                    interactionModes: [.pan, .zoom], selection: $selectedSegmentID) {
-                    if mapLayerPreferences.showsRidePath {
-                        ForEach(Array(detailBase.runs.enumerated()), id: \.element.id) { index, segment in
-                            if segment.routePoints.count > 1 {
-                                MapPolyline(coordinates: coordinates(for: segment.routePoints))
-                                    .stroke(Color.gray.opacity(RideMapPresentation.summaryRunOpacity(
-                                        index: index, count: detailBase.runs.count)), lineWidth: 4)
-                                    .tag(segment.id)
-                            }
-                        }
-                        ForEach(Array(detailBase.runs.enumerated()), id: \.element.id) { index, segment in
-                            if let coordinate = coordinates(for: segment.routePoints).first {
-                                Annotation("", coordinate: coordinate) {
-                                    RunNumberMarker(number: index + 1,
-                                                    isSelected: selectedSegmentID == segment.id)
-                                        .onTapGesture { selectedSegmentID = segment.id }
-                                }
-                            }
-                        }
-                    }
-                    if mapLayerPreferences.showsLiftPaths {
-                        ForEach(detailBase.mapSegments.filter { $0.kind == .lift }) { segment in
-                            if segment.routePoints.count > 1 {
-                                MapPolyline(coordinates: coordinates(for: segment.routePoints))
-                                    .stroke(Color.bermsLift.opacity(0.78), style: StrokeStyle(
-                                        lineWidth: 2.25, lineCap: .round, lineJoin: .round, dash: [5, 4]
-                                    ))
-                            }
-                        }
-                    }
-                    if mapLayerPreferences.showsJumps {
-                        ForEach(detailBase.summaryJumpMarkers) { marker in
-                            Annotation("", coordinate: coordinate(for: marker.coordinate)) {
-                                JumpMapMarker(number: marker.number, airtime: marker.airtime)
-                            }
-                        }
-                    }
-                    if mapLayerPreferences.showsActualTrails, let trailDetails {
-                        let trailOverlays = trailDetails.overlays.map(TrailMapOverlay.init(detail:))
-                        ForEach(trailOverlays) { overlay in
-                            trailMapContent(coordinates: coordinates(for: overlay.points),
-                                            difficulty: overlay.difficulty)
-                        }
-                        ForEach(trailMapLabelItems(for: trailOverlays)) { label in
-                            Annotation("", coordinate: label.coordinate) {
-                                TrailMapLabel(name: label.name,
-                                              difficulty: label.difficulty,
-                                              color: label.color)
-                            }
-                        }
-                    }
-                }
-                .mapStyle(.bermsMonochrome)
-                .mapControls { MapCompass() }
-            }
-            VStack(spacing: BermsSpacing.compact) {
-                MapLayersMenu(preferences: mapLayerPreferences,
-                              showsActualTrailsControl: true,
-                              actualTrailsAvailable: trailDetails?.overlays.isEmpty == false,
-                              showsJumpsControl: !detailBase.summaryJumpMarkers.isEmpty,
-                              showsLiftPathsControl: true,
-                              liftPathsAvailable: detailBase.mapSegments.contains { $0.kind == .lift })
-                recenterButton
-                Button { showingFullScreenMap = true } label: {
-                    Image(systemName: "arrow.up.left.and.arrow.down.right")
-                        .font(.headline)
-                        .frame(minWidth: BermsSpacing.target, minHeight: BermsSpacing.target)
-                }
-                .bermsMapControl()
-                .accessibilityLabel("Open full-screen ride map")
-            }
-            .padding(BermsSpacing.control)
-        }
+        SessionRouteMap(base: detailBase, trailDetails: trailDetails,
+                        onRunSelected: { segmentID in
+                            guard let index = runs.firstIndex(where: { $0.id == segmentID }) else { return }
+                            onRunSelected(RunMapDestination(dayID: day.id, runID: segmentID, number: index + 1))
+                        }, onExpand: { showingFullScreenMap = true })
         .frame(height: 280)
-        .clipShape(RoundedRectangle(cornerRadius: 22))
-        .onAppear { recenterMap() }
         .fullScreenCover(isPresented: $showingFullScreenMap) {
             FullScreenSummaryMap(title: "Ride Map", base: detailBase,
                                  trailDetails: trailDetails,
@@ -433,37 +335,4 @@ struct DayDetailView: View {
         }
     }
 
-    private var mapConfiguration: RouteMapConfiguration? {
-        guard let detailBase else { return nil }
-        let visibleSegments = detailBase.mapSegments.filter {
-            $0.kind == .run || mapLayerPreferences.showsLiftPaths
-        }
-        return RouteMapConfiguration(points: visibleSegments.flatMap(\.routePoints))
-    }
-
-    private func coordinates(for points: [RoutePoint]) -> [CLLocationCoordinate2D] {
-        points.map {
-            CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
-        }
-    }
-
-    private func coordinate(for coordinate: Coordinate) -> CLLocationCoordinate2D {
-        CLLocationCoordinate2D(latitude: coordinate.latitude, longitude: coordinate.longitude)
-    }
-
-    private var recenterButton: some View {
-        Button {
-            withAnimation(reduceMotion ? nil : BermsMotion.recenter) { recenterMap() }
-        } label: {
-            Image(systemName: "scope")
-                .font(.headline)
-                .frame(minWidth: BermsSpacing.target, minHeight: BermsSpacing.target)
-        }
-        .bermsMapControl()
-        .accessibilityLabel("Recenter map")
-    }
-
-    private func recenterMap() {
-        mapPosition = mapConfiguration?.initialPosition ?? .automatic
-    }
 }

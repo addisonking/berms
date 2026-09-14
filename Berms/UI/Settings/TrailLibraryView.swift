@@ -8,6 +8,7 @@ struct TrailLibraryView: View {
     @Query(sort: \Trail.updatedAt, order: .reverse) private var trails: [Trail]
     @EnvironmentObject private var mapLayerPreferences: MapLayerPreferences
     @EnvironmentObject private var trailCatalogSelection: TrailCatalogSelection
+    @Namespace private var mapScope
     @State private var mapPosition: MapCameraPosition = .automatic
     @State private var searchText = ""
     @State private var selectedDifficulty: TrailDifficulty?
@@ -33,82 +34,81 @@ struct TrailLibraryView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            libraryMap
-                .frame(height: 350)
-                .clipShape(RoundedRectangle(cornerRadius: 22))
-                .padding(.horizontal, BermsSpacing.content)
-                .padding(.top, BermsSpacing.content)
-
-            ScrollView(.vertical) {
-                VStack(alignment: .leading, spacing: BermsSpacing.section) {
-                    difficultyFilters
-
-                    HStack(alignment: .firstTextBaseline) {
-                        Text("Trails")
-                            .font(.title3.weight(.bold))
-                        Spacer()
-                        Text("\(visibleTrails.count) · \(activeCatalog.resortName)")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(Color.bermsMuted)
+        ScrollViewReader { proxy in
+            List {
+                Section {
+                    libraryMap
+                        .frame(height: 300)
+                        .listRowInsets(EdgeInsets())
+                        .id("libraryMap")
+                }
+                Section {
+                    Picker("Difficulty", selection: $selectedDifficulty) {
+                        Text("All difficulties").tag(Optional<TrailDifficulty>.none)
+                        ForEach(TrailDifficulty.allCases) { difficulty in
+                            Text(difficulty.title).tag(Optional(difficulty))
+                        }
                     }
-
+                }
+                Section {
                     if visibleTrails.isEmpty {
                         ContentUnavailableView("No matching trails", systemImage: "map",
                                                description: Text("Try a different search or difficulty filter."))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 24)
                     } else {
                         ForEach(visibleTrails) { trail in
                             Button {
                                 selectedTrailID = trail.id
+                                withAnimation(reduceMotion ? nil : BermsMotion.recenter) {
+                                    proxy.scrollTo("libraryMap", anchor: .top)
+                                }
                             } label: {
                                 ProductionTrailLibraryRow(trail: trail,
                                                           isSelected: selectedTrailID == trail.id)
                             }
                             .buttonStyle(.plain)
-                            .accessibilityHint("Highlights this trail on the map")
+                            .accessibilityHint("Shows this trail on the map")
                         }
                     }
+                } header: {
+                    Text("\(visibleTrails.count) trails · \(activeCatalog.resortName)")
                 }
             }
-            .scrollIndicators(.hidden)
-            .contentMargins(.horizontal, BermsSpacing.content, for: .scrollContent)
-            .contentMargins(.vertical, BermsSpacing.content, for: .scrollContent)
         }
-        .background(BermsBackground())
         .navigationTitle("Trail Library")
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $searchText, prompt: "Search trails")
+        .onChange(of: visibleTrails.map(\.id)) { _, ids in
+            if let selectedTrailID, !ids.contains(selectedTrailID) {
+                self.selectedTrailID = nil
+            }
+            recenterMap()
+        }
+        .onChange(of: selectedTrailID) { _, id in
+            guard let trail = visibleTrails.first(where: { $0.id == id }),
+                  let configuration = RouteMapConfiguration(points: trail.points) else { return }
+            mapLayerPreferences.showsActualTrails = true
+            withAnimation(reduceMotion ? nil : BermsMotion.recenter) {
+                mapPosition = configuration.initialPosition
+            }
+        }
     }
 
     @ViewBuilder
     private var libraryMap: some View {
         if visibleTrails.flatMap(\.points).isEmpty {
-            VStack(spacing: BermsSpacing.compact) {
-                Image(systemName: "map")
-                    .font(.title2)
-                Text("No trail geometry")
-                    .font(.headline)
-                Text("Trail routes will appear here when the catalog is available.")
-                    .font(.caption)
-                    .foregroundStyle(Color.bermsMuted)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 240)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color.bermsCard)
+            ContentUnavailableView("No trail geometry", systemImage: "map",
+                                   description: Text("Trail routes will appear here when the catalog is available."))
         } else {
             ZStack(alignment: .topTrailing) {
                 ZStack {
                     Map(position: $mapPosition, bounds: mapConfiguration?.bounds,
-                        interactionModes: [.pan, .zoom], selection: $selectedTrailID) {
+                        interactionModes: [.pan, .zoom, .rotate], selection: $selectedTrailID, scope: mapScope) {
                         if mapLayerPreferences.showsActualTrails {
                             ForEach(visibleTrails) { trail in
                                 if trail.points.count > 1 {
                                     trailMapContent(coordinates: trailCoordinates(for: trail),
                                                     difficulty: trail.difficulty,
-                                                    color: selectedTrailID == trail.id ? Color.bermsTrail : nil,
+                                                    lineWidth: selectedTrailID == trail.id ? 5 : TrailMapRendering.lineWidth,
                                                     tag: trail.id)
                                 }
                             }
@@ -125,63 +125,28 @@ struct TrailLibraryView: View {
                         }
                     }
                     .mapStyle(.bermsMonochrome)
-                    .mapControls { MapCompass() }
+                    .mapControls { MapScaleView() }
 
                 }
 
-                VStack(spacing: BermsSpacing.compact) {
+                MapControlStack {
                     MapLayersMenu(preferences: mapLayerPreferences,
                                   showsRidePathControl: false,
-                                  showsActualTrailsControl: true,
                                   actualTrailsAvailable: !visibleTrails.isEmpty,
                                   showsJumpsControl: false)
-                    Button {
-                        withAnimation(reduceMotion ? nil : BermsMotion.recenter) { recenterMap() }
-                    } label: {
-                        Image(systemName: "scope")
-                            .font(.headline)
-                            .frame(minWidth: BermsSpacing.target, minHeight: BermsSpacing.target)
-                    }
-                    .bermsMapControl()
-                    .accessibilityLabel("Recenter map")
+                    MapRecenterButton { recenterMap() }
+                    MapCompass(scope: mapScope)
                 }
                 .padding(BermsSpacing.control)
             }
+            .mapScope(mapScope)
             .onAppear { recenterMap() }
-        }
-    }
-
-    private var difficultyFilters: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: BermsSpacing.compact) {
-                difficultyFilter("All", difficulty: nil)
-                ForEach(TrailDifficulty.allCases) { difficulty in
-                    difficultyFilter(difficulty.title, difficulty: difficulty)
-                }
-            }
         }
     }
 
     private var libraryLabelTrails: [Trail] {
         guard let selectedTrailID else { return [] }
         return visibleTrails.filter { $0.id == selectedTrailID }
-    }
-
-    private func difficultyFilter(_ title: String, difficulty: TrailDifficulty?) -> some View {
-        Button {
-            selectedDifficulty = difficulty
-        } label: {
-            HStack(spacing: 6) {
-                if let difficulty {
-                    TrailRatingBadge(difficulty: difficulty)
-                }
-                Text(title)
-            }
-        }
-        .buttonStyle(.bordered)
-        .controlSize(.large)
-        .tint(selectedDifficulty == difficulty ? .bermsTrail : .bermsMuted)
-        .accessibilityAddTraits(selectedDifficulty == difficulty ? .isSelected : [])
     }
 
     private func recenterMap() {
@@ -199,27 +164,22 @@ struct ProductionTrailLibraryRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(trail.name)
                     .font(.headline)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+                    .fixedSize(horizontal: false, vertical: true)
                 Text("\(trail.difficulty.title) · \(trail.style.title) · \(BermsFormat.distance(distance))")
                     .font(.caption)
                     .foregroundStyle(Color.bermsMuted)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .padding(BermsSpacing.control)
-        .background(isSelected ? Color.bermsInset : Color.bermsCard,
-                    in: RoundedRectangle(cornerRadius: 16))
-        .overlay {
             if isSelected {
-                RoundedRectangle(cornerRadius: 16)
-                    .stroke(Color.bermsTrail, lineWidth: 1.5)
+                Image(systemName: "checkmark")
+                    .foregroundStyle(.tint)
+                    .accessibilityHidden(true)
             }
         }
+        .frame(minHeight: BermsSpacing.target)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(trail.name), \(trail.difficulty.title) trail")
         .accessibilityValue(isSelected ? "Selected" : "Not selected")
     }
 

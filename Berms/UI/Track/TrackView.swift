@@ -3,12 +3,6 @@ import SwiftData
 import SwiftUI
 import UIKit
 
-// Match the standard circular Settings toolbar control.
-let liveControlWidth: CGFloat = 44
-// The map content's trailing edge sits inside the navigation toolbar's
-// trailing edge. This inset keeps the two controls on the same center line.
-let liveControlsTrailingInset: CGFloat = 20
-
 struct TrackView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
@@ -16,9 +10,8 @@ struct TrackView: View {
     @Query private var trails: [Trail]
     @EnvironmentObject private var mapLayerPreferences: MapLayerPreferences
     @EnvironmentObject private var trailCatalogSelection: TrailCatalogSelection
-    @State private var mapPosition: MapCameraPosition = .automatic
-    @State private var isFollowing = true
-    @State private var lastFollowedCoordinate: Coordinate?
+    @Namespace private var mapScope
+    @State private var mapPosition: MapCameraPosition = .userLocation(followsHeading: false, fallback: .automatic)
     @State private var liveStatsHeight: CGFloat = 320
     @State private var showingStopConfirmation = false
     @State private var showingSettings = false
@@ -38,7 +31,6 @@ struct TrackView: View {
             }
             .navigationTitle(recorder.isRecording ? "" : "Berms")
             .navigationBarTitleDisplayMode(recorder.isRecording ? .inline : .large)
-            .toolbarTitleDisplayMode(recorder.isRecording ? .inline : .large)
             .navigationSubtitle(recorder.isRecording
                                 ? Text("")
                                 : Text(Date.now.formatted(.dateTime.weekday(.wide).month(.wide).day()))
@@ -56,7 +48,7 @@ struct TrackView: View {
         }
         .alert("Finish session?", isPresented: $showingStopConfirmation) {
             Button("Cancel", role: .cancel) {}
-            Button("Finish", role: .destructive) {
+            Button("Finish") {
                 guard let finishedDay = recorder.stop() else { return }
                 BermsMotion.recordingFeedback()
                 onDayFinished(finishedDay)
@@ -79,22 +71,9 @@ struct TrackView: View {
         } message: {
             Text(recorder.errorMessage ?? "")
         }
-        .onAppear {
-            centerOnLastSampleIfNeeded(force: true)
-        }
-        .onChange(of: recorder.lastSample?.timestamp) { _, _ in
-            if isFollowing {
-                centerOnLastSampleIfNeeded()
-            }
-        }
         .onChange(of: recorder.isRecording) { _, recording in
             if recording {
-                isFollowing = true
-                mapPosition = .automatic
-                lastFollowedCoordinate = nil
-                centerOnLastSampleIfNeeded(force: true)
-            } else {
-                lastFollowedCoordinate = nil
+                mapPosition = .userLocation(followsHeading: false, fallback: .automatic)
             }
         }
     }
@@ -128,12 +107,9 @@ struct TrackView: View {
                         ProgressView("Restoring…")
                     }
                     if recorder.locationAuthorization == .denied || recorder.locationAuthorization == .restricted {
-                        Button("Open Settings") {
-                            guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
-                            UIApplication.shared.open(url)
-                        }
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(Color.bermsMuted)
+                        Button("Open Settings", action: openLocationSettings)
+                            .buttonStyle(.bordered)
+                            .controlSize(.large)
                     }
                 }
                 .padding(.horizontal, BermsSpacing.content)
@@ -148,12 +124,29 @@ struct TrackView: View {
 
     private var recordingContent: some View {
         GeometryReader { geometry in
+            let panelHeight = min(liveStatsHeight, max(0, geometry.size.height * 0.65))
             ZStack(alignment: .bottom) {
                 // MapKit keeps rendering offscreen while the app records in the
                 // background, which balloons memory until iOS jetsams the app.
                 // The map is not visible then, so leave it out of the hierarchy.
                 if scenePhase == .background {
                     BermsBackground()
+                } else if recorder.lastSample == nil {
+                    ScrollView {
+                        ContentUnavailableView {
+                            Label(gpsEmptyTitle, systemImage: "location.slash")
+                        } description: {
+                            Text(gpsEmptyMessage)
+                        } actions: {
+                            if recorder.locationAuthorization == .denied || recorder.locationAuthorization == .restricted {
+                                Button("Open Settings", action: openLocationSettings)
+                                    .buttonStyle(.bordered)
+                            }
+                        }
+                    }
+                    .scrollBounceBehavior(.basedOnSize)
+                    .frame(height: max(0, geometry.size.height - panelHeight - BermsSpacing.content))
+                    .frame(maxHeight: .infinity, alignment: .top)
                 } else {
                     liveMap
                 }
@@ -169,7 +162,7 @@ struct TrackView: View {
                         }
                 }
                 .scrollBounceBehavior(.basedOnSize)
-                .frame(height: min(liveStatsHeight, max(0, geometry.size.height * 0.65)))
+                .frame(height: panelHeight)
                 .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 30, style: .continuous))
                 .padding(.horizontal, BermsSpacing.content)
                 .padding(.bottom, BermsSpacing.content)
@@ -179,21 +172,17 @@ struct TrackView: View {
 
     private var liveStatsOverlay: some View {
         VStack(spacing: BermsSpacing.control) {
-            HStack {
-                HStack(spacing: BermsSpacing.compact) {
-                    Circle()
-                        .fill(recorder.isPaused ? Color.bermsMuted : Color.bermsTrail)
-                        .frame(width: 9, height: 9)
-                    Text(recorder.isPaused ? "PAUSED" : "REC")
-                        .bermsValueMotion(recorder.isPaused ? "PAUSED" : "REC")
-                        .font(.caption.weight(.heavy))
-                        .tracking(1.2)
-                }
-                Spacer()
+            AdaptiveStatRow {
+                Label(recorder.isPaused ? "Paused" : "Recording",
+                      systemImage: recorder.isPaused ? "pause.circle.fill" : "record.circle")
+                    .font(.subheadline.weight(.semibold))
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 TimelineView(.periodic(from: .now, by: 1)) { timeline in
                     Text(BermsFormat.duration(recorder.elapsed(at: timeline.date)))
-                        .font(.system(.title3, design: .rounded, weight: .bold))
+                        .font(.title3.weight(.semibold))
                         .monospacedDigit()
+                        .accessibilityLabel("Elapsed time")
+                        .accessibilityValue(BermsFormat.duration(recorder.elapsed(at: timeline.date)))
                 }
             }
 
@@ -211,7 +200,7 @@ struct TrackView: View {
                 }
             }
 
-            HStack {
+            AdaptiveStatRow {
                 TimelineView(.periodic(from: .now, by: 1)) { timeline in
                     Label(gpsStatusText(at: timeline.date), systemImage: "location.fill")
                         .font(.caption)
@@ -219,9 +208,8 @@ struct TrackView: View {
                                          || recorder.locationAuthorization == .restricted
                                          ? .red : Color.bermsMuted)
                 }
-                Spacer()
                 if !recorder.motionAvailable {
-                    Text("MOTION OFF")
+                    Text("Motion off")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(Color.bermsMuted)
                 }
@@ -250,10 +238,9 @@ struct TrackView: View {
                     Label("Finish", systemImage: "stop.fill")
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(.bermsTrail)
-                .foregroundStyle(Color.bermsOnAccent)
+                .buttonStyle(.bordered)
             }
+            .controlSize(.large)
         }
         .padding(.horizontal, BermsSpacing.content)
         .padding(.vertical, BermsSpacing.content)
@@ -267,15 +254,15 @@ struct TrackView: View {
     }
 
     private func gpsStatusText(at date: Date) -> String {
-        if recorder.isPaused { return "GPS PAUSED" }
+        if recorder.isPaused { return "GPS paused" }
         switch recorder.locationAuthorization {
         case .denied, .restricted:
-            return "GPS OFF — CHECK SETTINGS"
+            return "GPS off — check Settings"
         case .notDetermined:
-            return "ALLOW LOCATION TO RECORD"
+            return "Allow location to record"
         default:
-            guard let sample = recorder.lastSample else { return "WAITING FOR GPS" }
-            return date.timeIntervalSince(sample.timestamp) > 15 ? "GPS SIGNAL LOST" : "GPS ON"
+            guard let sample = recorder.lastSample else { return "Waiting for GPS" }
+            return date.timeIntervalSince(sample.timestamp) > 15 ? "GPS signal lost" : "GPS on"
         }
     }
 
@@ -304,120 +291,44 @@ struct TrackView: View {
     }
 
     private var liveMap: some View {
-        ZStack {
-            if recorder.lastSample == nil {
-                VStack(spacing: BermsSpacing.control) {
-                    Image(systemName: "location.slash")
-                        .font(.title2)
-                    Text(gpsEmptyTitle)
-                        .font(.headline)
-                    Text(gpsEmptyMessage)
-                        .font(.caption)
-                        .multilineTextAlignment(.center)
-                        .foregroundStyle(.white.opacity(0.86))
-                        .frame(maxWidth: 230)
-                    if recorder.locationAuthorization == .denied
-                        || recorder.locationAuthorization == .restricted {
-                        Button("Open Settings", action: openLocationSettings)
-                            .buttonStyle(.borderedProminent)
-                            .tint(.white)
-                            .foregroundStyle(.black)
+        Map(position: $mapPosition, scope: mapScope) {
+            UserAnnotation()
+            if mapLayerPreferences.showsRidePath {
+                ForEach(Array(liveMapPaths.enumerated()), id: \.offset) { _, path in
+                    MapPolyline(coordinates: trailCoordinates(for: path.points))
+                        .stroke(color(for: path.role), lineWidth: path.role == .previousRun ? 3 : 5)
+                }
+            }
+            if mapLayerPreferences.showsActualTrails {
+                ForEach(nearbyTrails) { trail in
+                    if trail.points.count > 1 {
+                        trailMapContent(coordinates: trailCoordinates(for: trail), difficulty: trail.difficulty)
                     }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color.black.opacity(0.35))
-                .foregroundStyle(.white)
-            } else {
-                ZStack {
-                    Map(position: $mapPosition) {
-                        UserAnnotation()
-                        if mapLayerPreferences.showsRidePath {
-                            ForEach(Array(liveMapPaths.enumerated()), id: \.offset) { _, path in
-                                MapPolyline(coordinates: path.points.map {
-                                    CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
-                                })
-                                .stroke(color(for: path.role), lineWidth: path.role == .previousRun ? 3 : 5)
-                            }
-                        }
-                        if mapLayerPreferences.showsActualTrails {
-                            ForEach(nearbyTrails) { trail in
-                                if trail.points.count > 1 {
-                                    trailMapContent(coordinates: trailCoordinates(for: trail),
-                                                    difficulty: trail.difficulty)
-                                }
-                            }
-                        }
-                    }
-                    .mapStyle(.bermsMonochrome)
-                    .ignoresSafeArea()
-                    .onChange(of: mapPosition) { _, position in
-                        if position.positionedByUser {
-                            isFollowing = false
-                        }
-                    }
-
-                }
-
-                liveMapControls
             }
         }
-    }
-
-    private var liveMapControls: some View {
-        GlassEffectContainer(spacing: BermsSpacing.compact) {
-            VStack(spacing: 0) {
-                    Menu {
-                        Toggle("Ride path", isOn: $mapLayerPreferences.showsRidePath)
-                        Toggle("Actual trails", isOn: $mapLayerPreferences.showsActualTrails)
-                            .disabled(nearbyTrails.isEmpty)
-                        Toggle("Previous runs", isOn: $mapLayerPreferences.showsPreviousRunsInLiveMap)
-                    } label: {
-                        Image(systemName: "square.3.layers.3d")
-                            .font(.headline)
-                            .frame(width: liveControlWidth, height: liveControlWidth)
-                            .contentShape(Circle())
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.primary)
-                    .accessibilityLabel("Map layers")
-
-                    Divider()
-                        .frame(width: 28)
-                        .overlay(.primary.opacity(0.18))
-                        .accessibilityHidden(true)
-
-                    Button {
-                        isFollowing = true
-                        withAnimation(reduceMotion ? nil : BermsMotion.recenter) {
-                            centerOnLastSampleIfNeeded(force: true)
-                        }
-                    } label: {
-                        Image(systemName: isFollowing ? "location.fill" : "location")
-                            .font(.headline)
-                            .frame(width: liveControlWidth, height: liveControlWidth)
-                            .contentShape(Circle())
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.primary)
-                    .accessibilityLabel(isFollowing ? "Following GPS" : "Center GPS")
-                }
-                .padding(.vertical, 4)
-                .frame(width: liveControlWidth)
-                .glassEffect(.regular, in: .capsule)
+        .mapStyle(.bermsMonochrome)
+        .mapControls { MapScaleView() }
+        .ignoresSafeArea()
+        .overlay(alignment: .topTrailing) {
+            MapControlStack {
+                MapLayersMenu(preferences: mapLayerPreferences,
+                              actualTrailsAvailable: !nearbyTrails.isEmpty,
+                              showsJumpsControl: false,
+                              showsPreviousRunsControl: true)
+                MapUserLocationButton(scope: mapScope)
+                MapCompass(scope: mapScope)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-            .padding(.top, 12)
-            .padding(.trailing, liveControlsTrailingInset)
+            .padding(.top, BermsSpacing.control)
+            .padding(.trailing, BermsSpacing.content)
+        }
+        .mapScope(mapScope)
     }
 
     private var settingsButton: some View {
-        Button {
+        Button("Settings", systemImage: "gearshape") {
             showingSettings = true
-        } label: {
-            Image(systemName: "gearshape")
-                .imageScale(.medium)
         }
-        .accessibilityLabel("Settings")
         .accessibilityIdentifier("settingsButton")
     }
 
@@ -446,21 +357,6 @@ struct TrackView: View {
     private func openLocationSettings() {
         guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
         UIApplication.shared.open(url)
-    }
-
-    private func centerOnLastSampleIfNeeded(force: Bool = false) {
-        guard let coordinate = recorder.lastSample?.coordinate else { return }
-        if !force,
-           let lastFollowedCoordinate,
-           lastFollowedCoordinate.distance(to: coordinate) < 250 {
-            return
-        }
-        mapPosition = .region(MKCoordinateRegion(
-            center: CLLocationCoordinate2D(latitude: coordinate.latitude, longitude: coordinate.longitude),
-            latitudinalMeters: 900,
-            longitudinalMeters: 900
-        ))
-        lastFollowedCoordinate = coordinate
     }
 
     private var currentCoordinate: Coordinate? {

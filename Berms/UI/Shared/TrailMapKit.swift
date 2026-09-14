@@ -228,14 +228,12 @@ struct TrailMapLabel: View {
         HStack(spacing: 6) {
             TrailRatingBadge(difficulty: difficulty)
             Text(name)
-                .font(.caption2.weight(.bold))
+                .font(.caption.weight(.semibold))
                 .foregroundStyle(.primary)
         }
             .padding(.horizontal, 8)
             .padding(.vertical, 5)
             .background(.regularMaterial, in: Capsule())
-            .overlay(Capsule().stroke(color.opacity(0.65), lineWidth: 1))
-            .shadow(color: .black.opacity(0.18), radius: 3, y: 1)
             .accessibilityLabel("\(name), \(difficulty.title) trail")
             .allowsHitTesting(false)
     }
