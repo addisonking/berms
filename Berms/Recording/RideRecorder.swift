@@ -439,12 +439,12 @@ final class RideRecorder: ObservableObject {
             distanceMeters: liveDistance,
             descentMeters: liveDescent,
             speedMetersPerSecond: currentSpeed,
-            run: currentWatchRunMetrics,
+            run: currentRunMetrics,
             updatedAt: .now
         )
     }
 
-    private var currentWatchRunMetrics: WatchRideState.RunMetrics? {
+    var currentRunMetrics: WatchRideState.RunMetrics? {
         guard let day = activeDay else { return nil }
         let runs = day.segments.filter { $0.kind == .run }
         if phase == .run {
@@ -453,14 +453,16 @@ final class RideRecorder: ObservableObject {
                          distanceMeters: RouteMetrics.distance(of: points),
                          descentMeters: RouteMetrics.vertical(of: points, kind: .run),
                          topSpeedMetersPerSecond: RouteMetrics.maximumSpeed(of: points),
-                         longestJumpAirtime: jumpsForCurrentRun.map(\.airtime).max() ?? 0)
+                         longestJumpAirtime: jumpsForCurrentRun.map(\.airtime).max() ?? 0,
+                         jumpCount: jumpsForCurrentRun.count)
         }
         guard let lastRun = runs.max(by: { $0.startedAt < $1.startedAt }) else { return nil }
         return .init(number: runs.count,
                      distanceMeters: lastRun.distanceMeters,
                      descentMeters: lastRun.verticalMeters,
                      topSpeedMetersPerSecond: lastRun.maximumSpeedMetersPerSecond,
-                     longestJumpAirtime: lastRun.jumps.map(\.airtime).max() ?? 0)
+                     longestJumpAirtime: lastRun.jumps.map(\.airtime).max() ?? 0,
+                     jumpCount: lastRun.jumps.count)
     }
 
     var isPaused: Bool { activeDay?.isPaused == true }

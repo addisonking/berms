@@ -13,6 +13,7 @@ struct WatchRideState: Codable, Equatable, Sendable {
         let descentMeters: Double
         let topSpeedMetersPerSecond: Double
         let longestJumpAirtime: TimeInterval?
+        let jumpCount: Int?
     }
 
     static let currentVersion = 1

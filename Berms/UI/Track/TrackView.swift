@@ -174,32 +174,42 @@ struct TrackView: View {
     }
 
     private var liveStatsOverlay: some View {
-        VStack(spacing: BermsSpacing.control) {
+        let run = recorder.currentRunMetrics
+        let runTitle = run.map {
+            recorder.activeSegmentKind == .run ? "Run \($0.number)" : "Last run \($0.number)"
+        } ?? "Waiting for a run"
+        let bestJump = run?.longestJumpAirtime ?? 0
+
+        return VStack(spacing: BermsSpacing.control) {
             AdaptiveStatRow {
-                Label(recorder.isPaused ? "Paused" : "Recording",
+                Label(runTitle,
                       systemImage: recorder.isPaused ? "pause.circle.fill" : "record.circle")
                     .font(.subheadline.weight(.semibold))
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityValue(recorder.isPaused ? "Paused" : "Recording")
                 TimelineView(.periodic(from: .now, by: 1)) { timeline in
-                    Text(BermsFormat.duration(recorder.elapsed(at: timeline.date)))
-                        .font(.title3.weight(.semibold))
+                    Text("Session \(BermsFormat.duration(recorder.elapsed(at: timeline.date)))")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
                         .monospacedDigit()
-                        .accessibilityLabel("Elapsed time")
+                        .accessibilityLabel("Session time")
                         .accessibilityValue(BermsFormat.duration(recorder.elapsed(at: timeline.date)))
                 }
             }
 
             VStack(spacing: BermsSpacing.control) {
                 AdaptiveStatRow {
-                    SummaryStat(animatesValue: true, numericValue: true, label: "Runs", value: "\(recorder.completedRunCount)", tint: .bermsTrail)
-                    SummaryStat(animatesValue: true, numericValue: true, label: "Jumps", value: "\(recorder.activeJumpCount)", tint: .bermsTrail)
-                    SummaryStat(animatesValue: true, label: "Mode", value: liveModeTitle,
-                                tint: recorder.activeSegmentKind == .lift ? .bermsLift : .bermsTrail)
+                    SummaryStat(animatesValue: true, numericValue: true, label: "Top speed",
+                                value: run.map { BermsFormat.speed($0.topSpeedMetersPerSecond) } ?? "—")
+                    SummaryStat(animatesValue: true, numericValue: true, label: "Best jump",
+                                value: bestJump > 0 ? BermsFormat.airtime(bestJump) : "—")
+                        .accessibilityLabel("Best jump airtime")
                 }
-
                 AdaptiveStatRow {
-                    SummaryStat(label: "Speed", value: BermsFormat.speed(recorder.currentSpeed))
-                    SummaryStat(label: "Altitude", value: BermsFormat.elevation(recorder.currentAltitude))
+                    SummaryStat(animatesValue: true, numericValue: true, label: "Jumps",
+                                value: run?.jumpCount.map { String($0) } ?? "—")
+                    SummaryStat(animatesValue: true, numericValue: true, label: "Distance",
+                                value: run.map { BermsFormat.distance($0.distanceMeters) } ?? "—")
                 }
             }
 
@@ -248,12 +258,6 @@ struct TrackView: View {
         .padding(.horizontal, BermsSpacing.content)
         .padding(.vertical, BermsSpacing.content)
 
-    }
-
-    private var liveModeTitle: String {
-        if recorder.isPaused { return "Paused" }
-        if recorder.lastSample == nil { return "Waiting" }
-        return recorder.phase.title
     }
 
     private func gpsStatusText(at date: Date) -> String {

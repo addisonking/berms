@@ -12,7 +12,7 @@ final class WatchDemoTransport: WatchRideTransportClient {
         distanceMeters: 1640,
         descentMeters: 248,
         speedMetersPerSecond: 11.8,
-        run: .init(number: 1, distanceMeters: 1640, descentMeters: 248, topSpeedMetersPerSecond: 14.8, longestJumpAirtime: 0.84),
+        run: .init(number: 1, distanceMeters: 1640, descentMeters: 248, topSpeedMetersPerSecond: 14.8, longestJumpAirtime: 0.84, jumpCount: 1),
         updatedAt: .now
     )
     private(set) var isReachable = true
@@ -89,7 +89,8 @@ final class WatchDemoTransport: WatchRideTransportClient {
             distanceMeters: startsRun ? speed : (previousRun?.distanceMeters ?? 0) + (isLift ? 0 : speed),
             descentMeters: startsRun ? 1.8 : (previousRun?.descentMeters ?? 0) + (isLift ? 0 : 1.8),
             topSpeedMetersPerSecond: startsRun ? speed : max(previousRun?.topSpeedMetersPerSecond ?? 0, isLift ? 0 : speed),
-            longestJumpAirtime: startsRun ? 0 : max(previousRun?.longestJumpAirtime ?? 0, tick % 18 == 8 ? 0.92 : 0)
+            longestJumpAirtime: startsRun ? 0 : max(previousRun?.longestJumpAirtime ?? 0, tick % 18 == 8 ? 0.92 : 0),
+            jumpCount: startsRun ? 0 : (previousRun?.jumpCount ?? 0) + (tick % 18 == 8 ? 1 : 0)
         )
         state = WatchRideState(
             status: state.status,

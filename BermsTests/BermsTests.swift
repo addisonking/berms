@@ -1070,7 +1070,7 @@ final class BermsTests: XCTestCase {
             distanceMeters: 1_250,
             descentMeters: 210,
             speedMetersPerSecond: 12,
-            run: .init(number: 2, distanceMeters: 450, descentMeters: 90, topSpeedMetersPerSecond: 18, longestJumpAirtime: 0.84),
+            run: .init(number: 2, distanceMeters: 450, descentMeters: 90, topSpeedMetersPerSecond: 18, longestJumpAirtime: 0.84, jumpCount: 2),
             updatedAt: Date(timeIntervalSince1970: 142)
         )
 
@@ -1117,6 +1117,8 @@ final class BermsTests: XCTestCase {
         let run = try XCTUnwrap(recorder.currentWatchRideState.run)
         XCTAssertEqual(run.number, 1)
         XCTAssertEqual(run.topSpeedMetersPerSecond, 12)
+        XCTAssertEqual(run.jumpCount, 2)
+        XCTAssertEqual(recorder.currentRunMetrics, run)
         XCTAssertEqual(try XCTUnwrap(run.longestJumpAirtime), 0.72, accuracy: 0.001)
         XCTAssertEqual(recorder.currentSpeed, 5)
         XCTAssertEqual(run.descentMeters, 9)
@@ -1142,6 +1144,7 @@ final class BermsTests: XCTestCase {
         let payload = Data(#"{"number":1,"distanceMeters":100,"descentMeters":20,"topSpeedMetersPerSecond":12}"#.utf8)
         let run = try WatchRideCodec.decode(WatchRideState.RunMetrics.self, from: payload)
         XCTAssertNil(run.longestJumpAirtime)
+        XCTAssertNil(run.jumpCount)
         XCTAssertEqual(run.topSpeedMetersPerSecond, 12)
     }
 
@@ -1738,6 +1741,7 @@ final class BermsTests: XCTestCase {
 
         XCTAssertEqual(recorder.currentWatchRideState.run?.topSpeedMetersPerSecond, 12)
         XCTAssertEqual(recorder.currentWatchRideState.run?.distanceMeters, 1_200)
+        XCTAssertEqual(recorder.currentRunMetrics?.jumpCount, 1)
         XCTAssertEqual(try XCTUnwrap(recorder.currentWatchRideState.run?.longestJumpAirtime), 0.8, accuracy: 0.001)
         let newerRun = RideSegment(kind: .run, startedAt: day.startedAt.addingTimeInterval(400),
                                    endedAt: day.startedAt.addingTimeInterval(500), routeData: Data())
@@ -1751,6 +1755,7 @@ final class BermsTests: XCTestCase {
         XCTAssertEqual(recorder.currentWatchRideState.run?.topSpeedMetersPerSecond, 8,
                        "Watch must show the latest run, not the fastest run or lift")
         XCTAssertEqual(recorder.currentWatchRideState.run?.distanceMeters, 400)
+        XCTAssertEqual(recorder.currentRunMetrics?.jumpCount, 0)
         XCTAssertEqual(recorder.currentWatchRideState.run?.longestJumpAirtime, 0,
                        "A run without jumps must not inherit an earlier run’s best jump")
         day.segments.removeAll { $0.id == newerRun.id }
