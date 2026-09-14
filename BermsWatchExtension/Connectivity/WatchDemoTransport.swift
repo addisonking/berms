@@ -12,6 +12,7 @@ final class WatchDemoTransport: WatchRideTransportClient {
         distanceMeters: 1640,
         descentMeters: 248,
         speedMetersPerSecond: 11.8,
+        run: .init(number: 1, distanceMeters: 1640, descentMeters: 248, topSpeedMetersPerSecond: 14.8, longestJumpAirtime: 0.84),
         updatedAt: .now
     )
     private(set) var isReachable = true
@@ -36,7 +37,12 @@ final class WatchDemoTransport: WatchRideTransportClient {
 
     @discardableResult
     func send(command: WatchRideCommand) -> Bool {
-        guard isReachable else { return false }
+        guard isReachable, state.isActive else { return false }
+        if command == .finish {
+            finish()
+            onCommandResult?(true, state)
+            return true
+        }
         let nextStatus: WatchRideStatus = command == .pause ? .paused : .recording
         guard state.status != nextStatus else {
             onCommandResult?(false, state)
@@ -66,12 +72,25 @@ final class WatchDemoTransport: WatchRideTransportClient {
 
     private func updateMetrics() {
         guard state.isActive else { return }
+        guard state.status == .recording else {
+            refresh()
+            return
+        }
         tick += 1
         let isLift = tick % 18 >= 14
         let speed = isLift ? 3.4 : 10.0 + Double(tick % 7) * 0.8
         let elapsed = state.elapsedSeconds + (state.status == .paused ? 0 : 1)
         let distance = state.distanceMeters + (state.status == .paused ? 0 : speed)
         let descent = state.descentMeters + (isLift || state.status == .paused ? 0 : 1.8)
+        let startsRun = !isLift && state.phase != "run"
+        let previousRun = state.run
+        let run = WatchRideState.RunMetrics(
+            number: (previousRun?.number ?? 1) + (startsRun ? 1 : 0),
+            distanceMeters: startsRun ? speed : (previousRun?.distanceMeters ?? 0) + (isLift ? 0 : speed),
+            descentMeters: startsRun ? 1.8 : (previousRun?.descentMeters ?? 0) + (isLift ? 0 : 1.8),
+            topSpeedMetersPerSecond: startsRun ? speed : max(previousRun?.topSpeedMetersPerSecond ?? 0, isLift ? 0 : speed),
+            longestJumpAirtime: startsRun ? 0 : max(previousRun?.longestJumpAirtime ?? 0, tick % 18 == 8 ? 0.92 : 0)
+        )
         state = WatchRideState(
             status: state.status,
             rideID: state.rideID,
@@ -80,7 +99,8 @@ final class WatchDemoTransport: WatchRideTransportClient {
             elapsedSeconds: elapsed,
             distanceMeters: distance,
             descentMeters: descent,
-            speedMetersPerSecond: state.status == .paused ? 0 : speed,
+            speedMetersPerSecond: speed,
+            run: run,
             updatedAt: .now
         )
         onStateChange?(state)
@@ -96,6 +116,7 @@ final class WatchDemoTransport: WatchRideTransportClient {
             distanceMeters: state.distanceMeters,
             descentMeters: state.descentMeters,
             speedMetersPerSecond: state.speedMetersPerSecond,
+            run: state.run,
             updatedAt: updatedAt
         )
     }

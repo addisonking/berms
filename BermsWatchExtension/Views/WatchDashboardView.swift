@@ -1,220 +1,236 @@
 import SwiftUI
+import WatchKit
 
 struct WatchDashboardView: View {
     @ObservedObject var model: WatchDashboardModel
-    @State private var page = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var page = 1
+    @State private var showsFinishConfirmation = false
+    @State private var showsCommandError = false
 
     var body: some View {
-        Group {
-            if model.state.status == .recording, !model.isStale {
-                TimelineView(.periodic(from: .now, by: 1)) { _ in
-                    content
-                }
-            } else {
-                content
-            }
+        TimelineView(.periodic(from: .now, by: model.state.isActive ? 1 : 60)) { _ in
+            content
+        }
+        .onChange(of: model.message) { _, message in
+            if message != nil { showsCommandError = true }
+        }
+        .alert("Finish ride?", isPresented: $showsFinishConfirmation) {
+            Button("Finish ride", role: .destructive, action: model.finishRide)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Your ride will be saved on iPhone.")
         }
     }
 
     private var content: some View {
-        TabView(selection: $page) {
-            ridePage
-                .tag(0)
-            healthPage
-                .tag(1)
-        }
-        .tabViewStyle(.page(indexDisplayMode: .automatic))
-        .background(Color.black.ignoresSafeArea())
-    }
-
-    private var ridePage: some View {
-        pageContent {
-            if model.state.status == .idle {
-                idleContent
-            } else {
-                metricRow(label: "Descent", value: elevationValue(model.state.descentMeters),
-                          unit: elevationUnit, symbol: "arrow.down", color: .green)
-                metricRow(label: "Distance", value: distanceValue(model.state.distanceMeters),
-                          unit: distanceUnit, symbol: "arrow.right", color: .cyan)
-                metricRow(label: "Speed", value: speedValue(model.state.speedMetersPerSecond),
-                          unit: speedUnit, symbol: "figure.outdoor.cycle", color: .blue)
-                pauseButton
+        GeometryReader { geometry in
+            TabView(selection: $page) {
+                controlsPage
+                    .frame(height: geometry.size.height)
+                    .tag(0)
+                statsPage
+                    .frame(height: geometry.size.height)
+                    .tag(1)
+            }
+            .tabViewStyle(.page(indexDisplayMode: .automatic))
+            .background(Color.black.ignoresSafeArea())
+            .onChange(of: model.state.isActive) { _, _ in
+                page = 1
             }
         }
     }
 
-    private var healthPage: some View {
-        pageContent {
-            if model.state.status == .idle {
-                Text("Live heart rate and active calories appear during a ride.")
+    private var statsPage: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if model.state.isActive {
+                Label(runTitle, systemImage: "figure.outdoor.cycle")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 18)
-            } else {
-                metricRow(label: "Heart rate", value: heartRateText, unit: "bpm",
-                          symbol: "heart.fill", color: .red)
-                metricRow(label: "Active energy", value: caloriesText, unit: "kcal",
-                          symbol: "flame.fill", color: .yellow)
-                if model.health.availability != .available {
-                    Text(model.health.availability == .waiting ? "Waiting for health data" : "Health data unavailable")
+                Spacer(minLength: 0)
+                Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 4) {
+                    metricRow("Top speed", symbol: "speedometer",
+                              value: speedText, unit: speedUnit)
+                    metricRow("Best jump airtime", symbol: "arrow.up.forward",
+                              value: airtimeText, unit: "s air")
+                    metricRow("Heart rate", symbol: "heart.fill",
+                              value: heartRateText, unit: "bpm")
+                }
+                if model.isStale || model.state.status == .paused {
+                    Text(model.isStale ? "Phone disconnected" : "Paused")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
-            }
-        }
-    }
-
-    private func pageContent<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 7) {
-            header
-            content()
-            if let message = model.message {
-                Text(message)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .lineLimit(1)
+            } else {
+                idleContent
             }
         }
         .padding(.horizontal, 10)
-        .padding(.top, 5)
-        .padding(.bottom, 14)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .padding(.top, 4)
+        .padding(.bottom, 18)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
     }
 
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 1) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(headerStatusText)
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(.secondary)
-                Spacer(minLength: 6)
+    private var controlsPage: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if model.state.isActive {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(model.isStale ? "Disconnected" : model.state.status == .paused ? "Paused" : "Berms")
+                        .font(.footnote)
+                        .contentTransition(.interpolate)
+                    Spacer(minLength: 8)
+                    Image(systemName: "iphone")
+                        .font(.caption2)
+                        .accessibilityLabel(connectionText)
+                }
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 4)
+
+                VStack(spacing: 10) {
+                    HStack(spacing: 10) {
+                        Button {
+                            showsFinishConfirmation = true
+                        } label: {
+                            Label("Finish", systemImage: "flag.checkered")
+                                .fixedSize()
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonBorderShape(.capsule)
+                        .disabled(!model.canTogglePause)
+
+                        Button {
+                            WKInterfaceDevice.current().enableWaterLock()
+                        } label: {
+                            Image(systemName: "lock.fill")
+                        }
+                        .buttonBorderShape(.circle)
+                        .frame(width: 44)
+                        .disabled(!canLock)
+                        .accessibilityLabel("Water Lock")
+                        .accessibilityHint("Locks the screen against accidental touches")
+                    }
+                    .font(.footnote)
+                    .buttonStyle(.bordered)
+                    .controlSize(.regular)
+                    .tint(.white)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                    pauseButton
+                }
+                .fixedSize(horizontal: false, vertical: true)
+
+            } else {
+                idleContent
             }
-            Text(headerSubtitle)
-                .font(.caption2.monospacedDigit())
-                .foregroundStyle(model.isStale ? .orange : .secondary)
         }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Ride status")
-        .accessibilityValue("\(headerStatusText), \(elapsedText)" + (model.isStale ? ", phone disconnected" : ""))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .padding(.bottom, 12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        .animation(controlAnimation, value: model.state.status)
+        .animation(controlAnimation, value: model.isStale)
+        .alert("Couldn’t update ride", isPresented: $showsCommandError) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(model.message ?? "Try again when iPhone is connected.")
+        }
     }
 
-    private func metricRow(label: String, value: String, unit: String,
-                           symbol: String, color: Color) -> some View {
-        HStack(spacing: 8) {
+    private func metricRow(_ label: String, symbol: String, value: String, unit: String) -> some View {
+        GridRow {
             Image(systemName: symbol)
-                .font(.caption.weight(.bold))
-                .foregroundStyle(color)
-                .frame(width: 20)
-                .accessibilityHidden(true)
-            Text(label)
                 .font(.footnote)
                 .foregroundStyle(.secondary)
-            Spacer(minLength: 4)
+                .frame(width: 18)
             Text(value)
-                .font(.headline.monospacedDigit())
-                .foregroundStyle(.white)
+                .font(.title3.weight(.semibold).monospacedDigit())
+                .contentTransition(.numericText())
+                .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: value)
+                .fixedSize()
+                .frame(minHeight: 28)
+                .gridColumnAlignment(.trailing)
             Text(unit)
                 .font(.caption2)
                 .foregroundStyle(.secondary)
-                .frame(minWidth: 27, alignment: .leading)
+                .fixedSize()
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(label)
         .accessibilityValue("\(value) \(unit)")
-        .frame(minHeight: 32)
     }
 
     private var pauseButton: some View {
         Button(action: model.togglePause) {
-            Label(model.actionTitle, systemImage: model.state.status == .paused ? "play.fill" : "pause.fill")
-                .frame(maxWidth: .infinity)
+            Label {
+                Text(model.actionTitle)
+                    .contentTransition(.interpolate)
+            } icon: {
+                Image(systemName: model.state.status == .paused ? "play.fill" : "pause.fill")
+                    .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace.magic(fallback: .replace)))
+                    .frame(width: 20)
+            }
+            .foregroundStyle(.black)
+            .frame(maxWidth: .infinity)
         }
+        .font(.body.weight(.semibold))
         .buttonStyle(.borderedProminent)
-        .tint(model.state.status == .paused ? .green : .orange)
+        .buttonBorderShape(.capsule)
+        .controlSize(.regular)
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity)
+        .tint(.white)
         .disabled(!model.canTogglePause)
         .accessibilityHint(model.isStale ? "Waiting for the iPhone connection" : "Changes the ride on iPhone")
     }
 
     private var idleContent: some View {
         VStack(spacing: 8) {
-            Image(systemName: "iphone.and.arrow.forward")
+            Image(systemName: "figure.outdoor.cycle")
                 .font(.title2)
                 .foregroundStyle(.secondary)
-            Text("Start a ride on iPhone")
+            Text("Start on iPhone")
                 .font(.headline)
-            Text("Live stats appear here.")
+            Text("Run stats appear here.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 26)
+        .multilineTextAlignment(.center)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private var headerStatusText: String {
-        switch model.state.status {
-        case .idle: "IDLE"
-        case .recording: model.state.phase == "idle" ? "WAITING" : model.state.phase.uppercased()
-        case .paused: "PAUSED"
-        }
+    private var controlAnimation: Animation? {
+        reduceMotion ? nil : .smooth(duration: 0.3)
     }
 
-    private var elapsedText: String {
-        let total = max(0, Int(liveElapsedSeconds.rounded()))
-        let hours = total / 3600
-        let minutes = (total % 3600) / 60
-        let seconds = total % 60
-        return hours > 0
-            ? String(format: "%d:%02d:%02d", hours, minutes, seconds)
-            : String(format: "%02d:%02d", minutes, seconds)
+    private var canLock: Bool {
+        model.state.status == .recording && !model.isStale
+            && model.health.availability == .available && !model.isDemo
     }
 
-    private var liveElapsedSeconds: TimeInterval {
-        let base = model.state.elapsedSeconds
-        guard model.state.status == .recording, !model.isStale else { return base }
-        return base + max(0, Date.now.timeIntervalSince(model.state.updatedAt))
+    private var connectionText: String {
+        model.isStale ? "Phone disconnected" : "iPhone connected"
     }
 
-    private var headerSubtitle: String {
-        guard model.state.isActive else { return "Start a ride on iPhone" }
-        return model.isStale ? "Phone disconnected" : "Elapsed " + elapsedText
+    private var runTitle: String {
+        guard let run = model.state.run else { return "Waiting for a run" }
+        return model.state.phase == "run" ? "Run \(run.number)" : "Last run \(run.number)"
     }
 
-    private var usesMetric: Bool {
-        Locale.current.measurementSystem == .metric
-    }
+    private let speedUnit = "mph"
 
-    private var speedUnit: String { usesMetric ? "km/h" : "mph" }
-
-    private var distanceUnit: String { usesMetric ? "km" : "mi" }
-
-    private var elevationUnit: String { usesMetric ? "m" : "ft" }
-
-    private func speedValue(_ metersPerSecond: Double) -> String {
-        let value = usesMetric ? metersPerSecond * 3.6 : metersPerSecond * 2.23694
+    private var speedText: String {
+        guard let run = model.state.run else { return "—" }
+        let value = run.topSpeedMetersPerSecond * 2.23694
         return String(format: "%.1f", value)
     }
 
-    private func distanceValue(_ meters: Double) -> String {
-        let value = usesMetric ? meters / 1_000 : meters * 0.000621371
-        return String(format: "%.2f", value)
-    }
-
-    private func elevationValue(_ meters: Double) -> String {
-        let value = usesMetric ? meters : meters * 3.28084
-        return String(format: "%.0f", value)
+    private var airtimeText: String {
+        guard let seconds = model.state.run?.longestJumpAirtime, seconds > 0 else { return "—" }
+        return String(format: "%.2f", seconds)
     }
 
     private var heartRateText: String {
         guard let heartRate = model.health.heartRateBeatsPerMinute else { return "—" }
         return String(format: "%.0f", heartRate)
-    }
-
-    private var caloriesText: String {
-        guard let calories = model.health.activeCalories else { return "—" }
-        return String(format: "%.0f", calories)
     }
 }

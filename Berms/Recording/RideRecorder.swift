@@ -439,8 +439,28 @@ final class RideRecorder: ObservableObject {
             distanceMeters: liveDistance,
             descentMeters: liveDescent,
             speedMetersPerSecond: currentSpeed,
+            run: currentWatchRunMetrics,
             updatedAt: .now
         )
+    }
+
+    private var currentWatchRunMetrics: WatchRideState.RunMetrics? {
+        guard let day = activeDay else { return nil }
+        let runs = day.segments.filter { $0.kind == .run }
+        if phase == .run {
+            let points = RouteCleaner().clean(activePoints.map(\.routePoint))
+            return .init(number: runs.count + 1,
+                         distanceMeters: RouteMetrics.distance(of: points),
+                         descentMeters: RouteMetrics.vertical(of: points, kind: .run),
+                         topSpeedMetersPerSecond: RouteMetrics.maximumSpeed(of: points),
+                         longestJumpAirtime: jumpsForCurrentRun.map(\.airtime).max() ?? 0)
+        }
+        guard let lastRun = runs.max(by: { $0.startedAt < $1.startedAt }) else { return nil }
+        return .init(number: runs.count,
+                     distanceMeters: lastRun.distanceMeters,
+                     descentMeters: lastRun.verticalMeters,
+                     topSpeedMetersPerSecond: lastRun.maximumSpeedMetersPerSecond,
+                     longestJumpAirtime: lastRun.jumps.map(\.airtime).max() ?? 0)
     }
 
     var isPaused: Bool { activeDay?.isPaused == true }

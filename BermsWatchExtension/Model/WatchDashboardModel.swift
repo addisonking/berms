@@ -78,10 +78,17 @@ final class WatchDashboardModel: ObservableObject {
     }
 
     func togglePause() {
+        send(state.status == .paused ? .resume : .pause)
+    }
+
+    func finishRide() {
+        send(.finish)
+    }
+
+    private func send(_ command: WatchRideCommand) {
         guard canTogglePause else { return }
         message = nil
         commandInFlight = true
-        let command: WatchRideCommand = state.status == .paused ? .resume : .pause
         if !transport.send(command: command) {
             commandInFlight = false
             message = "Phone unavailable"

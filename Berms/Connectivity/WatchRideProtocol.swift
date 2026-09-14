@@ -7,6 +7,14 @@ enum WatchRideStatus: String, Codable, Equatable, Sendable {
 }
 
 struct WatchRideState: Codable, Equatable, Sendable {
+    struct RunMetrics: Codable, Equatable, Sendable {
+        let number: Int
+        let distanceMeters: Double
+        let descentMeters: Double
+        let topSpeedMetersPerSecond: Double
+        let longestJumpAirtime: TimeInterval?
+    }
+
     static let currentVersion = 1
 
     let version: Int
@@ -18,6 +26,7 @@ struct WatchRideState: Codable, Equatable, Sendable {
     let distanceMeters: Double
     let descentMeters: Double
     let speedMetersPerSecond: Double
+    let run: RunMetrics?
     let updatedAt: Date
 
     init(version: Int = WatchRideState.currentVersion,
@@ -29,6 +38,7 @@ struct WatchRideState: Codable, Equatable, Sendable {
          distanceMeters: Double,
          descentMeters: Double,
          speedMetersPerSecond: Double,
+         run: RunMetrics? = nil,
          updatedAt: Date) {
         self.version = version
         self.status = status
@@ -39,6 +49,7 @@ struct WatchRideState: Codable, Equatable, Sendable {
         self.distanceMeters = distanceMeters
         self.descentMeters = descentMeters
         self.speedMetersPerSecond = speedMetersPerSecond
+        self.run = run
         self.updatedAt = updatedAt
     }
 
@@ -53,6 +64,7 @@ struct WatchRideState: Codable, Equatable, Sendable {
         distanceMeters = try container.decodeIfPresent(Double.self, forKey: .distanceMeters) ?? 0
         descentMeters = try container.decodeIfPresent(Double.self, forKey: .descentMeters) ?? 0
         speedMetersPerSecond = try container.decodeIfPresent(Double.self, forKey: .speedMetersPerSecond) ?? 0
+        run = try container.decodeIfPresent(RunMetrics.self, forKey: .run)
         // A missing timestamp must never look newer than what the watch already shows.
         updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? .distantPast
     }
@@ -79,6 +91,7 @@ struct WatchRideState: Codable, Equatable, Sendable {
 enum WatchRideCommand: String, Codable, Equatable, Sendable {
     case pause
     case resume
+    case finish
 }
 
 struct WatchRideCommandRequest: Codable, Sendable {

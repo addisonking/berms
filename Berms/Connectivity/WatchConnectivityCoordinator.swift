@@ -145,6 +145,8 @@ final class WatchConnectivityCoordinator: NSObject, ObservableObject, WatchRideS
                     accepted = RideRecorder.shared.pause()
                 case .resume:
                     accepted = RideRecorder.shared.resume()
+                case .finish:
+                    accepted = RideRecorder.shared.stop() != nil
                 }
             }
 

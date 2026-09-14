@@ -77,8 +77,19 @@ struct WatchLifecycleChecks {
 
         transport.push(.recording, rideID: "ride-b")
         precondition(Array(health.events.suffix(2)) == ["stop", "start"], "A new ride must reset health")
+        model.finishRide()
+        precondition(transport.commands.last == .finish && model.commandInFlight)
+        precondition(model.state.isActive, "Finish must wait for iPhone confirmation")
+        transport.onCommandResult?(false, transport.state)
+        precondition(model.state.isActive && !model.commandInFlight && model.message != nil,
+                     "A rejected finish must leave the ride available")
+        model.finishRide()
         transport.push(.idle)
-        precondition(!model.canTogglePause && health.events.last == "stop")
-        print("PASS: idle, stale launch, unavailable health, confirmed pause/resume, long pause, disconnect/reconnect, new ride, finish")
+        transport.onCommandResult?(true, transport.state)
+        precondition(!model.canTogglePause && health.events.last == "stop" && model.message == nil)
+        let finishedCommandCount = transport.commands.count
+        model.finishRide()
+        precondition(transport.commands.count == finishedCommandCount, "Idle rides cannot be finished")
+        print("PASS: idle, stale launch, unavailable health, confirmed pause/resume, long pause, disconnect/reconnect, new ride, rejected finish, confirmed finish")
     }
 }

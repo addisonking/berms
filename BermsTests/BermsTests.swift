@@ -1070,6 +1070,7 @@ final class BermsTests: XCTestCase {
             distanceMeters: 1_250,
             descentMeters: 210,
             speedMetersPerSecond: 12,
+            run: .init(number: 2, distanceMeters: 450, descentMeters: 90, topSpeedMetersPerSecond: 18, longestJumpAirtime: 0.84),
             updatedAt: Date(timeIntervalSince1970: 142)
         )
 
@@ -1077,8 +1078,51 @@ final class BermsTests: XCTestCase {
                                                  from: WatchRideCodec.encode(state)), state)
         XCTAssertEqual(try WatchRideCodec.decode(WatchRideCommand.self,
                                                  from: WatchRideCodec.encode(WatchRideCommand.pause)), .pause)
+        XCTAssertEqual(try WatchRideCodec.decode(WatchRideCommand.self,
+                                                 from: WatchRideCodec.encode(WatchRideCommand.finish)), .finish)
         XCTAssertTrue(state.isStale(at: Date(timeIntervalSince1970: 148)))
         XCTAssertFalse(state.isStale(at: Date(timeIntervalSince1970: 146)))
+    }
+
+    @MainActor
+    func testWatchRestoresCurrentRunWithoutUsingDayTopSpeed() throws {
+        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try ModelContainer(for: RideDay.self, RideSegment.self,
+                                           Trail.self, TrailPass.self, LearnedLift.self,
+                                           configurations: configuration)
+        let context = ModelContext(container)
+        let day = RideDay(startedAt: .now.addingTimeInterval(-60))
+        let samples = (0..<4).map { index in
+            sample(at: day.startedAt, index: index, altitude: 100 - Double(index) * 3,
+                   speed: index == 1 ? 12 : 5, cycling: true)
+        }
+        day.checkpointKind = "run"
+        let jumps = [0.72, 0.4].enumerated().map { index, airtime in
+            let takeoff = day.startedAt.addingTimeInterval(Double(index + 1) * 5)
+            return JumpEvent(takeoffTimestamp: takeoff, landingTimestamp: takeoff.addingTimeInterval(airtime),
+                             takeoffMonotonicSeconds: 0, landingMonotonicSeconds: airtime)
+        }
+        day.checkpointData = try JSONEncoder().encode(RecorderCheckpoint(points: samples, jumps: jumps))
+        day.maximumSpeedMetersPerSecond = 30
+        day.distanceMeters = 8_000
+        context.insert(day)
+        try context.save()
+        let wasRecording = UserDefaults.standard.bool(forKey: "berms.recordingActive")
+        defer { UserDefaults.standard.set(wasRecording, forKey: "berms.recordingActive") }
+        UserDefaults.standard.set(true, forKey: "berms.recordingActive")
+        let recorder = RideRecorder(context: context, watchStateSink: nil,
+                                    authorizationOverride: .authorizedAlways)
+        recorder.resumeIfNeeded()
+        recorder.resumePendingSession()
+        let run = try XCTUnwrap(recorder.currentWatchRideState.run)
+        XCTAssertEqual(run.number, 1)
+        XCTAssertEqual(run.topSpeedMetersPerSecond, 12)
+        XCTAssertEqual(try XCTUnwrap(run.longestJumpAirtime), 0.72, accuracy: 0.001)
+        XCTAssertEqual(recorder.currentSpeed, 5)
+        XCTAssertEqual(run.descentMeters, 9)
+        XCTAssertLessThan(run.distanceMeters, 100)
+        _ = recorder.stop()
+        XCTAssertNil(recorder.currentWatchRideState.run)
     }
 
     func testWatchRideStateDecodesLegacyPayloadWithoutVersion() throws {
@@ -1087,10 +1131,18 @@ final class BermsTests: XCTestCase {
          "distanceMeters":1250,"descentMeters":210,"speedMetersPerSecond":12}
         """.utf8)
         let state = try WatchRideCodec.decode(WatchRideState.self, from: payload)
+        XCTAssertNil(state.run, "Legacy ride totals must not be presented as run metrics")
         XCTAssertEqual(state.version, 1)
         XCTAssertEqual(state.status, .recording)
         XCTAssertEqual(state.updatedAt, .distantPast)
         XCTAssertTrue(state.isStale(at: Date(timeIntervalSince1970: 10_000)))
+    }
+
+    func testWatchRunMetricsDecodesWithoutJumpData() throws {
+        let payload = Data(#"{"number":1,"distanceMeters":100,"descentMeters":20,"topSpeedMetersPerSecond":12}"#.utf8)
+        let run = try WatchRideCodec.decode(WatchRideState.RunMetrics.self, from: payload)
+        XCTAssertNil(run.longestJumpAirtime)
+        XCTAssertEqual(run.topSpeedMetersPerSecond, 12)
     }
 
     func testWatchCommandRequestDecodesLegacyPayloadWithoutVersion() throws {
@@ -1667,6 +1719,10 @@ final class BermsTests: XCTestCase {
         let day = try XCTUnwrap(recorder.activeDay)
         let run = RideSegment(kind: .run, startedAt: day.startedAt,
                               endedAt: day.startedAt.addingTimeInterval(180), routeData: Data())
+        run.jumpData = try JSONEncoder().encode([
+            JumpEvent(takeoffTimestamp: day.startedAt, landingTimestamp: day.startedAt.addingTimeInterval(0.8),
+                      takeoffMonotonicSeconds: 0, landingMonotonicSeconds: 0.8)
+        ])
         run.distanceMeters = 1_200
         run.verticalMeters = 250
         run.maximumSpeedMetersPerSecond = 12
@@ -1680,7 +1736,28 @@ final class BermsTests: XCTestCase {
         day.segments.append(lift)
         context.insert(lift)
 
+        XCTAssertEqual(recorder.currentWatchRideState.run?.topSpeedMetersPerSecond, 12)
+        XCTAssertEqual(recorder.currentWatchRideState.run?.distanceMeters, 1_200)
+        XCTAssertEqual(try XCTUnwrap(recorder.currentWatchRideState.run?.longestJumpAirtime), 0.8, accuracy: 0.001)
+        let newerRun = RideSegment(kind: .run, startedAt: day.startedAt.addingTimeInterval(400),
+                                   endedAt: day.startedAt.addingTimeInterval(500), routeData: Data())
+        newerRun.maximumSpeedMetersPerSecond = 8
+        newerRun.distanceMeters = 400
+        newerRun.verticalMeters = 80
+        newerRun.day = day
+        day.segments.insert(newerRun, at: 0)
+        context.insert(newerRun)
+        XCTAssertEqual(recorder.currentWatchRideState.run?.number, 2)
+        XCTAssertEqual(recorder.currentWatchRideState.run?.topSpeedMetersPerSecond, 8,
+                       "Watch must show the latest run, not the fastest run or lift")
+        XCTAssertEqual(recorder.currentWatchRideState.run?.distanceMeters, 400)
+        XCTAssertEqual(recorder.currentWatchRideState.run?.longestJumpAirtime, 0,
+                       "A run without jumps must not inherit an earlier run’s best jump")
+        day.segments.removeAll { $0.id == newerRun.id }
+        context.delete(newerRun)
+
         XCTAssertTrue(recorder.pause())
+        XCTAssertEqual(recorder.currentWatchRideState.run?.topSpeedMetersPerSecond, 12)
         XCTAssertTrue(recorder.isPaused)
         XCTAssertFalse(recorder.locationService.isRunning)
         XCTAssertEqual(recorder.phase, .idle)
