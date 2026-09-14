@@ -575,6 +575,11 @@ struct TrailRouteMatcher: Sendable {
     var maximumDistance: Double = 50
     var minimumScore: Double = 0.58
     var minimumWinningMargin: Double = 0.08
+    // Parallel trails (for example a shared fall line) can both land inside
+    // the proximity radius. When two matches cover the same route stretch,
+    // give it to the clearly closer centerline instead of whichever one
+    // happened to score higher.
+    var minimumDistanceMargin: Double = 10
 
     private struct ScoredSection: Sendable {
         let routeIndex: Int
@@ -656,9 +661,26 @@ struct TrailRouteMatcher: Sendable {
 
         // The same GPS points can be close to neighboring trails. Keep the
         // strongest evidence for each section, while allowing a small shared
-        // boundary at a trail junction.
+        // boundary at a trail junction. A match nested inside a parallel
+        // trail's stretch is only kept when the rider was not clearly closer
+        // to that other centerline.
         var accepted: [TrailMatchSection] = []
         for candidate in matchedSections {
+            let nestedIn = accepted.filter { covers($0, candidate) }
+            if let nearest = nestedIn.min(by: { $0.averageDistance < $1.averageDistance }),
+               nearest.averageDistance + minimumDistanceMargin < candidate.averageDistance {
+                continue
+            }
+            let containing = accepted.filter { covers(candidate, $0) }
+            if !containing.isEmpty,
+               containing.allSatisfy({ candidate.averageDistance + minimumDistanceMargin < $0.averageDistance }) {
+                accepted.removeAll { section in
+                    containing.contains { $0.id == section.id }
+                }
+                accepted.append(candidate)
+                continue
+            }
+
             let overlap = accepted.map { overlapCount(candidate.range, $0.range) }.max() ?? 0
             let allowedOverlap = max(2, Int(Double(candidate.range.count) * 0.35))
             guard overlap <= allowedOverlap else { continue }
@@ -669,6 +691,15 @@ struct TrailRouteMatcher: Sendable {
             match: match,
             sections: accepted.sorted { $0.startIndex < $1.startIndex }
         )
+    }
+
+    /// True when the outer match covers nearly all of the inner match's route
+    /// points, so the inner one adds no unique stretch of its own.
+    private func covers(_ outer: TrailMatchSection, _ inner: TrailMatchSection) -> Bool {
+        let innerCount = inner.range.count
+        guard innerCount > 0 else { return false }
+        let overlap = overlapCount(outer.range, inner.range)
+        return Double(overlap) / Double(innerCount) >= 0.8
     }
 
     private func candidate(for trail: Trail) -> TrailRouteCandidate {

@@ -849,6 +849,70 @@ final class BermsTests: XCTestCase {
         XCTAssertLessThanOrEqual(sections[0].endIndex, sections[1].startIndex + 1)
     }
 
+    func testTrailMatcherAttributesSharedStretchToTheCloserParallelTrail() {
+        let base = Date(timeIntervalSince1970: 1_400)
+        func points(startLatitude: Double, longitude: Double, count: Int) -> [RoutePoint] {
+            (0..<count).map { index in
+                RoutePoint(latitude: startLatitude + Double(index) * 0.0001,
+                           longitude: longitude,
+                           altitude: 100 - Double(index), speed: 8,
+                           timestamp: base.addingTimeInterval(Double(index)))
+            }
+        }
+
+        // The rider runs along the middle of a long trail.
+        let route = points(startLatitude: 40.0005, longitude: -105, count: 11)
+        let riddenTrail = Trail(name: "Ridden", difficulty: .green, resort: "Test")
+        let riddenPass = TrailPass(routePoints: points(startLatitude: 40.0000, longitude: -105, count: 21))
+        riddenPass.trail = riddenTrail
+        riddenTrail.passes.append(riddenPass)
+
+        // A trail of the ride's exact length runs parallel 22 m away. It
+        // scores higher because the ride covers its whole length, but the
+        // rider was never on it.
+        let neighborTrail = Trail(name: "Neighbor", difficulty: .blue, resort: "Test")
+        let neighborPass = TrailPass(routePoints: points(startLatitude: 40.0005,
+                                                         longitude: -105.0003, count: 11))
+        neighborPass.trail = neighborTrail
+        neighborTrail.passes.append(neighborPass)
+
+        let sections = TrailRouteMatcher().matchingSections(for: route,
+                                                             trails: [riddenTrail, neighborTrail])
+
+        XCTAssertEqual(sections.map(\.trailID), [riddenTrail.id])
+    }
+
+    func testTrailMatcherDoesNotLetAParallelNeighborStealTheRiddenStretch() {
+        let base = Date(timeIntervalSince1970: 1_420)
+        func points(startLatitude: Double, longitude: Double, count: Int) -> [RoutePoint] {
+            (0..<count).map { index in
+                RoutePoint(latitude: startLatitude + Double(index) * 0.0001,
+                           longitude: longitude,
+                           altitude: 100 - Double(index), speed: 8,
+                           timestamp: base.addingTimeInterval(Double(index)))
+            }
+        }
+
+        // The rider is exactly on the short trail, with a long centerline
+        // running parallel 22 m away.
+        let route = points(startLatitude: 40.0005, longitude: -105, count: 11)
+        let riddenTrail = Trail(name: "Ridden", difficulty: .blue, resort: "Test")
+        let riddenPass = TrailPass(routePoints: points(startLatitude: 40.0005, longitude: -105, count: 11))
+        riddenPass.trail = riddenTrail
+        riddenTrail.passes.append(riddenPass)
+
+        let neighborTrail = Trail(name: "Neighbor", difficulty: .green, resort: "Test")
+        let neighborPass = TrailPass(routePoints: points(startLatitude: 40.0000,
+                                                         longitude: -105.0003, count: 21))
+        neighborPass.trail = neighborTrail
+        neighborTrail.passes.append(neighborPass)
+
+        let sections = TrailRouteMatcher().matchingSections(for: route,
+                                                             trails: [riddenTrail, neighborTrail])
+
+        XCTAssertEqual(sections.map(\.trailID), [riddenTrail.id])
+    }
+
     func testRouteCodecRoundTripsPoints() throws {
         let points = [
             RoutePoint(latitude: 40.0, longitude: -105.0, altitude: 2_000, speed: 5, timestamp: Date(timeIntervalSince1970: 1_000)),
