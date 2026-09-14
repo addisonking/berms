@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "skills": {
+    "ios-hig-design": {
+      "source": "wondelai/skills",
+      "sourceType": "github",
+      "skillPath": "ios-hig-design/SKILL.md",
+      "computedHash": "57f41a91308e10b3315ee2ddabea4e9254bf119dc0265d03b37c6afc88e1c009"
+    },
+    "swiftui-expert-skill": {
+      "source": "avdlee/swiftui-agent-skill",
+      "sourceType": "github",
+      "skillPath": "skills/swiftui-expert-skill/SKILL.md",
+      "computedHash": "352119e45436aa70d5a0d29e275dc55769ab509c2098505b391c2e1347c1118a"
+    },
+    "swiftui-liquid-glass": {
+      "source": "dimillian/skills",
+      "sourceType": "github",
+      "skillPath": "swiftui-liquid-glass/SKILL.md",
+      "computedHash": "e4d3634171bc6caa7cc8d15f58cd2fb848dab4744493edc56ec14f4b2c8521a0"
+    },
+    "swiftui-pro": {
+      "source": "twostraws/swiftui-agent-skill",
+      "sourceType": "github",
+      "skillPath": "swiftui-pro/SKILL.md",
+      "computedHash": "07033426e384295a4b49cf0b2ffdefd4098cae4af53fef16bc1f2d9281118c41"
+    },
+    "swiftui-specialist": {
+      "source": "superagents-lab/xcode27-skills",
+      "sourceType": "github",
+      "skillPath": "swiftui-specialist/SKILL.md",
+      "computedHash": "3822a405011719e955934b3df69a3617fbda4aa86da6dbbed89912a86ed0b994"
+    },
+    "swiftui-whats-new-27": {
+      "source": "superagents-lab/xcode27-skills",
+      "sourceType": "github",
+      "skillPath": "swiftui-whats-new-27/SKILL.md",
+      "computedHash": "33c097354c14985ccf7571cfda16b79eabe5ef14db176aa349297341d25dd8d2"
+    }
+  }
+}
