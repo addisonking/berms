@@ -332,20 +332,17 @@ struct DayDetailView: View {
                         }
                     }
                     if mapLayerPreferences.showsActualTrails, let trailDetails {
-                        ForEach(Array(trailDetails.overlays.prefix(12))) { overlay in
+                        let trailOverlays = trailDetails.overlays.map(TrailMapOverlay.init(detail:))
+                        ForEach(trailOverlays) { overlay in
                             trailMapContent(coordinates: coordinates(for: overlay.points),
                                             difficulty: overlay.difficulty)
-                            if let coordinate = trailLabelCoordinate(for: overlay.points) {
-                                Annotation("", coordinate: coordinate) {
-                                    TrailMapLabel(name: overlay.name,
-                                                  difficulty: overlay.difficulty,
-                                                  color: .bermsDifficulty(overlay.difficulty))
-                                }
-                            }
                         }
-                        ForEach(Array(trailDetails.overlays.dropFirst(12))) { overlay in
-                            trailMapContent(coordinates: coordinates(for: overlay.points),
-                                            difficulty: overlay.difficulty)
+                        ForEach(trailMapLabelItems(for: trailOverlays)) { label in
+                            Annotation("", coordinate: label.coordinate) {
+                                TrailMapLabel(name: label.name,
+                                              difficulty: label.difficulty,
+                                              color: label.color)
+                            }
                         }
                     }
                 }

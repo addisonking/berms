@@ -32,6 +32,17 @@ struct TrailMapOverlay: Identifiable {
     }
 }
 
+extension TrailMapOverlay {
+    init(detail: SessionDetailTrailOverlay) {
+        self.init(id: detail.id,
+                  trailID: detail.trailID,
+                  name: detail.name,
+                  difficulty: detail.difficulty,
+                  points: detail.points,
+                  score: detail.score)
+    }
+}
+
 func trailCoordinates(for trail: Trail) -> [CLLocationCoordinate2D] {
     trailCoordinates(for: trail.points)
 }
@@ -68,6 +79,43 @@ func trailLabelCoordinate(for points: [RoutePoint]) -> CLLocationCoordinate2D? {
     guard !points.isEmpty else { return nil }
     let point = points[points.count / 2]
     return CLLocationCoordinate2D(latitude: point.latitude, longitude: point.longitude)
+}
+
+struct TrailMapLabelItem: Identifiable {
+    let id: String
+    let name: String
+    let difficulty: TrailDifficulty
+    let color: Color
+    let coordinate: CLLocationCoordinate2D
+}
+
+/// One label per trail name so repeated runs of the same trail do not stack
+/// pills. The longest matched slice represents the trail.
+func trailMapLabelItems(for overlays: [TrailMapOverlay],
+                        limit: Int = 12) -> [TrailMapLabelItem] {
+    var order: [String] = []
+    var representatives: [String: TrailMapOverlay] = [:]
+    for overlay in overlays {
+        let key = overlay.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !key.isEmpty else { continue }
+        if let current = representatives[key] {
+            if overlay.points.count > current.points.count {
+                representatives[key] = overlay
+            }
+        } else {
+            representatives[key] = overlay
+            order.append(key)
+        }
+    }
+    return order.prefix(limit).compactMap { key in
+        guard let overlay = representatives[key],
+              let coordinate = trailLabelCoordinate(for: overlay.points) else { return nil }
+        return TrailMapLabelItem(id: key,
+                                 name: overlay.name,
+                                 difficulty: overlay.difficulty,
+                                 color: overlay.color,
+                                 coordinate: coordinate)
+    }
 }
 
 @MainActor

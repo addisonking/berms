@@ -68,6 +68,40 @@ final class BermsTests: XCTestCase {
         XCTAssertTrue(restored.showsPreviousRunsInLiveMap)
     }
 
+    func testTrailMapLabelsCollapseRepeatedTrailNames() {
+        func overlay(id: String, name: String, pointCount: Int) -> TrailMapOverlay {
+            let points = (0..<pointCount).map {
+                RoutePoint(latitude: 40 + Double($0) * 0.001,
+                           longitude: -111,
+                           altitude: 0,
+                           speed: 0,
+                           timestamp: Date(timeIntervalSince1970: Double($0)))
+            }
+            return TrailMapOverlay(id: id,
+                                   trailID: UUID(),
+                                   name: name,
+                                   difficulty: .blue,
+                                   points: points,
+                                   score: 1)
+        }
+
+        let overlays = [
+            overlay(id: "a", name: "Salvation", pointCount: 4),
+            overlay(id: "b", name: "Salvation", pointCount: 10),
+            overlay(id: "c", name: "Deviant", pointCount: 6),
+            overlay(id: "d", name: " salvation ", pointCount: 8)
+        ]
+
+        let labels = trailMapLabelItems(for: overlays)
+        XCTAssertEqual(labels.map(\.name), ["Salvation", "Deviant"])
+        XCTAssertEqual(labels[0].id, "salvation")
+        XCTAssertEqual(labels[0].coordinate.latitude, 40 + 5 * 0.001, accuracy: 1e-9)
+        XCTAssertEqual(labels[1].coordinate.latitude, 40 + 3 * 0.001, accuracy: 1e-9)
+
+        let limited = trailMapLabelItems(for: overlays, limit: 1)
+        XCTAssertEqual(limited.map(\.name), ["Salvation"])
+    }
+
     @MainActor
     func testTrailCatalogImportIsIdempotentAndNamespacesIDs() throws {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
