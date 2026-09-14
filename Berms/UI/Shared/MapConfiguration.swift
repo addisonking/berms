@@ -3,22 +3,6 @@ import SwiftData
 import SwiftUI
 import UIKit
 
-struct SummaryMapJump: Identifiable {
-    let id: String
-    let number: Int
-    let label: String
-    let coordinate: CLLocationCoordinate2D
-    let airtime: TimeInterval
-}
-
-struct JumpMarker: Identifiable {
-    let number: Int
-    let coordinate: CLLocationCoordinate2D
-    let airtime: TimeInterval
-
-    var id: Int { number }
-}
-
 struct RouteMapConfiguration {
     let initialPosition: MapCameraPosition
     let initialDistance: CLLocationDistance

@@ -11,6 +11,7 @@ struct DaysView: View {
     @Binding private var pendingDayID: UUID?
     let onStartTracking: () -> Void
     @State private var deleteError: String?
+    @State private var dayToDelete: RideDay?
     @State private var navigationPath = NavigationPath()
 
     init(pendingDayID: Binding<UUID?> = .constant(nil),
@@ -27,12 +28,10 @@ struct DaysView: View {
                     emptyDaysView
                 } else {
                     daysList
-                    .scrollContentBackground(.hidden)
                 }
             }
             .navigationTitle("Days")
             .navigationBarTitleDisplayMode(.large)
-            .toolbarBackground(.hidden, for: .navigationBar)
             .navigationDestination(for: UUID.self) { dayID in
                 if let day = days.first(where: { $0.id == dayID }) {
                     DayDetailView(day: day) { destination in
@@ -67,6 +66,15 @@ struct DaysView: View {
         }
         .task(id: latestRunPreheatKey) {
             await preheatLatestRun()
+        }
+        .alert("Delete day?", isPresented: Binding(
+            get: { dayToDelete != nil },
+            set: { if !$0 { dayToDelete = nil } }
+        ), presenting: dayToDelete) { day in
+            Button("Delete day", role: .destructive) { deleteDay(day) }
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            Text("This removes the day and all of its runs, lifts, and map data.")
         }
         .alert("Couldn't delete day", isPresented: Binding(
             get: { deleteError != nil },
@@ -156,7 +164,6 @@ struct DaysView: View {
                 NavigationLink(value: day.id) {
                     DayRow(day: day)
                 }
-                .listRowBackground(Color.clear)
                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                     dayDeleteAction(for: day)
                 }
@@ -168,7 +175,7 @@ struct DaysView: View {
     private func dayDeleteAction(for day: RideDay) -> some View {
         if day.isFinished {
             Button(role: .destructive) {
-                deleteDay(day)
+                dayToDelete = day
             } label: {
                 Label("Delete", systemImage: "trash")
             }

@@ -44,11 +44,12 @@ struct TrailLibraryView: View {
                 }
                 Section {
                     Picker("Difficulty", selection: $selectedDifficulty) {
-                        Text("All difficulties").tag(Optional<TrailDifficulty>.none)
+                        Text("All").tag(Optional<TrailDifficulty>.none)
                         ForEach(TrailDifficulty.allCases) { difficulty in
                             Text(difficulty.title).tag(Optional(difficulty))
                         }
                     }
+                    .pickerStyle(.navigationLink)
                 }
                 Section {
                     if visibleTrails.isEmpty {

@@ -33,8 +33,7 @@ struct TrackView: View {
             .navigationBarTitleDisplayMode(recorder.isRecording ? .inline : .large)
             .navigationSubtitle(recorder.isRecording
                                 ? Text("")
-                                : Text(Date.now.formatted(.dateTime.weekday(.wide).month(.wide).day()))
-                                    + Text(" · Beta"))
+                                : Text("\(Date.now.formatted(.dateTime.weekday(.wide).month(.wide).day())) · Beta"))
             .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {

@@ -230,6 +230,7 @@ struct TrailMapLabel: View {
             Text(name)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
         }
             .padding(.horizontal, 8)
             .padding(.vertical, 5)

@@ -7,28 +7,26 @@ struct DayRow: View {
     let day: RideDay
 
     var body: some View {
-        HStack(spacing: BermsSpacing.control) {
+        AdaptiveStatRow {
             VStack(alignment: .leading, spacing: 5) {
                 Text(day.displayName)
                     .font(.headline)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+                    .fixedSize(horizontal: false, vertical: true)
                 Text(metadata)
                     .font(.subheadline)
                     .foregroundStyle(Color.bermsMuted)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             Text(BermsFormat.duration(day.duration))
                 .font(.subheadline.weight(.semibold))
                 .monospacedDigit()
                 .foregroundStyle(Color.bermsTrail)
-                .lineLimit(1)
-                .fixedSize(horizontal: true, vertical: false)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, minHeight: BermsSpacing.target, alignment: .leading)
         .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
     }
 
     private var metadata: String {
