@@ -114,9 +114,12 @@ struct SessionRouteMap: View {
                     MapActionButton(title: "Open full-screen map", systemImage: "arrow.up.left.and.arrow.down.right",
                                     action: onExpand)
                 }
-                MapCompass(scope: mapScope)
             }
             .padding(BermsSpacing.control)
+        }
+        .overlay(alignment: .topLeading) {
+            MapCompass(scope: mapScope)
+                .padding(BermsSpacing.control)
         }
         .mapScope(mapScope)
         .onAppear { recenter() }

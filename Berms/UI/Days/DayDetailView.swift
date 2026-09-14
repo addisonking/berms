@@ -57,15 +57,22 @@ struct DayDetailView: View {
     var body: some View {
         List {
             Section("Day summary") {
-                summary
+                if day.segments.isEmpty {
+                    LabeledContent("Started", value: day.startedAt.formatted(date: .omitted, time: .shortened))
+                    LabeledContent("Duration", value: BermsFormat.duration(day.duration))
+                } else {
+                    summary
+                }
             }
-            Section {
-                dayMap
-                    .listRowInsets(EdgeInsets())
+            if !runs.isEmpty {
+                Section {
+                    dayMap
+                        .listRowInsets(EdgeInsets())
+                }
             }
             Section("Runs") {
                 if runs.isEmpty {
-                    Text("No runs")
+                    Text("No runs recorded during this session.")
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach(Array(runs.enumerated()), id: \.element.id) { index, segment in
@@ -96,7 +103,7 @@ struct DayDetailView: View {
                     .accessibilityLabel("Session journal")
             }
         }
-        .navigationTitle(day.displayName)
+        .navigationTitle(day.hasCustomName ? day.displayName : day.startedAt.formatted(date: .abbreviated, time: .omitted))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.visible, for: .navigationBar)
         .toolbar {

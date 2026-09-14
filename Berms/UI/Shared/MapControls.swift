@@ -7,9 +7,10 @@ struct MapControlStack<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {
-        GlassEffectContainer(spacing: BermsSpacing.compact) {
-            VStack(spacing: BermsSpacing.compact) { content }
-        }
+        VStack(spacing: 0) { content }
+            .padding(.vertical, 4)
+            .foregroundStyle(.primary)
+            .glassEffect(.regular, in: .capsule)
     }
 }
 
@@ -23,7 +24,9 @@ struct MapActionButton: View {
             Label(title, systemImage: systemImage)
                 .labelStyle(.iconOnly)
                 .font(.headline)
-                .frame(minWidth: BermsSpacing.target, minHeight: BermsSpacing.target)
+                .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+                .frame(width: BermsSpacing.target, height: BermsSpacing.target)
+                .contentShape(.rect)
         }
         .bermsMapControl()
     }
@@ -49,6 +52,7 @@ struct MapLayersMenu: View {
     var showsLiftPathsControl = false
     var liftPathsAvailable = true
     var showsPreviousRunsControl = false
+    var onSettings: (() -> Void)?
 
     var body: some View {
         Menu {
@@ -69,14 +73,20 @@ struct MapLayersMenu: View {
             if showsPreviousRunsControl {
                 Toggle("Previous runs", isOn: $preferences.showsPreviousRunsInLiveMap)
             }
+            if let onSettings {
+                Divider()
+                Button("Settings", systemImage: "gearshape", action: onSettings)
+            }
         } label: {
             Label("Layers", systemImage: "square.3.layers.3d")
                 .labelStyle(.iconOnly)
                 .font(.headline)
-                .frame(minWidth: BermsSpacing.target, minHeight: BermsSpacing.target)
+                .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+                .frame(width: BermsSpacing.target, height: BermsSpacing.target)
+                .contentShape(.rect)
         }
         .bermsMapControl()
-        .accessibilityLabel("Map layers")
+        .accessibilityLabel(onSettings == nil ? "Map layers" : "Map options")
     }
 }
 

@@ -35,6 +35,7 @@ struct TrackView: View {
                                 ? Text("")
                                 : Text("\(Date.now.formatted(.dateTime.weekday(.wide).month(.wide).day())) · Beta"))
             .toolbarBackground(.hidden, for: .navigationBar)
+            .toolbarVisibility(recorder.isRecording ? .hidden : .visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     settingsButton
@@ -165,6 +166,9 @@ struct TrackView: View {
                 .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 30, style: .continuous))
                 .padding(.horizontal, BermsSpacing.content)
                 .padding(.bottom, BermsSpacing.content)
+            }
+            .overlay(alignment: .topTrailing) {
+                liveMapControls
             }
         }
     }
@@ -309,19 +313,33 @@ struct TrackView: View {
         .mapStyle(.bermsMonochrome)
         .mapControls { MapScaleView() }
         .ignoresSafeArea()
-        .overlay(alignment: .topTrailing) {
-            MapControlStack {
-                MapLayersMenu(preferences: mapLayerPreferences,
-                              actualTrailsAvailable: !nearbyTrails.isEmpty,
-                              showsJumpsControl: false,
-                              showsPreviousRunsControl: true)
-                MapUserLocationButton(scope: mapScope)
-                MapCompass(scope: mapScope)
-            }
-            .padding(.top, BermsSpacing.control)
-            .padding(.trailing, BermsSpacing.content)
+        .overlay(alignment: .topLeading) {
+            MapCompass(scope: mapScope)
+                .padding(BermsSpacing.content)
         }
         .mapScope(mapScope)
+    }
+
+    private var liveMapControls: some View {
+        MapControlStack {
+            MapLayersMenu(preferences: mapLayerPreferences,
+                          actualTrailsAvailable: !nearbyTrails.isEmpty,
+                          showsJumpsControl: false,
+                          showsPreviousRunsControl: true,
+                          onSettings: { showingSettings = true })
+            MapActionButton(title: "My location",
+                            systemImage: mapPosition.followsUserLocation ? "location.fill" : "location") {
+                withAnimation(reduceMotion ? nil : BermsMotion.recenter) {
+                    mapPosition = .userLocation(followsHeading: !mapPosition.followsUserHeading
+                                                && mapPosition.followsUserLocation,
+                                                fallback: .automatic)
+                }
+            }
+            .accessibilityValue(mapPosition.followsUserHeading ? "Following heading"
+                                : mapPosition.followsUserLocation ? "Following location" : "Not following")
+        }
+        .padding(.top, BermsSpacing.control)
+        .padding(.trailing, BermsSpacing.content)
     }
 
     private var settingsButton: some View {

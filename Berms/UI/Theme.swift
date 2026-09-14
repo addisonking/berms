@@ -73,8 +73,7 @@ struct SummaryStat: View {
 /// Consistently sized hit targets for map controls.
 extension View {
     func bermsMapControl() -> some View {
-        buttonStyle(.glass)
-            .buttonBorderShape(.circle)
+        buttonStyle(.plain)
     }
 }
 

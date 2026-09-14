@@ -136,9 +136,12 @@ struct TrailLibraryView: View {
                                   actualTrailsAvailable: !visibleTrails.isEmpty,
                                   showsJumpsControl: false)
                     MapRecenterButton { recenterMap() }
-                    MapCompass(scope: mapScope)
                 }
                 .padding(BermsSpacing.control)
+            }
+            .overlay(alignment: .topLeading) {
+                MapCompass(scope: mapScope)
+                    .padding(BermsSpacing.control)
             }
             .mapScope(mapScope)
             .onAppear { recenterMap() }
