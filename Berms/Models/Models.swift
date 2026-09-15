@@ -173,6 +173,148 @@ final class RideSegment {
     }
 }
 
+struct BermsDataExport: Codable, Sendable {
+    let format: String
+    let version: Int
+    let exportedAt: Date
+    let days: [Day]
+    let parsed: Parsed
+    let rawDiagnostics: RawDiagnostics?
+
+    struct Day: Codable, Sendable {
+        let id: String
+        let name: String?
+        let notes: String?
+        let startedAt: Date
+        let endedAt: Date?
+        let segments: [Segment]
+    }
+
+    struct Segment: Codable, Sendable {
+        let id: String
+        let kind: SegmentKind
+        let runNumber: Int?
+        let startedAt: Date
+        let endedAt: Date
+        let distanceMeters: Double
+        let verticalMeters: Double
+        let maximumSpeedMetersPerSecond: Double
+        let route: [RoutePoint]
+        let trails: [String]
+        let jumps: [Jump]
+    }
+
+    struct Parsed: Codable, Sendable {
+        let dayID: String
+        let runCount: Int
+        let runs: [Run]
+    }
+
+    struct Run: Codable, Sendable {
+        let segmentID: String
+        let number: Int
+        let startedAt: Date
+        let endedAt: Date
+        let distanceMeters: Double
+        let verticalMeters: Double
+        let maximumSpeedMetersPerSecond: Double
+        let route: [RoutePoint]
+        let trails: [String]
+        let jumps: [Jump]
+    }
+
+    struct Jump: Codable, Sendable {
+        let takeoffAt: Date
+        let landingAt: Date
+        let airtimeSeconds: Double
+
+        init(_ jump: JumpEvent) {
+            takeoffAt = jump.takeoffTimestamp
+            landingAt = jump.landingTimestamp
+            airtimeSeconds = jump.airtime
+        }
+    }
+
+    struct RawDiagnostics: Codable, Sendable {
+        let filename: String
+        let format: String
+    }
+
+    init(day: RideDay, trails: [Trail] = [], exportedAt: Date = .now,
+         rawDiagnosticsFilename: String? = nil) {
+        var nextRunNumber = 0
+        let trailNamesByID = Dictionary(trails.map { ($0.id, $0.name) },
+                                        uniquingKeysWith: { first, _ in first })
+        let trailCandidates = trails.map {
+            TrailRouteCandidate(id: $0.id, name: $0.name, difficulty: $0.difficulty,
+                                routes: $0.matcherRoutes)
+        }
+        let matcher = TrailRouteMatcher()
+
+        func trailSequence(for segment: RideSegment) -> [String] {
+            guard segment.kind == .run, segment.points.count >= 2,
+                  !trailCandidates.isEmpty else { return [] }
+            let route = RouteCleaner().clean(segment.points)
+            let sections = matcher.matchResult(for: route, candidates: trailCandidates).sections
+            var result: [String] = []
+            for name in sections.compactMap({ trailNamesByID[$0.trailID] })
+                where result.last != name {
+                result.append(name)
+            }
+            return result
+        }
+
+        let segments = day.segments.sorted { $0.startedAt < $1.startedAt }.map { segment in
+            let runNumber: Int?
+            if segment.kind == .run {
+                nextRunNumber += 1
+                runNumber = nextRunNumber
+            } else {
+                runNumber = nil
+            }
+            return Segment(
+                id: segment.id.uuidString,
+                kind: segment.kind,
+                runNumber: runNumber,
+                startedAt: segment.startedAt,
+                endedAt: segment.endedAt,
+                distanceMeters: segment.distanceMeters,
+                verticalMeters: segment.verticalMeters,
+                maximumSpeedMetersPerSecond: segment.maximumSpeedMetersPerSecond,
+                route: segment.points,
+                trails: trailSequence(for: segment),
+                jumps: segment.jumps.map(Jump.init)
+            )
+        }
+
+        let runs = segments.compactMap { segment -> Run? in
+            guard let number = segment.runNumber else { return nil }
+            return Run(
+                segmentID: segment.id,
+                number: number,
+                startedAt: segment.startedAt,
+                endedAt: segment.endedAt,
+                distanceMeters: segment.distanceMeters,
+                verticalMeters: segment.verticalMeters,
+                maximumSpeedMetersPerSecond: segment.maximumSpeedMetersPerSecond,
+                route: segment.route,
+                trails: segment.trails,
+                jumps: segment.jumps
+            )
+        }
+
+        format = "berms.day"
+        version = 3
+        self.exportedAt = exportedAt
+        days = [Day(id: day.id.uuidString, name: day.name, notes: day.notes,
+                    startedAt: day.startedAt, endedAt: day.endedAt, segments: segments)]
+        parsed = Parsed(dayID: day.id.uuidString, runCount: runs.count, runs: runs)
+        rawDiagnostics = rawDiagnosticsFilename.map {
+            RawDiagnostics(filename: $0, format: "jsonl")
+        }
+    }
+}
+
 enum TrailDifficulty: String, Codable, CaseIterable, Identifiable, Sendable {
     case green
     case blue
@@ -637,14 +779,20 @@ struct TrackSampleNormalizer: Sendable {
 
 struct SegmentDraft: Sendable {
     let kind: SegmentKind
+    let runNumber: Int?
+    let trailSequence: [String]?
     let points: [TrackSample]
     let startedAt: Date
     let endedAt: Date
     let jumps: [JumpEvent]
 
     init(kind: SegmentKind, points: [TrackSample], startedAt: Date, endedAt: Date,
+         runNumber: Int? = nil,
+         trailSequence: [String]? = nil,
          jumps: [JumpEvent] = []) {
         self.kind = kind
+        self.runNumber = runNumber
+        self.trailSequence = trailSequence
         self.points = points
         self.startedAt = startedAt
         self.endedAt = endedAt

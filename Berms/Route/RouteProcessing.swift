@@ -575,11 +575,10 @@ struct TrailRouteMatcher: Sendable {
     var maximumDistance: Double = 50
     var minimumScore: Double = 0.58
     var minimumWinningMargin: Double = 0.08
-    // Parallel trails (for example a shared fall line) can both land inside
-    // the proximity radius. When two matches cover the same route stretch,
-    // give it to the clearly closer centerline instead of whichever one
-    // happened to score higher.
-    var minimumDistanceMargin: Double = 10
+    // Parallel trails (for example a shared fall line) land inside the same
+    // proximity radius. A route stretch only belongs to a trail when it stayed
+    // closer than every other centerline across the whole stretch.
+    var parallelTieMargin: Double = 2
 
     private struct ScoredSection: Sendable {
         let routeIndex: Int
@@ -616,21 +615,47 @@ struct TrailRouteMatcher: Sendable {
         }
 
         var scoredCandidates: [(UUID, ScoredSection)] = []
+        var distancesByCandidate: [(UUID, [Double])] = []
         for candidate in candidates {
             if Task.isCancelled { break }
-            let best = candidate.routes
-                .enumerated()
-                .filter { $0.element.count >= 2 }
-                .flatMap { routeIndex, candidateRoute -> [ScoredSection] in
-                    guard !Task.isCancelled else { return [] }
-                    return [
-                        score(route: route, against: candidateRoute,
-                              routeIndex: routeIndex, isReversed: false),
-                        score(route: route, against: Array(candidateRoute.reversed()),
-                              routeIndex: routeIndex, isReversed: true)
-                    ].compactMap { $0 }
+            var nearestDistances: [Double]?
+            var best: ScoredSection?
+            for (routeIndex, candidateRoute) in candidate.routes.enumerated()
+                where candidateRoute.count >= 2 {
+                if Task.isCancelled { break }
+                let cumulativeTrailDistances = cumulativeDistances(for: candidateRoute)
+                let trailLength = cumulativeTrailDistances.last ?? 0
+                let projections = route.map {
+                    nearestProjection(to: $0, in: candidateRoute,
+                                      cumulativeDistances: cumulativeTrailDistances,
+                                      totalLength: trailLength)
                 }
-                .max { $0.score < $1.score }
+                let distances = projections.map(\.distance)
+                if var nearest = nearestDistances {
+                    for index in nearest.indices {
+                        nearest[index] = min(nearest[index], distances[index])
+                    }
+                    nearestDistances = nearest
+                } else {
+                    nearestDistances = distances
+                }
+                for isReversed in [false, true] {
+                    let directional = isReversed
+                        ? projections.map { TrailProjection(distance: $0.distance,
+                                                            progress: 1 - $0.progress) }
+                        : projections
+                    guard let section = score(route: route, projections: directional,
+                                              trailLength: trailLength,
+                                              routeIndex: routeIndex,
+                                              isReversed: isReversed) else { continue }
+                    if best == nil || section.score > best!.score {
+                        best = section
+                    }
+                }
+            }
+            if let nearestDistances {
+                distancesByCandidate.append((candidate.id, nearestDistances))
+            }
             guard let best else { continue }
             scoredCandidates.append((candidate.id, best))
         }
@@ -659,25 +684,13 @@ struct TrailRouteMatcher: Sendable {
                                      averageDistance: best.averageDistance)
         }
 
-        // The same GPS points can be close to neighboring trails. Keep the
-        // strongest evidence for each section, while allowing a small shared
-        // boundary at a trail junction. A match nested inside a parallel
-        // trail's stretch is only kept when the rider was not clearly closer
-        // to that other centerline.
+        // The same GPS points can be close to neighboring trails. A trail only
+        // owns a stretch when it stayed closer than every other centerline
+        // across it, which removes crossings, short connectors, and nearby
+        // parallels that happen to score well.
         var accepted: [TrailMatchSection] = []
         for candidate in matchedSections {
-            let nestedIn = accepted.filter { covers($0, candidate) }
-            if let nearest = nestedIn.min(by: { $0.averageDistance < $1.averageDistance }),
-               nearest.averageDistance + minimumDistanceMargin < candidate.averageDistance {
-                continue
-            }
-            let containing = accepted.filter { covers(candidate, $0) }
-            if !containing.isEmpty,
-               containing.allSatisfy({ candidate.averageDistance + minimumDistanceMargin < $0.averageDistance }) {
-                accepted.removeAll { section in
-                    containing.contains { $0.id == section.id }
-                }
-                accepted.append(candidate)
+            guard ownsStretch(candidate, distancesByCandidate: distancesByCandidate) else {
                 continue
             }
 
@@ -693,13 +706,26 @@ struct TrailRouteMatcher: Sendable {
         )
     }
 
-    /// True when the outer match covers nearly all of the inner match's route
-    /// points, so the inner one adds no unique stretch of its own.
-    private func covers(_ outer: TrailMatchSection, _ inner: TrailMatchSection) -> Bool {
-        let innerCount = inner.range.count
-        guard innerCount > 0 else { return false }
-        let overlap = overlapCount(outer.range, inner.range)
-        return Double(overlap) / Double(innerCount) >= 0.8
+    /// True when the section's own centerline stayed closer than every other
+    /// candidate across the whole stretch. Crossings and nearby parallels
+    /// average out to the same distance as the ridden trail, so a tie or a
+    /// closer rival rejects the section.
+    private func ownsStretch(
+        _ section: TrailMatchSection,
+        distancesByCandidate: [(UUID, [Double])]
+    ) -> Bool {
+        let range = section.range
+        guard !range.isEmpty else { return false }
+        let own = distancesByCandidate.first { $0.0 == section.trailID }?.1
+        let ownAverage = own.map { distances in
+            range.reduce(0.0) { $0 + distances[$1] } / Double(range.count)
+        } ?? section.averageDistance
+        var nearestRival = Double.greatestFiniteMagnitude
+        for entry in distancesByCandidate where entry.0 != section.trailID {
+            let average = range.reduce(0.0) { $0 + entry.1[$1] } / Double(range.count)
+            nearestRival = min(nearestRival, average)
+        }
+        return ownAverage + parallelTieMargin <= nearestRival
     }
 
     private func candidate(for trail: Trail) -> TrailRouteCandidate {
@@ -713,17 +739,12 @@ struct TrailRouteMatcher: Sendable {
 
     private func score(
         route: [RoutePoint],
-        against trail: [RoutePoint],
+        projections: [TrailProjection],
+        trailLength: Double,
         routeIndex: Int,
         isReversed: Bool
     ) -> ScoredSection? {
-        let cumulativeTrailDistances = cumulativeDistances(for: trail)
-        let trailLength = cumulativeTrailDistances.last ?? 0
-        let projections = route.map {
-            nearestProjection(to: $0, in: trail,
-                              cumulativeDistances: cumulativeTrailDistances,
-                              totalLength: trailLength)
-        }
+        guard route.count == projections.count, route.count >= 2 else { return nil }
         let distances = projections.map(\.distance)
         guard let range = bestContiguousMatchRange(in: route, projections: projections) else { return nil }
         let matchedRoute = Array(route[range])

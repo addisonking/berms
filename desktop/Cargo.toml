@@ -1,0 +1,18 @@
+[workspace]
+resolver = "2"
+members = ["crates/footage", "crates/logs", "crates/rides", "crates/studio"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+
+[workspace.dependencies]
+berms-footage = { path = "crates/footage" }
+berms-logs = { path = "crates/logs" }
+berms-rides = { path = "crates/rides" }
+gpui-kit = "0.6"
+rfd = "0.17"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+time = { version = "0.3", features = ["formatting", "local-offset", "macros", "parsing", "serde"] }

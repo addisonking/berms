@@ -4,105 +4,6 @@ import Darwin
 import Foundation
 import SwiftData
 
-struct RawDiagnosticRecord: Codable, Sendable {
-    let kind: String
-    let timestamp: Date
-    let monotonicSeconds: Double
-    let latitude: Double?
-    let longitude: Double?
-    let gpsAltitude: Double?
-    let fusedAltitude: Double?
-    let relativeAltitude: Double?
-    let pressureKPa: Double?
-    let trackMonotonicSeconds: Double?
-    let speed: Double?
-    let course: Double?
-    let horizontalAccuracy: Double?
-    let verticalAccuracy: Double?
-    let userAccelerationX: Double?
-    let userAccelerationY: Double?
-    let userAccelerationZ: Double?
-    let rotationRateX: Double?
-    let rotationRateY: Double?
-    let rotationRateZ: Double?
-    let gravityX: Double?
-    let gravityY: Double?
-    let gravityZ: Double?
-    let quaternionW: Double?
-    let quaternionX: Double?
-    let quaternionY: Double?
-    let quaternionZ: Double?
-    let stationary: Bool?
-    let cycling: Bool?
-    let automotive: Bool?
-    let runEligible: Bool?
-    let accepted: Bool?
-    let phaseBefore: String?
-    let phaseAfter: String?
-    let detectorVersion: String?
-    let jumpAirtime: Double?
-    let jumpTakeoffMonotonicSeconds: Double?
-    let jumpLandingMonotonicSeconds: Double?
-    let jumpReason: String?
-    let detail: String?
-
-    init(kind: String, timestamp: Date = .now, monotonicSeconds: Double = ProcessInfo.processInfo.systemUptime,
-         latitude: Double? = nil, longitude: Double? = nil, gpsAltitude: Double? = nil,
-         fusedAltitude: Double? = nil, relativeAltitude: Double? = nil, pressureKPa: Double? = nil,
-         trackMonotonicSeconds: Double? = nil, speed: Double? = nil,
-         course: Double? = nil, horizontalAccuracy: Double? = nil, verticalAccuracy: Double? = nil,
-         userAccelerationX: Double? = nil, userAccelerationY: Double? = nil, userAccelerationZ: Double? = nil,
-         rotationRateX: Double? = nil, rotationRateY: Double? = nil, rotationRateZ: Double? = nil,
-         gravityX: Double? = nil, gravityY: Double? = nil, gravityZ: Double? = nil,
-         quaternionW: Double? = nil, quaternionX: Double? = nil, quaternionY: Double? = nil,
-         quaternionZ: Double? = nil, stationary: Bool? = nil, cycling: Bool? = nil, automotive: Bool? = nil,
-         runEligible: Bool? = nil, accepted: Bool? = nil, phaseBefore: String? = nil, phaseAfter: String? = nil,
-         detectorVersion: String? = nil, jumpAirtime: Double? = nil,
-         jumpTakeoffMonotonicSeconds: Double? = nil, jumpLandingMonotonicSeconds: Double? = nil,
-         jumpReason: String? = nil, detail: String? = nil) {
-        self.kind = kind
-        self.timestamp = timestamp
-        self.monotonicSeconds = monotonicSeconds
-        self.latitude = latitude
-        self.longitude = longitude
-        self.gpsAltitude = gpsAltitude
-        self.fusedAltitude = fusedAltitude
-        self.relativeAltitude = relativeAltitude
-        self.pressureKPa = pressureKPa
-        self.trackMonotonicSeconds = trackMonotonicSeconds
-        self.speed = speed
-        self.course = course
-        self.horizontalAccuracy = horizontalAccuracy
-        self.verticalAccuracy = verticalAccuracy
-        self.userAccelerationX = userAccelerationX
-        self.userAccelerationY = userAccelerationY
-        self.userAccelerationZ = userAccelerationZ
-        self.rotationRateX = rotationRateX
-        self.rotationRateY = rotationRateY
-        self.rotationRateZ = rotationRateZ
-        self.gravityX = gravityX
-        self.gravityY = gravityY
-        self.gravityZ = gravityZ
-        self.quaternionW = quaternionW
-        self.quaternionX = quaternionX
-        self.quaternionY = quaternionY
-        self.quaternionZ = quaternionZ
-        self.stationary = stationary
-        self.cycling = cycling
-        self.automotive = automotive
-        self.runEligible = runEligible
-        self.accepted = accepted
-        self.phaseBefore = phaseBefore
-        self.phaseAfter = phaseAfter
-        self.detectorVersion = detectorVersion
-        self.jumpAirtime = jumpAirtime
-        self.jumpTakeoffMonotonicSeconds = jumpTakeoffMonotonicSeconds
-        self.jumpLandingMonotonicSeconds = jumpLandingMonotonicSeconds
-        self.jumpReason = jumpReason
-        self.detail = detail
-    }
-}
-
 final class RawLogWriter: @unchecked Sendable {
     private let queue = DispatchQueue(label: "com.addis.berms.raw-log", qos: .utility)
     private var handle: FileHandle?
@@ -250,6 +151,8 @@ struct RecorderCheckpoint: Codable, Sendable {
 
 struct RebuiltSegmentSummary: Sendable {
     let kind: SegmentKind
+    let runNumber: Int?
+    let trailSequence: [String]?
     let startedAt: Date
     let endedAt: Date
     let routeData: Data
@@ -272,6 +175,38 @@ struct RepairedRoute: Sendable {
     let maximumSpeedMetersPerSecond: Double
 }
 
+struct CatalogPassRepairInput: Sendable {
+    let id: UUID
+    let trailID: UUID
+    let trailCreatedAt: Date
+    let recordedAt: Date
+}
+
+/// Catalog trail passes store centerlines, not rides. Version 10 of the
+/// diagnostic migration re-cleaned them with the ride cleaner, which collapsed
+/// their zero-speed points into long straight chords. Restore the bundled
+/// catalog geometry for passes created together with their trail.
+enum CatalogPassRepair {
+    static let creationTolerance: TimeInterval = 300
+
+    static func repairs(inputs: [CatalogPassRepairInput],
+                        catalogRoutes: [UUID: [RoutePoint]]) -> [RepairedRoute] {
+        inputs.compactMap { input in
+            guard abs(input.recordedAt.timeIntervalSince(input.trailCreatedAt)) < creationTolerance,
+                  let points = catalogRoutes[input.trailID],
+                  points.count >= 2,
+                  let routeData = try? RouteCodec.encode(points) else {
+                return nil
+            }
+            return RepairedRoute(id: input.id,
+                                 routeData: routeData,
+                                 distanceMeters: RouteMetrics.distance(of: points),
+                                 verticalMeters: 0,
+                                 maximumSpeedMetersPerSecond: 0)
+        }
+    }
+}
+
 enum DiagnosticSummaryRebuilder {
     static func rebuild(dayID: UUID, logURL: URL) -> RebuiltDaySummary? {
         guard let data = try? Data(contentsOf: logURL),
@@ -280,13 +215,14 @@ enum DiagnosticSummaryRebuilder {
             return nil
         }
 
-        var summaries: [RebuiltSegmentSummary] = []
-        for draft in result.segments {
+        let summaries = result.segments.compactMap { draft -> RebuiltSegmentSummary? in
             guard let cleaned = cleanedRoute(samples: draft.points, kind: draft.kind) else {
                 return nil
             }
-            summaries.append(RebuiltSegmentSummary(
+            return RebuiltSegmentSummary(
                 kind: draft.kind,
+                runNumber: draft.runNumber,
+                trailSequence: draft.trailSequence,
                 startedAt: draft.startedAt,
                 endedAt: draft.endedAt,
                 routeData: cleaned.routeData,
@@ -294,9 +230,85 @@ enum DiagnosticSummaryRebuilder {
                 verticalMeters: cleaned.vertical,
                 maximumSpeedMetersPerSecond: cleaned.maximumSpeed,
                 jumps: draft.jumps
-            ))
+            )
         }
+        guard !summaries.isEmpty else { return nil }
         return RebuiltDaySummary(dayID: dayID, segments: summaries)
+    }
+
+    static func rebuild(dayID: UUID, logURLs: [URL]) -> RebuiltDaySummary? {
+        let candidates = logURLs
+            .compactMap { rebuild(dayID: dayID, logURL: $0) }
+            .flatMap(\.segments)
+            .sorted { $0.startedAt < $1.startedAt }
+
+        var unique: [RebuiltSegmentSummary] = []
+        for candidate in candidates {
+            let isDuplicate = unique.contains { existing in
+                existing.kind == candidate.kind
+                    && abs(existing.startedAt.timeIntervalSince(candidate.startedAt)) < 3
+                    && abs(existing.endedAt.timeIntervalSince(candidate.endedAt)) < 3
+            }
+            if !isDuplicate {
+                unique.append(candidate)
+            }
+        }
+
+        guard !unique.isEmpty else { return nil }
+        var nextRunNumber = 1
+        let numbered = unique.map { segment -> RebuiltSegmentSummary in
+            guard segment.kind == .run else { return segment }
+            let runNumber = segment.runNumber ?? nextRunNumber
+            nextRunNumber = max(nextRunNumber + 1, runNumber + 1)
+            return RebuiltSegmentSummary(
+                kind: segment.kind,
+                runNumber: runNumber,
+                trailSequence: segment.trailSequence,
+                startedAt: segment.startedAt,
+                endedAt: segment.endedAt,
+                routeData: segment.routeData,
+                distanceMeters: segment.distanceMeters,
+                verticalMeters: segment.verticalMeters,
+                maximumSpeedMetersPerSecond: segment.maximumSpeedMetersPerSecond,
+                jumps: segment.jumps
+            )
+        }
+        return RebuiltDaySummary(dayID: dayID, segments: numbered)
+    }
+
+    static func logURLs(dayID: UUID, startedAt: Date, endedAt: Date) -> [URL] {
+        let expectedName = "Berms-\(dayID.uuidString).jsonl"
+        let range = startedAt.addingTimeInterval(-5)...endedAt.addingTimeInterval(5)
+        return allLogURLs()
+            .filter { url in
+                if url.lastPathComponent.caseInsensitiveCompare(expectedName) == .orderedSame {
+                    return true
+                }
+                guard let firstTimestamp = firstRecordTimestamp(in: url) else { return false }
+                return range.contains(firstTimestamp)
+            }
+            .sorted { firstRecordTimestamp(in: $0) ?? .distantPast
+                < firstRecordTimestamp(in: $1) ?? .distantPast }
+    }
+
+    private static func allLogURLs() -> [URL] {
+        (try? FileManager.default.contentsOfDirectory(
+            at: RideRecorder.diagnosticsDirectory,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ))?.filter { $0.pathExtension == "jsonl" } ?? []
+    }
+
+    private static func firstRecordTimestamp(in url: URL) -> Date? {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+        guard let data = try? handle.read(upToCount: 4096),
+              let firstLine = data.split(whereSeparator: { $0 == 0x0A || $0 == 0x0D }).first else {
+            return nil
+        }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try? decoder.decode(RawDiagnosticRecord.self, from: Data(firstLine)).timestamp
     }
 
     static func cleanedRoute(samples: [TrackSample],
@@ -329,7 +341,7 @@ enum DiagnosticSummaryRebuilder {
 @MainActor
 final class RideRecorder: ObservableObject {
     static let shared = RideRecorder()
-    private static let diagnosticSummaryVersion = "6"
+    private static let diagnosticSummaryVersion = "11"
     private static let diagnosticSummaryVersionKey = "berms.diagnosticSummaryVersion"
     private static let rawMotionLoggingKey = "berms.rawMotionLogging"
     private static let liveActivityMetricKey = "berms.liveActivityMetric"
@@ -417,6 +429,17 @@ final class RideRecorder: ObservableObject {
         let url = Self.debugLogURL(for: day.id)
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }
         return url
+    }
+
+    /// Every diagnostic log that overlaps the day. Stopping and restarting the
+    /// recorder during one riding day can leave the day's runs split across
+    /// several files, and only one of them carries the day's ID.
+    nonisolated static func diagnosticLogURLs(for dayID: UUID,
+                                              startedAt: Date,
+                                              endedAt: Date?) -> [URL] {
+        DiagnosticSummaryRebuilder.logURLs(dayID: dayID,
+                                           startedAt: startedAt,
+                                           endedAt: endedAt ?? startedAt)
     }
 
     var isRecording: Bool { activeDay != nil }
@@ -716,6 +739,8 @@ final class RideRecorder: ObservableObject {
         }
         if let event = detector.finish(), case .finished(let draft) = event {
             diagnosticLogger?.append(RawDiagnosticRecord(kind: "detector_finished", timestamp: draft.endedAt,
+                                                         runNumber: draft.kind == .run ? completedRunCount + 1 : nil,
+                                                         trailSequence: trailSequence(for: draft),
                                                          phaseBefore: draft.kind.rawValue, detail: reason))
             save(draft, to: day)
         }
@@ -749,31 +774,34 @@ final class RideRecorder: ObservableObject {
     @discardableResult
     func rebuildSummaryFromDiagnosticLog(for day: RideDay, from url: URL) -> Bool {
         guard day.isFinished,
-              let summary = DiagnosticSummaryRebuilder.rebuild(dayID: day.id, logURL: url) else {
+              let summary = DiagnosticSummaryRebuilder.rebuild(dayID: day.id, logURL: url),
+              reconcile(summary, to: day) else {
             return false
         }
-        apply(summary, to: day)
         return saveContext(detail: "diagnostic_summary_rebuild")
     }
 
-    private func apply(_ summary: RebuiltDaySummary, to day: RideDay) {
-        guard !summary.segments.isEmpty else { return }
-        for segment in day.segments {
-            context.delete(segment)
+    private func reconcile(_ summary: RebuiltDaySummary, to day: RideDay) -> Bool {
+        let existing = day.segments.sorted { $0.startedAt < $1.startedAt }
+        let rebuilt = summary.segments.sorted { $0.startedAt < $1.startedAt }
+        guard !rebuilt.isEmpty,
+              existing.count == rebuilt.count,
+              zip(existing, rebuilt).allSatisfy({ $0.kind == $1.kind }) else {
+            return false
         }
-        day.segments.removeAll()
-        for rebuilt in summary.segments {
-            let segment = RideSegment(kind: rebuilt.kind, startedAt: rebuilt.startedAt,
-                                      endedAt: rebuilt.endedAt, routeData: rebuilt.routeData,
-                                      jumps: rebuilt.jumps)
-            segment.distanceMeters = rebuilt.distanceMeters
-            segment.verticalMeters = rebuilt.verticalMeters
-            segment.maximumSpeedMetersPerSecond = rebuilt.maximumSpeedMetersPerSecond
-            segment.day = day
-            day.segments.append(segment)
-            context.insert(segment)
+
+        for (segment, replacement) in zip(existing, rebuilt) {
+            segment.startedAt = replacement.startedAt
+            segment.endedAt = replacement.endedAt
+            segment.routeData = replacement.routeData
+            segment.jumpData = try? JSONEncoder().encode(replacement.jumps)
+            segment.distanceMeters = replacement.distanceMeters
+            segment.verticalMeters = replacement.verticalMeters
+            segment.maximumSpeedMetersPerSecond = replacement.maximumSpeedMetersPerSecond
         }
+        day.segments = existing
         day.recalculateTotals()
+        return true
     }
 
     private struct SegmentRepairInput: Sendable {
@@ -782,9 +810,11 @@ final class RideRecorder: ObservableObject {
         let routeData: Data
     }
 
-    private struct PassRepairInput: Sendable {
+    private struct RepairDayInput: Sendable {
         let id: UUID
-        let routeData: Data
+        let startedAt: Date
+        let endedAt: Date
+        let segmentKinds: [SegmentKind]
     }
 
     private func startDiagnosticMigrationIfNeeded() {
@@ -792,18 +822,27 @@ final class RideRecorder: ObservableObject {
                 != Self.diagnosticSummaryVersion,
               migrationTask == nil else { return }
 
-        let dayIDs: [UUID]
+        let dayInputs: [RepairDayInput]
         let segmentInputs: [SegmentRepairInput]
-        let passInputs: [PassRepairInput]
+        let passInputs: [CatalogPassRepairInput]
         do {
-            dayIDs = try context.fetch(FetchDescriptor<RideDay>())
-                .filter(\.isFinished)
-                .map(\.id)
+            let days = try context.fetch(FetchDescriptor<RideDay>()).filter(\.isFinished)
+            dayInputs = days.map {
+                RepairDayInput(
+                    id: $0.id,
+                    startedAt: $0.startedAt,
+                    endedAt: $0.endedAt ?? $0.startedAt,
+                    segmentKinds: $0.segments.sorted { $0.startedAt < $1.startedAt }.map(\.kind)
+                )
+            }
             segmentInputs = try context.fetch(FetchDescriptor<RideSegment>()).map {
                 SegmentRepairInput(id: $0.id, kind: $0.kind, routeData: $0.routeData)
             }
-            passInputs = try context.fetch(FetchDescriptor<TrailPass>()).map {
-                PassRepairInput(id: $0.id, routeData: $0.routeData)
+            passInputs = try context.fetch(FetchDescriptor<TrailPass>()).compactMap { pass in
+                guard let trail = pass.trail else { return nil }
+                return CatalogPassRepairInput(id: pass.id, trailID: trail.id,
+                                       trailCreatedAt: trail.createdAt,
+                                       recordedAt: pass.recordedAt)
             }
         } catch {
             errorMessage = "Could not update saved session summaries. Please try again."
@@ -813,9 +852,22 @@ final class RideRecorder: ObservableObject {
         migrationTask = Task { [weak self] in
             let work = await Task.detached(priority: .utility) {
                 () -> ([RebuiltDaySummary], [RepairedRoute], [RepairedRoute]) in
-                let rebuiltDays = dayIDs.compactMap {
-                    DiagnosticSummaryRebuilder.rebuild(dayID: $0,
-                                                       logURL: RideRecorder.debugLogURL(for: $0))
+                let rebuiltDays = dayInputs.compactMap { input -> RebuiltDaySummary? in
+                    let logURLs = DiagnosticSummaryRebuilder.logURLs(
+                        dayID: input.id,
+                        startedAt: input.startedAt,
+                        endedAt: input.endedAt
+                    )
+                    guard let summary = DiagnosticSummaryRebuilder.rebuild(
+                        dayID: input.id,
+                        logURLs: logURLs
+                    ),
+                    summary.segments.count == input.segmentKinds.count,
+                    summary.segments.sorted(by: { $0.startedAt < $1.startedAt }).map(\.kind)
+                        == input.segmentKinds else {
+                        return nil
+                    }
+                    return summary
                 }
                 let repairedSegments = segmentInputs.compactMap { input -> RepairedRoute? in
                     guard let points = try? RouteCodec.decode(input.routeData),
@@ -829,18 +881,13 @@ final class RideRecorder: ObservableObject {
                                          verticalMeters: cleaned.vertical,
                                          maximumSpeedMetersPerSecond: cleaned.maximumSpeed)
                 }
-                let repairedPasses = passInputs.compactMap { input -> RepairedRoute? in
-                    guard let points = try? RouteCodec.decode(input.routeData),
-                          let cleaned = DiagnosticSummaryRebuilder.cleanedRoute(points: points,
-                                                                                 kind: .lift) else {
-                        return nil
-                    }
-                    return RepairedRoute(id: input.id,
-                                         routeData: cleaned.routeData,
-                                         distanceMeters: cleaned.distance,
-                                         verticalMeters: cleaned.vertical,
-                                         maximumSpeedMetersPerSecond: cleaned.maximumSpeed)
-                }
+                let catalogRoutePoints = TrailCatalogImporter.bundledRoutePoints(
+                    catalog: TrailCatalogRegistry.mountainCreek
+                )
+                let repairedPasses = CatalogPassRepair.repairs(
+                    inputs: passInputs,
+                    catalogRoutes: catalogRoutePoints
+                )
                 return (rebuiltDays, repairedSegments, repairedPasses)
             }.value
             guard let self else { return }
@@ -854,14 +901,6 @@ final class RideRecorder: ObservableObject {
                                           repairedSegments: [RepairedRoute],
                                           repairedPasses: [RepairedRoute]) {
         defer { migrationTask = nil }
-
-        if let days = try? context.fetch(FetchDescriptor<RideDay>()) {
-            let daysByID = Dictionary(days.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-            for summary in rebuiltDays {
-                guard let day = daysByID[summary.dayID] else { continue }
-                apply(summary, to: day)
-            }
-        }
 
         if let segments = try? context.fetch(FetchDescriptor<RideSegment>()) {
             let segmentsByID = Dictionary(segments.map { ($0.id, $0) },
@@ -885,15 +924,21 @@ final class RideRecorder: ObservableObject {
         }
 
         if let days = try? context.fetch(FetchDescriptor<RideDay>()) {
+            let daysByID = Dictionary(days.map { ($0.id, $0) },
+                                       uniquingKeysWith: { first, _ in first })
+            for summary in rebuiltDays {
+                guard let day = daysByID[summary.dayID] else { continue }
+                _ = reconcile(summary, to: day)
+            }
+        }
+
+        if let days = try? context.fetch(FetchDescriptor<RideDay>()) {
             for day in days where day.isFinished {
                 day.recalculateTotals()
                 for segment in day.segments where segment.kind == .lift {
                     learnLiftProfile(from: segment)
                 }
             }
-        }
-        if let trails = try? context.fetch(FetchDescriptor<Trail>()) {
-            trails.forEach { $0.recalculateAverage() }
         }
 
         guard saveContext(detail: "diagnostic_summary_migration") else { return }
@@ -1348,6 +1393,7 @@ final class RideRecorder: ObservableObject {
             activePoints = points
             diagnosticLogger?.append(RawDiagnosticRecord(kind: "detector_started",
                                                          timestamp: points.first?.timestamp ?? .now,
+                                                         runNumber: kind == .run ? completedRunCount + 1 : nil,
                                                          phaseAfter: kind.rawValue,
                                                          detail: kind.title))
             checkpointIfNeeded(at: points.last?.timestamp ?? .now, force: true)
@@ -1357,7 +1403,10 @@ final class RideRecorder: ObservableObject {
             for jumpEvent in jumpDetector.finish() {
                 handleJumpEvent(jumpEvent)
             }
+            let runNumber = draft.kind == .run ? completedRunCount + 1 : nil
             diagnosticLogger?.append(RawDiagnosticRecord(kind: "detector_finished", timestamp: draft.endedAt,
+                                                         runNumber: runNumber,
+                                                         trailSequence: trailSequence(for: draft),
                                                          phaseBefore: draft.kind.rawValue, detail: draft.kind.title))
             save(draft, to: day)
             updateTotals(for: day)
@@ -1469,6 +1518,26 @@ final class RideRecorder: ObservableObject {
             ))
             return false
         }
+    }
+
+    private func trailSequence(for draft: SegmentDraft) -> [String]? {
+        guard draft.kind == .run else { return nil }
+        guard let trails = try? context.fetch(FetchDescriptor<Trail>()), !trails.isEmpty else {
+            return nil
+        }
+        let candidates = trails.map {
+            TrailRouteCandidate(id: $0.id, name: $0.name, difficulty: $0.difficulty,
+                                routes: $0.matcherRoutes)
+        }
+        let route = RouteCleaner().clean(draft.points).map(\.routePoint)
+        let result = TrailRouteMatcher().matchResult(for: route, candidates: candidates)
+        var names: [String] = []
+        for name in result.sections.compactMap({ section in
+            candidates.first(where: { $0.id == section.trailID })?.name
+        }) where names.last != name {
+            names.append(name)
+        }
+        return names.isEmpty ? nil : names
     }
 
     private func updateTotals(for day: RideDay) {

@@ -335,7 +335,7 @@ enum TrailCatalogImporter {
         }
     }
 
-    static func stableID(for slug: String, catalog: TrailCatalogDescriptor) -> UUID {
+    nonisolated static func stableID(for slug: String, catalog: TrailCatalogDescriptor) -> UUID {
         var bytes = Array(SHA256.hash(data: Data("\(catalog.stableIDNamespace):\(slug)".utf8)).prefix(16))
         bytes[6] = (bytes[6] & 0x0F) | 0x50
         bytes[8] = (bytes[8] & 0x3F) | 0x80
@@ -345,6 +345,29 @@ enum TrailCatalogImporter {
             bytes[8], bytes[9], bytes[10], bytes[11],
             bytes[12], bytes[13], bytes[14], bytes[15]
         ))
+    }
+
+    /// Catalog centerlines keyed by the stable trail ID the importer assigns.
+    /// Used to restore catalog geometry that an older migration re-cleaned.
+    nonisolated static func bundledRoutePoints(
+        catalog: TrailCatalogDescriptor,
+        bundle: Bundle = .main
+    ) -> [UUID: [RoutePoint]] {
+        guard let url = bundle.url(forResource: catalog.bundledResourceName,
+                                   withExtension: "geojson"),
+              let data = try? Data(contentsOf: url),
+              let collection = try? JSONDecoder().decode(GeoJSONFeatureCollection.self, from: data) else {
+            return [:]
+        }
+        let reference = Date(timeIntervalSince1970: 0)
+        var routes: [UUID: [RoutePoint]] = [:]
+        for feature in collection.features {
+            guard let slug = feature.properties.slug?.trimmedNonEmpty,
+                  let points = feature.geometry.routePoints(referenceDate: reference),
+                  points.count >= 2 else { continue }
+            routes[stableID(for: slug, catalog: catalog)] = points
+        }
+        return routes
     }
 
     private static func versionKey(for catalog: TrailCatalogDescriptor) -> String {

@@ -1,3 +1,4 @@
+import Foundation
 import MapKit
 import SwiftData
 import SwiftUI
@@ -21,6 +22,9 @@ struct DayDetailView: View {
     @State private var notesSaveTask: Task<Void, Never>?
     @State private var saveErrorMessage: String?
     @State private var prepareFailed = false
+    @State private var diagnosticLogURLs: [URL] = []
+    @State private var exportedArchive: ExportArchive?
+    @State private var isExportingDay = false
 
     init(day: RideDay, onRunSelected: @escaping (RunMapDestination) -> Void = { _ in }) {
         self.day = day
@@ -109,11 +113,12 @@ struct DayDetailView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
-                    if let debugURL = RideRecorder.shared.debugLogURL(for: day) {
-                        ShareLink(item: debugURL) {
-                            Label("Export diagnostics", systemImage: "arrow.up.doc")
-                        }
+                    Button {
+                        exportDay()
+                    } label: {
+                        Label("Export day", systemImage: "square.and.arrow.up")
                     }
+                    .disabled(isExportingDay)
                     Button {
                         nameDraft = day.name ?? ""
                         showingNameEditor = true
@@ -161,6 +166,19 @@ struct DayDetailView: View {
         .onAppear {
             notesDraft = day.notes ?? ""
         }
+        .sheet(item: $exportedArchive) { archive in
+            ShareSheet(items: [archive.url])
+        }
+        .task(id: day.id) {
+            let dayID = day.id
+            let startedAt = day.startedAt
+            let endedAt = day.endedAt
+            diagnosticLogURLs = await Task.detached(priority: .utility) {
+                RideRecorder.diagnosticLogURLs(for: dayID,
+                                               startedAt: startedAt,
+                                               endedAt: endedAt)
+            }.value
+        }
         .task(id: preparationTaskKey) {
             await prepareDetails()
         }
@@ -194,6 +212,32 @@ struct DayDetailView: View {
         }
     }
 
+    private func exportDay() {
+        guard !isExportingDay else { return }
+        isExportingDay = true
+
+        let dayLogName = "Berms-\(day.id.uuidString).jsonl"
+        let rawFilename = diagnosticLogURLs.first {
+            $0.lastPathComponent.caseInsensitiveCompare(dayLogName) == .orderedSame
+        }?.lastPathComponent ?? diagnosticLogURLs.first?.lastPathComponent
+
+        let export = BermsDataExport(day: day, trails: trails, rawDiagnosticsFilename: rawFilename)
+        let logURLs = diagnosticLogURLs
+
+        Task {
+            do {
+                let archive = try await Task.detached(priority: .userInitiated) {
+                    try DayArchive.build(export: export, logURLs: logURLs)
+                }.value
+                exportedArchive = ExportArchive(url: archive)
+                saveErrorMessage = nil
+            } catch {
+                saveErrorMessage = "The day export could not be created. \(error.localizedDescription)"
+            }
+            isExportingDay = false
+        }
+    }
+
     private func saveName() {
         day.setName(nameDraft)
         do {
@@ -205,11 +249,11 @@ struct DayDetailView: View {
     }
 
     private func deleteDay() {
-        let diagnosticURL = RideRecorder.debugLogURL(for: day.id)
+        let logURLs = diagnosticLogURLs
         modelContext.delete(day)
         do {
             try modelContext.save()
-            try? FileManager.default.removeItem(at: diagnosticURL)
+            logURLs.forEach { try? FileManager.default.removeItem(at: $0) }
             dismiss()
         } catch {
             modelContext.rollback()
@@ -342,4 +386,82 @@ struct DayDetailView: View {
         }
     }
 
+}
+
+struct ExportArchive: Identifiable {
+    let id = UUID()
+    let url: URL
+}
+
+struct ShareSheet: UIViewControllerRepresentable {
+    let items: [Any]
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
+}
+
+enum DayArchiveError: LocalizedError {
+    case zipFailed(Error)
+
+    var errorDescription: String? {
+        switch self {
+        case .zipFailed(let error): "Couldn't build the zip: \(error.localizedDescription)"
+        }
+    }
+}
+
+/// One shareable zip holding the parsed day and every raw log behind it.
+enum DayArchive {
+    static func build(export: BermsDataExport, logURLs: [URL]) throws -> URL {
+        let fileManager = FileManager.default
+        let folder = fileManager.temporaryDirectory
+            .appendingPathComponent("Berms-export-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? fileManager.removeItem(at: folder) }
+
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let json = try encoder.encode(export)
+        try json.write(to: folder.appendingPathComponent("Berms-\(export.parsed.dayID)-data.json"),
+                       options: .atomic)
+
+        for log in logURLs {
+            try? fileManager.copyItem(at: log, to: folder.appendingPathComponent(log.lastPathComponent))
+        }
+
+        let destination = fileManager.temporaryDirectory
+            .appendingPathComponent(archiveName(for: export) + ".zip")
+        try? fileManager.removeItem(at: destination)
+        try zip(folder, to: destination)
+        return destination
+    }
+
+    private static func archiveName(for export: BermsDataExport) -> String {
+        let date = export.days.first?.startedAt ?? export.exportedAt
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return "Berms-\(formatter.string(from: date))"
+    }
+
+    private static func zip(_ folder: URL, to destination: URL) throws {
+        let fileManager = FileManager.default
+        var coordinatorError: NSError?
+        var copyError: Error?
+        NSFileCoordinator().coordinate(readingItemAt: folder,
+                                       options: .forUploading,
+                                       error: &coordinatorError) { archiveURL in
+            do {
+                try fileManager.copyItem(at: archiveURL, to: destination)
+            } catch {
+                copyError = error
+            }
+        }
+        if let coordinatorError { throw DayArchiveError.zipFailed(coordinatorError) }
+        if let copyError { throw DayArchiveError.zipFailed(copyError) }
+    }
 }

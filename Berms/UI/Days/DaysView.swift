@@ -87,11 +87,13 @@ struct DaysView: View {
     }
 
     private func deleteDay(_ day: RideDay) {
-        let diagnosticURL = RideRecorder.debugLogURL(for: day.id)
+        let logURLs = RideRecorder.diagnosticLogURLs(for: day.id,
+                                                     startedAt: day.startedAt,
+                                                     endedAt: day.endedAt)
         modelContext.delete(day)
         do {
             try modelContext.save()
-            try? FileManager.default.removeItem(at: diagnosticURL)
+            logURLs.forEach { try? FileManager.default.removeItem(at: $0) }
         } catch {
             modelContext.rollback()
             deleteError = "The day could not be deleted. \(error.localizedDescription)"

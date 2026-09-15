@@ -913,6 +913,120 @@ final class BermsTests: XCTestCase {
         XCTAssertEqual(sections.map(\.trailID), [riddenTrail.id])
     }
 
+    func testTrailMatcherIgnoresAShortTrailTheRiderOnlyPassedNear() {
+        let base = Date(timeIntervalSince1970: 1_440)
+        let route = (0...20).map { index in
+            RoutePoint(latitude: 40 + Double(index) * 0.0001, longitude: -105,
+                       altitude: 100 - Double(index), speed: 8,
+                       timestamp: base.addingTimeInterval(Double(index)))
+        }
+        let riddenTrail = Trail(name: "Ridden", difficulty: .blue, resort: "Test")
+        let riddenPass = TrailPass(routePoints: route)
+        riddenPass.trail = riddenTrail
+        riddenTrail.passes.append(riddenPass)
+
+        // A 60 m connector runs parallel 25 m away. It covers ride-length
+        // progress, so it scores well without ever being ridden.
+        let connectorRoute = (0...6).map { index in
+            RoutePoint(latitude: 40.0006 + Double(index) * 0.0001, longitude: -105.0003,
+                       altitude: 100, speed: 0, timestamp: base.addingTimeInterval(Double(index)))
+        }
+        let connectorTrail = Trail(name: "Connector", difficulty: .doubleBlack, resort: "Test")
+        let connectorPass = TrailPass(routePoints: connectorRoute)
+        connectorPass.trail = connectorTrail
+        connectorTrail.passes.append(connectorPass)
+
+        let sections = TrailRouteMatcher().matchingSections(for: route,
+                                                             trails: [riddenTrail, connectorTrail])
+
+        XCTAssertEqual(sections.map(\.trailID), [riddenTrail.id])
+    }
+
+    func testTrailMatcherRejectsAParallelTieBetweenTwoTrails() {
+        let base = Date(timeIntervalSince1970: 1_460)
+        func points(startLatitude: Double) -> [RoutePoint] {
+            (0...15).map { index in
+                RoutePoint(latitude: startLatitude,
+                           longitude: -105 + Double(index) * 0.0001,
+                           altitude: 100 - Double(index), speed: 8,
+                           timestamp: base.addingTimeInterval(Double(index)))
+            }
+        }
+
+        // The rider runs between two centerlines, both about 18 m away.
+        let route = points(startLatitude: 40.0005)
+        let north = Trail(name: "North", difficulty: .blue, resort: "Test")
+        let northPass = TrailPass(routePoints: points(startLatitude: 40.00066))
+        northPass.trail = north
+        north.passes.append(northPass)
+
+        let south = Trail(name: "South", difficulty: .black, resort: "Test")
+        let southPass = TrailPass(routePoints: points(startLatitude: 40.00034))
+        southPass.trail = south
+        south.passes.append(southPass)
+
+        let sections = TrailRouteMatcher().matchingSections(for: route, trails: [north, south])
+
+        XCTAssertTrue(sections.isEmpty)
+    }
+
+    func testCatalogPassRepairRestoresBundledCenterline() throws {
+        let catalog = TrailCatalogRegistry.mountainCreek
+        let routes = TrailCatalogImporter.bundledRoutePoints(catalog: catalog)
+        let salvationID = TrailCatalogImporter.stableID(for: "salvation-u41zh8", catalog: catalog)
+        let geometry = try XCTUnwrap(routes[salvationID])
+        let createdAt = Date(timeIntervalSince1970: 3_000)
+
+        // The ride cleaner treats zero-speed centerline points as a dwell and
+        // collapses them into straight chords; this is the v10 damage.
+        let thinned = RouteCleaner().clean(geometry)
+        XCTAssertLessThan(thinned.count, geometry.count)
+
+        let repairs = CatalogPassRepair.repairs(
+            inputs: [CatalogPassRepairInput(id: UUID(), trailID: salvationID,
+                                            trailCreatedAt: createdAt,
+                                            recordedAt: createdAt.addingTimeInterval(5))],
+            catalogRoutes: routes
+        )
+        let repaired = try XCTUnwrap(repairs.first)
+        XCTAssertEqual(try RouteCodec.decode(repaired.routeData), geometry)
+    }
+
+    func testCatalogPassRepairRestoresAThinnedCenterline() throws {
+        let trailID = UUID()
+        let createdAt = Date(timeIntervalSince1970: 2_000)
+        let catalogRoute = (0...20).map { index in
+            RoutePoint(latitude: 40 + Double(index) * 0.0001, longitude: -105,
+                       altitude: 100, speed: 0,
+                       timestamp: createdAt.addingTimeInterval(Double(index)))
+        }
+        // What the ride cleaner leaves behind: only the far endpoints.
+        let thinned = [catalogRoute[0], catalogRoute[20]]
+        let passID = UUID()
+
+        let repairs = CatalogPassRepair.repairs(
+            inputs: [CatalogPassRepairInput(id: passID, trailID: trailID,
+                                            trailCreatedAt: createdAt,
+                                            recordedAt: createdAt.addingTimeInterval(5))],
+            catalogRoutes: [trailID: catalogRoute]
+        )
+
+        XCTAssertEqual(repairs.count, 1)
+        let repaired = try XCTUnwrap(repairs.first)
+        XCTAssertEqual(try RouteCodec.decode(repaired.routeData), catalogRoute)
+        XCTAssertEqual(repaired.distanceMeters,
+                       RouteMetrics.distance(of: catalogRoute), accuracy: 0.001)
+
+        // A pass recorded long after the trail was created is a rider pass.
+        let riderPass = CatalogPassRepair.repairs(
+            inputs: [CatalogPassRepairInput(id: UUID(), trailID: trailID,
+                                            trailCreatedAt: createdAt,
+                                            recordedAt: createdAt.addingTimeInterval(86_400))],
+            catalogRoutes: [trailID: catalogRoute]
+        )
+        XCTAssertTrue(riderPass.isEmpty)
+    }
+
     func testRouteCodecRoundTripsPoints() throws {
         let points = [
             RoutePoint(latitude: 40.0, longitude: -105.0, altitude: 2_000, speed: 5, timestamp: Date(timeIntervalSince1970: 1_000)),
@@ -1630,8 +1744,10 @@ final class BermsTests: XCTestCase {
         let savedSegment = try XCTUnwrap(context.fetch(FetchDescriptor<RideSegment>()).first)
         XCTAssertLessThan(savedSegment.points.count, route.count)
         XCTAssertGreaterThan(savedSegment.distanceMeters, 0)
+        // Trail passes hold centerlines; the migration must not re-clean them
+        // with the ride cleaner and collapse them into straight chords.
         let savedPass = try XCTUnwrap(context.fetch(FetchDescriptor<TrailPass>()).first)
-        XCTAssertLessThan(savedPass.points.count, route.count)
+        XCTAssertEqual(savedPass.points.count, route.count)
         XCTAssertGreaterThan(savedPass.distanceMeters, 0)
     }
 
@@ -1841,10 +1957,15 @@ final class BermsTests: XCTestCase {
         day.endedAt = base.addingTimeInterval(60)
         let oldSegment = RideSegment(kind: .lift, startedAt: base, endedAt: base.addingTimeInterval(20),
                                      routeData: Data([1, 2, 3]))
+        let oldRun = RideSegment(kind: .run, startedAt: base.addingTimeInterval(20),
+                                 endedAt: base.addingTimeInterval(60), routeData: Data([1, 2, 3]))
         oldSegment.day = day
+        oldRun.day = day
         day.segments.append(oldSegment)
+        day.segments.append(oldRun)
         context.insert(day)
         context.insert(oldSegment)
+        context.insert(oldRun)
         try context.save()
 
         var records = [RawDiagnosticRecord(kind: "session_started", timestamp: base, monotonicSeconds: 0)]
@@ -1907,6 +2028,92 @@ final class BermsTests: XCTestCase {
         XCTAssertEqual(DiagnosticLogReplayer.sensitivity(from: "sensitivity=low"), .low)
         XCTAssertNil(DiagnosticLogReplayer.sensitivity(from: nil))
         XCTAssertNil(DiagnosticLogReplayer.sensitivity(from: "no hint here"))
+    }
+
+    func testBermsDataExportCarriesParsedRunNumbers() throws {
+        let base = Date(timeIntervalSince1970: 10_000)
+        let route = [
+            RoutePoint(latitude: 40, longitude: -105, altitude: 100, speed: 5,
+                       timestamp: base),
+            RoutePoint(latitude: 40.001, longitude: -105, altitude: 90, speed: 8,
+                       timestamp: base.addingTimeInterval(10))
+        ]
+        let routeData = try RouteCodec.encode(route)
+        let day = RideDay(startedAt: base)
+        let firstRun = RideSegment(kind: .run, startedAt: base,
+                                   endedAt: base.addingTimeInterval(10), routeData: routeData)
+        let lift = RideSegment(kind: .lift, startedAt: base.addingTimeInterval(20),
+                               endedAt: base.addingTimeInterval(30), routeData: routeData)
+        let secondRun = RideSegment(kind: .run, startedAt: base.addingTimeInterval(40),
+                                    endedAt: base.addingTimeInterval(50), routeData: routeData)
+        day.segments = [firstRun, lift, secondRun]
+
+        let export = BermsDataExport(day: day, exportedAt: base,
+                                     rawDiagnosticsFilename: "Berms-day.jsonl")
+        XCTAssertEqual(export.version, 3)
+        XCTAssertEqual(export.days[0].segments.compactMap(\.runNumber), [1, 2])
+        XCTAssertEqual(export.parsed.runCount, 2)
+        XCTAssertEqual(export.parsed.runs.map(\.number), [1, 2])
+        XCTAssertEqual(export.rawDiagnostics?.filename, "Berms-day.jsonl")
+
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let data = try encoder.encode(export)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let decoded = try decoder.decode(BermsDataExport.self, from: data)
+        XCTAssertEqual(decoded.parsed.runs.map(\.segmentID), export.parsed.runs.map(\.segmentID))
+    }
+
+    func testDiagnosticSummaryRebuildCombinesLogsInChronologicalOrder() throws {
+        let dayID = UUID()
+        let base = Date(timeIntervalSince1970: 11_000)
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+
+        func writeLog(start: Date) throws -> URL {
+            let records = [
+                RawDiagnosticRecord(kind: "session_started", timestamp: start, monotonicSeconds: 0),
+                RawDiagnosticRecord(kind: "detector_started", timestamp: start.addingTimeInterval(1),
+                                    monotonicSeconds: 1, phaseAfter: "run", detail: "Run"),
+                RawDiagnosticRecord(kind: "detector_input", timestamp: start.addingTimeInterval(1),
+                                    monotonicSeconds: 1, latitude: 40, longitude: -105,
+                                    fusedAltitude: 100, trackMonotonicSeconds: 1, speed: 5,
+                                    horizontalAccuracy: 5, accepted: true),
+                RawDiagnosticRecord(kind: "detector_input", timestamp: start.addingTimeInterval(2),
+                                    monotonicSeconds: 2, latitude: 40.001, longitude: -105,
+                                    fusedAltitude: 90, trackMonotonicSeconds: 2, speed: 5,
+                                    horizontalAccuracy: 5, accepted: true),
+                RawDiagnosticRecord(kind: "detector_finished", timestamp: start.addingTimeInterval(3),
+                                    monotonicSeconds: 3, phaseBefore: "run", detail: "Run"),
+                RawDiagnosticRecord(kind: "session_stopped", timestamp: start.addingTimeInterval(4),
+                                    monotonicSeconds: 4)
+            ]
+            var data = Data()
+            for record in records {
+                data.append(try encoder.encode(record))
+                data.append(0x0A)
+            }
+            let url = FileManager.default.temporaryDirectory
+                .appendingPathComponent("berms-rebuild-\(UUID().uuidString).jsonl")
+            try data.write(to: url)
+            return url
+        }
+
+        let firstURL = try writeLog(start: base)
+        let secondURL = try writeLog(start: base.addingTimeInterval(20))
+        defer {
+            try? FileManager.default.removeItem(at: firstURL)
+            try? FileManager.default.removeItem(at: secondURL)
+        }
+
+        let summary = try XCTUnwrap(
+            DiagnosticSummaryRebuilder.rebuild(dayID: dayID, logURLs: [secondURL, firstURL])
+        )
+        XCTAssertEqual(summary.segments.filter { $0.kind == .run }.count, 2)
+        XCTAssertEqual(summary.segments.compactMap(\.runNumber), [1, 2])
+        XCTAssertEqual(summary.segments.map(\.startedAt), [base.addingTimeInterval(1),
+                                                            base.addingTimeInterval(21)])
     }
 
     func testLearnedEndpointBufferedPointsReturnToRoute() {
