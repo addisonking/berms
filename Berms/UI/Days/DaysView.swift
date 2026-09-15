@@ -13,6 +13,8 @@ struct DaysView: View {
     @State private var deleteError: String?
     @State private var dayToDelete: RideDay?
     @State private var navigationPath = NavigationPath()
+    @State private var selectedDate = Date()
+    @State private var didApplyDefaultSelection = false
 
     init(pendingDayID: Binding<UUID?> = .constant(nil),
          onStartTracking: @escaping () -> Void = {}) {
@@ -27,11 +29,18 @@ struct DaysView: View {
                 if finishedDays.isEmpty {
                     emptyDaysView
                 } else {
-                    daysList
+                    calendarContent
                 }
             }
             .navigationTitle("Days")
             .navigationBarTitleDisplayMode(.large)
+            .toolbar {
+                if showsTodayButton {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Today") { selectedDate = .now }
+                    }
+                }
+            }
             .navigationDestination(for: UUID.self) { dayID in
                 if let day = days.first(where: { $0.id == dayID }) {
                     DayDetailView(day: day) { destination in
@@ -58,9 +67,13 @@ struct DaysView: View {
                                preparedTrailDetails: preheatedRun?.trailDetails)
                 }
             }
-            .onAppear { openPendingDayIfNeeded() }
+            .onAppear {
+                applyDefaultSelectionIfNeeded()
+                openPendingDayIfNeeded()
+            }
             .onChange(of: pendingDayID) { _, _ in openPendingDayIfNeeded() }
             .onChange(of: finishedDays.map(\.id)) { _, _ in
+                applyDefaultSelectionIfNeeded()
                 openPendingDayIfNeeded()
             }
         }
@@ -160,17 +173,78 @@ struct DaysView: View {
         }
     }
 
-    private var daysList: some View {
+    private var calendarContent: some View {
         List {
-            ForEach(finishedDays) { day in
-                NavigationLink(value: day.id) {
-                    DayRow(day: day)
+            Section {
+                MonthCalendarView(recordedDays: recordedDayKeys,
+                                  selectedDate: $selectedDate,
+                                  onVisibleMonthChange: handleVisibleMonthChange)
+                    .listRowInsets(EdgeInsets())
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+            }
+            Section {
+                if selectedDaySessions.isEmpty {
+                    Text("No sessions on this day.")
+                        .font(.subheadline)
+                        .foregroundStyle(Color.bermsMuted)
+                        .listRowSeparator(.hidden)
+                } else {
+                    ForEach(selectedDaySessions) { day in
+                        NavigationLink(value: day.id) {
+                            DayRow(day: day)
+                        }
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            dayDeleteAction(for: day)
+                        }
+                    }
                 }
-                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                    dayDeleteAction(for: day)
-                }
+            } header: {
+                Text(selectedDate.formatted(date: .complete, time: .omitted))
+                    .textCase(nil)
             }
         }
+        .listSectionSpacing(.compact)
+    }
+
+    private var showsTodayButton: Bool {
+        !Calendar.current.isDate(selectedDate, equalTo: .now, toGranularity: .month)
+    }
+
+    /// Keep the agenda in step with the month on screen: paging away from the
+    /// selected day moves the selection into the month being viewed.
+    private func handleVisibleMonthChange(_ components: DateComponents) {
+        let calendar = Calendar.current
+        guard let month = calendar.date(from: components),
+              !calendar.isDate(selectedDate, equalTo: month, toGranularity: .month) else { return }
+        if let latestInMonth = finishedDays.first(where: {
+            calendar.isDate($0.startedAt, equalTo: month, toGranularity: .month)
+        }) {
+            selectedDate = latestInMonth.startedAt
+        } else if let firstOfMonth = calendar.date(from: calendar.dateComponents([.year, .month],
+                                                                                 from: month)) {
+            selectedDate = firstOfMonth
+        }
+    }
+
+    private var recordedDayKeys: Set<MonthCalendarView.DayKey> {
+        Set(finishedDays.map { MonthCalendarView.DayKey(date: $0.startedAt) })
+    }
+
+    private var selectedDaySessions: [RideDay] {
+        finishedDays
+            .filter { Calendar.current.isDate($0.startedAt, inSameDayAs: selectedDate) }
+            .sorted { $0.startedAt < $1.startedAt }
+    }
+
+    /// Sessions are sparse, so open the month and day of the most recent ride
+    /// instead of landing on an empty today.
+    private func applyDefaultSelectionIfNeeded() {
+        guard !didApplyDefaultSelection, !finishedDays.isEmpty else { return }
+        didApplyDefaultSelection = true
+        guard !finishedDays.contains(where: { Calendar.current.isDateInToday($0.startedAt) }),
+              let mostRecent = finishedDays.first else { return }
+        selectedDate = mostRecent.startedAt
     }
 
     @ViewBuilder
@@ -187,7 +261,8 @@ struct DaysView: View {
 
     private func openPendingDayIfNeeded() {
         guard let pendingDayID,
-              finishedDays.contains(where: { $0.id == pendingDayID }) else { return }
+              let day = finishedDays.first(where: { $0.id == pendingDayID }) else { return }
+        selectedDate = day.startedAt
         navigationPath = NavigationPath([pendingDayID])
         self.pendingDayID = nil
     }

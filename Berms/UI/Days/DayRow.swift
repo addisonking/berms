@@ -9,7 +9,7 @@ struct DayRow: View {
     var body: some View {
         AdaptiveStatRow {
             VStack(alignment: .leading, spacing: 5) {
-                Text(day.displayName)
+                Text(title)
                     .font(.headline)
                     .fixedSize(horizontal: false, vertical: true)
                 Text(metadata)
@@ -29,9 +29,19 @@ struct DayRow: View {
         .accessibilityElement(children: .combine)
     }
 
+    /// The calendar already names the day, so unnamed sessions lead with their
+    /// start time.
+    private var title: String {
+        day.hasCustomName ? day.displayName : time
+    }
+
     private var metadata: String {
         let stats = "\(day.segments.filter { $0.kind == .run }.count) runs  ·  \(BermsFormat.distance(day.distanceMeters))"
         guard day.hasCustomName else { return stats }
-        return "\(day.startedAt.formatted(date: .abbreviated, time: .shortened))  ·  \(stats)"
+        return "\(time)  ·  \(stats)"
+    }
+
+    private var time: String {
+        day.startedAt.formatted(date: .omitted, time: .shortened)
     }
 }
