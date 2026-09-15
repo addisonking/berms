@@ -2,6 +2,14 @@ import Combine
 @preconcurrency import CoreLocation
 @preconcurrency import CoreMotion
 import Foundation
+import UIKit
+
+enum BackgroundLocationAccess {
+    /// An active Live Activity keeps background location updates running.
+    case liveActivity
+    /// No Live Activity is running, so ask Core Location for a background activity session.
+    case activitySession
+}
 
 @MainActor
 final class LocationService: NSObject, ObservableObject, @preconcurrency CLLocationManagerDelegate {
@@ -13,6 +21,7 @@ final class LocationService: NSObject, ObservableObject, @preconcurrency CLLocat
     private var updatesTask: Task<Void, Never>?
     private var backgroundSession: CLBackgroundActivitySession?
     private var serviceSession: CLServiceSession?
+    private var backgroundAccess: BackgroundLocationAccess = .activitySession
     private var handler: ((CLLocation, Bool) -> Void)?
     private var didRequestAlwaysUpgrade = false
     private var updateGeneration = 0
@@ -31,9 +40,13 @@ final class LocationService: NSObject, ObservableObject, @preconcurrency CLLocat
         authorizationStatus = manager.authorizationStatus
     }
 
-    func start(handler: @escaping (CLLocation, Bool) -> Void) {
+    func start(
+        backgroundAccess: BackgroundLocationAccess = .activitySession,
+        handler: @escaping (CLLocation, Bool) -> Void
+    ) {
         guard !isRunning else { return }
         self.handler = handler
+        self.backgroundAccess = backgroundAccess
         authorizationStatus = manager.authorizationStatus
 
         switch authorizationStatus {
@@ -88,10 +101,30 @@ final class LocationService: NSObject, ObservableObject, @preconcurrency CLLocat
 
         manager.allowsBackgroundLocationUpdates = true
         manager.showsBackgroundLocationIndicator = true
+        startSessionsIfNeeded()
+        startStream()
+    }
+
+    /// Creates the Core Location sessions for this recording.
+    ///
+    /// Only ever creates them while the app is in the foreground. Creating a
+    /// background activity session during a background launch leaves a stuck
+    /// Dynamic Island location indicator on some iPhones after the sessions are
+    /// invalidated, and only a device restart clears it. The recording Live
+    /// Activity already keeps background updates running, so the background
+    /// activity session is only a fallback for when no Live Activity exists.
+    private func startSessionsIfNeeded() {
+        guard serviceSession == nil, backgroundSession == nil else { return }
+        guard UIApplication.shared.applicationState == .active else { return }
         let authorization: CLServiceSession.AuthorizationRequirement =
             authorizationStatus == .authorizedAlways ? .always : .whenInUse
         serviceSession = CLServiceSession(authorization: authorization)
-        backgroundSession = CLBackgroundActivitySession()
+        if backgroundAccess == .activitySession {
+            backgroundSession = CLBackgroundActivitySession()
+        }
+    }
+
+    private func startStream() {
         isRunning = true
         let generation = updateGeneration
 
@@ -118,10 +151,15 @@ final class LocationService: NSObject, ObservableObject, @preconcurrency CLLocat
                 guard self.isRunning, self.handler != nil,
                     self.updateGeneration == generation
                 else { return }
-                self.stopUpdates()
-                self.beginUpdates()
+                self.restartStream()
             }
         }
+    }
+
+    private func restartStream() {
+        updateGeneration &+= 1
+        stopStream()
+        startStream()
     }
 
     private func restartUpdatesIfNeeded() {
@@ -129,21 +167,25 @@ final class LocationService: NSObject, ObservableObject, @preconcurrency CLLocat
             beginUpdates()
             return
         }
-        updateGeneration &+= 1
-        stopUpdates()
-        beginUpdates()
+        // Keep the existing sessions; recreating them is what strands the
+        // background location indicator.
+        restartStream()
+    }
+
+    private func stopStream() {
+        updatesTask?.cancel()
+        updatesTask = nil
+        isRunning = false
     }
 
     private func stopUpdates() {
-        updatesTask?.cancel()
-        updatesTask = nil
+        stopStream()
         backgroundSession?.invalidate()
         serviceSession?.invalidate()
         backgroundSession = nil
         serviceSession = nil
         manager.allowsBackgroundLocationUpdates = false
         manager.showsBackgroundLocationIndicator = false
-        isRunning = false
     }
 }
 
