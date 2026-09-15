@@ -137,6 +137,7 @@ struct TrackView: View {
     private var recordingContent: some View {
         GeometryReader { geometry in
             let panelHeight = min(liveStatsHeight, max(0, geometry.size.height * 0.65))
+            let statusAreaHeight = max(0, geometry.size.height - panelHeight - BermsSpacing.content)
             ZStack(alignment: .bottom) {
                 // MapKit keeps rendering offscreen while the app records in the
                 // background, which balloons memory until iOS jetsams the app.
@@ -157,9 +158,10 @@ struct TrackView: View {
                                     .buttonStyle(.bordered)
                             }
                         }
+                        .frame(maxWidth: .infinity, minHeight: statusAreaHeight)
                     }
                     .scrollBounceBehavior(.basedOnSize)
-                    .frame(height: max(0, geometry.size.height - panelHeight - BermsSpacing.content))
+                    .frame(height: statusAreaHeight)
                     .frame(maxHeight: .infinity, alignment: .top)
                 } else {
                     liveMap
