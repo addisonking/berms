@@ -25,6 +25,7 @@ struct DayDetailView: View {
     @State private var diagnosticLogURLs: [URL] = []
     @State private var exportedArchive: ExportArchive?
     @State private var isExportingDay = false
+    @State private var showingShareCard = false
 
     init(day: RideDay, onRunSelected: @escaping (RunMapDestination) -> Void = { _ in }) {
         self.day = day
@@ -114,6 +115,11 @@ struct DayDetailView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     Button {
+                        showingShareCard = true
+                    } label: {
+                        Label("Share image", systemImage: "photo.on.rectangle.angled")
+                    }
+                    Button {
                         exportDay()
                     } label: {
                         Label("Export day", systemImage: "square.and.arrow.up")
@@ -168,6 +174,12 @@ struct DayDetailView: View {
         }
         .sheet(item: $exportedArchive) { archive in
             ShareSheet(items: [archive.url])
+        }
+        .sheet(isPresented: $showingShareCard) {
+            ShareCardSheet(day: day,
+                           base: detailBase,
+                           trailDetails: trailDetails,
+                           manualCatalogID: trailCatalogSelection.manualCatalogID)
         }
         .task(id: day.id) {
             let dayID = day.id

@@ -35,6 +35,8 @@
 	<string>Berms uses your location to record runs and lifts while the app is open.</string>
 	<key>NSMotionUsageDescription</key>
 	<string>Berms uses motion and barometer data to distinguish runs, lifts, and jumps.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Berms saves your ride share image to Photos when you choose Save to Photos.</string>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
 	<key>UIBackgroundModes</key>
