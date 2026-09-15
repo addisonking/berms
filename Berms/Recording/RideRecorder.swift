@@ -478,8 +478,8 @@ final class RideRecorder: ObservableObject {
             descentMeters: liveDescent,
             speedMetersPerSecond: currentSpeed,
             run: currentRunMetrics,
-            activityModeRawValue: day.activityMode.rawValue,
-            updatedAt: .now
+            updatedAt: .now,
+            activityModeRawValue: day.activityMode.rawValue
         )
     }
 
@@ -647,8 +647,8 @@ final class RideRecorder: ObservableObject {
             BermsLiveActivityCoordinator.shared.start(
                 rideID: day.id,
                 startedAt: day.startedAt,
-                activityModeRawValue: day.activityMode.rawValue,
-                metric: liveActivityMetric
+                metric: liveActivityMetric,
+                activityModeRawValue: day.activityMode.rawValue
             )
             startSensors()
             updateLiveActivity(force: true)
@@ -1080,8 +1080,8 @@ final class RideRecorder: ObservableObject {
         BermsLiveActivityCoordinator.shared.start(
             rideID: day.id,
             startedAt: day.startedAt,
-            activityModeRawValue: day.activityMode.rawValue,
-            metric: liveActivityMetric
+            metric: liveActivityMetric,
+            activityModeRawValue: day.activityMode.rawValue
         )
         if day.isPaused {
             resetTrackingState(clearLastSample: true)

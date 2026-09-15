@@ -149,7 +149,7 @@ final class TrailCatalogSelection: ObservableObject {
     }
 
     func trails(_ trails: [Trail], near coordinate: Coordinate? = nil) -> [Trail] {
-        trails(trails, mode: .bikePark, near: coordinate)
+        self.trails(trails, mode: .bikePark, near: coordinate)
     }
 
     func trails(_ trails: [Trail], mode: ActivityMode,
@@ -162,7 +162,7 @@ final class TrailCatalogSelection: ObservableObject {
 @MainActor
 enum TrailCatalogImporter {
     // Compatibility constants for code that used the original importer API.
-    static let mountainCreekResourceName = TrailCatalogRegistry.mountainCreek.bundledResourceName
+    static let mountainCreekResourceName = TrailCatalogRegistry.mountainCreek.bundledResourceName!
     static let mountainCreekImportVersion = TrailCatalogRegistry.mountainCreek.importVersion
 
     private static let versionKeyPrefix = "berms.trailCatalogImport"
