@@ -147,7 +147,8 @@ final class RideDay {
 
     func duration(at date: Date) -> TimeInterval {
         let end = endedAt ?? date
-        let paused = (accumulatedPausedSeconds ?? 0)
+        let paused =
+            (accumulatedPausedSeconds ?? 0)
             + (pausedAt.map { max(0, end.timeIntervalSince($0)) } ?? 0)
         return max(0, end.timeIntervalSince(startedAt) - paused)
     }
@@ -317,32 +318,38 @@ struct BermsDataExport: Codable, Sendable {
         let format: String
     }
 
-    init(day: RideDay, trails: [Trail] = [], exportedAt: Date = .now,
-         rawDiagnosticsFilename: String? = nil) {
+    init(
+        day: RideDay, trails: [Trail] = [], exportedAt: Date = .now,
+        rawDiagnosticsFilename: String? = nil
+    ) {
         var nextRunNumber = 0
         let catalogTrails: [Trail]
         if let catalogID = day.catalogID,
-           let catalog = TrailCatalogRegistry.catalog(withID: catalogID) {
+            let catalog = TrailCatalogRegistry.catalog(withID: catalogID)
+        {
             catalogTrails = TrailCatalogRegistry.trails(trails, for: catalog)
         } else {
             catalogTrails = trails
         }
-        let trailNamesByID = Dictionary(catalogTrails.map { ($0.id, $0.name) },
-                                        uniquingKeysWith: { first, _ in first })
+        let trailNamesByID = Dictionary(
+            catalogTrails.map { ($0.id, $0.name) },
+            uniquingKeysWith: { first, _ in first })
         let trailCandidates = catalogTrails.map {
-            TrailRouteCandidate(id: $0.id, name: $0.name, difficulty: $0.difficulty,
-                                routes: $0.matcherRoutes)
+            TrailRouteCandidate(
+                id: $0.id, name: $0.name, difficulty: $0.difficulty,
+                routes: $0.matcherRoutes)
         }
         let matcher = TrailRouteMatcher()
 
         func trailSequence(for segment: RideSegment) -> [String] {
             guard segment.kind == .run, segment.points.count >= 2,
-                  !trailCandidates.isEmpty else { return [] }
+                !trailCandidates.isEmpty
+            else { return [] }
             let route = RouteCleaner().clean(segment.points)
             let sections = matcher.matchResult(for: route, candidates: trailCandidates).sections
             var result: [String] = []
             for name in sections.compactMap({ trailNamesByID[$0.trailID] })
-                where result.last != name {
+            where result.last != name {
                 result.append(name)
             }
             return result
@@ -390,9 +397,12 @@ struct BermsDataExport: Codable, Sendable {
         format = "berms.day"
         version = 4
         self.exportedAt = exportedAt
-        days = [Day(id: day.id.uuidString, name: day.name, notes: day.notes,
-                    activityMode: day.activityMode, catalogID: day.catalogID,
-                    startedAt: day.startedAt, endedAt: day.endedAt, segments: segments)]
+        days = [
+            Day(
+                id: day.id.uuidString, name: day.name, notes: day.notes,
+                activityMode: day.activityMode, catalogID: day.catalogID,
+                startedAt: day.startedAt, endedAt: day.endedAt, segments: segments)
+        ]
         parsed = Parsed(dayID: day.id.uuidString, runCount: runs.count, runs: runs)
         rawDiagnostics = rawDiagnosticsFilename.map {
             RawDiagnostics(filename: $0, format: "jsonl")
@@ -459,11 +469,12 @@ final class LearnedLift {
     }
 
     var profile: LearnedLiftProfile {
-        LearnedLiftProfile(id: id,
-                           bottom: Coordinate(latitude: bottomLatitude, longitude: bottomLongitude),
-                           top: Coordinate(latitude: topLatitude, longitude: topLongitude),
-                           bottomRadius: bottomRadius, topRadius: topRadius,
-                           observationCount: observationCount, confidence: confidence)
+        LearnedLiftProfile(
+            id: id,
+            bottom: Coordinate(latitude: bottomLatitude, longitude: bottomLongitude),
+            top: Coordinate(latitude: topLatitude, longitude: topLongitude),
+            bottomRadius: bottomRadius, topRadius: topRadius,
+            observationCount: observationCount, confidence: confidence)
     }
 }
 
@@ -484,8 +495,10 @@ final class Trail {
     @Relationship(deleteRule: .cascade, inverse: \TrailPass.trail)
     var passes: [TrailPass]
 
-    init(name: String, difficulty: TrailDifficulty, style: TrailStyle = .freeRide,
-         resort: String, catalogID: String? = nil, createdAt: Date = .now) {
+    init(
+        name: String, difficulty: TrailDifficulty, style: TrailStyle = .freeRide,
+        resort: String, catalogID: String? = nil, createdAt: Date = .now
+    ) {
         self.id = UUID()
         self.name = name
         self.difficultyRawValue = difficulty.rawValue
@@ -510,8 +523,9 @@ final class Trail {
         if let cachedPoints { return cachedPoints }
         let resolved: [RoutePoint]
         if let averagedRouteData,
-           let points = try? RouteCodec.decode(averagedRouteData),
-           !points.isEmpty {
+            let points = try? RouteCodec.decode(averagedRouteData),
+            !points.isEmpty
+        {
             resolved = points
         } else {
             resolved = passes.sorted { $0.recordedAt < $1.recordedAt }.first?.points ?? []
@@ -555,12 +569,13 @@ final class Trail {
         for pair in zip(points, points.dropFirst()) {
             let previous = Coordinate(latitude: pair.0.latitude, longitude: pair.0.longitude)
             let current = Coordinate(latitude: pair.1.latitude, longitude: pair.1.longitude)
-            cumulative.append(cumulative.last! + previous.distance(to: current))
+            cumulative.append(cumulative[cumulative.count - 1] + previous.distance(to: current))
         }
         guard let total = cumulative.last, total > 0 else {
             return (0..<count).map { index in
-                let sourceIndex = Int((Double(index) * Double(points.count - 1)
-                    / Double(count - 1)).rounded())
+                let sourceIndex = Int(
+                    (Double(index) * Double(points.count - 1)
+                        / Double(count - 1)).rounded())
                 return points[min(points.count - 1, sourceIndex)]
             }
         }
@@ -569,12 +584,14 @@ final class Trail {
         return (0..<count).map { index in
             let target = total * Double(index) / Double(count - 1)
             while segmentIndex + 1 < cumulative.count - 1,
-                  cumulative[segmentIndex + 1] < target {
+                cumulative[segmentIndex + 1] < target
+            {
                 segmentIndex += 1
             }
             let nextIndex = min(segmentIndex + 1, points.count - 1)
             let segmentDistance = cumulative[nextIndex] - cumulative[segmentIndex]
-            let fraction = segmentDistance > 0
+            let fraction =
+                segmentDistance > 0
                 ? (target - cumulative[segmentIndex]) / segmentDistance
                 : 0
             let start = points[segmentIndex]
@@ -638,14 +655,6 @@ struct RoutePoint: Codable, Hashable, Sendable {
     let altitude: Double
     let speed: Double
     let timestamp: Date
-
-    init(latitude: Double, longitude: Double, altitude: Double, speed: Double, timestamp: Date) {
-        self.latitude = latitude
-        self.longitude = longitude
-        self.altitude = altitude
-        self.speed = speed
-        self.timestamp = timestamp
-    }
 }
 
 struct TrackSample: Codable, Sendable, Equatable {
@@ -659,9 +668,11 @@ struct TrackSample: Codable, Sendable, Equatable {
     let isCycling: Bool
     let isAutomotive: Bool
 
-    init(coordinate: Coordinate, altitude: Double?, speed: Double, course: Double = -1,
-         horizontalAccuracy: Double = 10, timestamp: Date, isStationary: Bool = false,
-         isCycling: Bool = false, isAutomotive: Bool = false) {
+    init(
+        coordinate: Coordinate, altitude: Double?, speed: Double, course: Double = -1,
+        horizontalAccuracy: Double = 10, timestamp: Date, isStationary: Bool = false,
+        isCycling: Bool = false, isAutomotive: Bool = false
+    ) {
         self.coordinate = coordinate
         self.altitude = altitude
         self.speed = speed
@@ -674,8 +685,9 @@ struct TrackSample: Codable, Sendable, Equatable {
     }
 
     var routePoint: RoutePoint {
-        RoutePoint(latitude: coordinate.latitude, longitude: coordinate.longitude,
-                   altitude: altitude ?? 0, speed: speed, timestamp: timestamp)
+        RoutePoint(
+            latitude: coordinate.latitude, longitude: coordinate.longitude,
+            altitude: altitude ?? 0, speed: speed, timestamp: timestamp)
     }
 }
 
@@ -772,8 +784,9 @@ struct TrackSampleNormalizer: Sendable {
 
     static func isLowSpeedDrift(previous: TrackSample?, current: TrackSample) -> Bool {
         guard let previous,
-              previous.speed <= lowSpeedThreshold,
-              current.speed <= lowSpeedThreshold else { return false }
+            previous.speed <= lowSpeedThreshold,
+            current.speed <= lowSpeedThreshold
+        else { return false }
         let interval = current.timestamp.timeIntervalSince(previous.timestamp)
         guard interval > 0 else { return false }
         return previous.coordinate.distance(to: current.coordinate) > maximumLowSpeedDriftMeters
@@ -781,15 +794,16 @@ struct TrackSampleNormalizer: Sendable {
 
     mutating func normalize(_ sample: TrackSample) -> TrackSample? {
         guard sample.coordinate.latitude.isFinite,
-              sample.coordinate.longitude.isFinite,
-              (-90...90).contains(sample.coordinate.latitude),
-              (-180...180).contains(sample.coordinate.longitude),
-              sample.horizontalAccuracy.isFinite,
-              sample.horizontalAccuracy >= 0,
-              sample.horizontalAccuracy <= maximumHorizontalAccuracy,
-              sample.speed.isFinite,
-              sample.speed >= 0,
-              sample.speed <= maximumSpeed else { return nil }
+            sample.coordinate.longitude.isFinite,
+            (-90...90).contains(sample.coordinate.latitude),
+            (-180...180).contains(sample.coordinate.longitude),
+            sample.horizontalAccuracy.isFinite,
+            sample.horizontalAccuracy >= 0,
+            sample.horizontalAccuracy <= maximumHorizontalAccuracy,
+            sample.speed.isFinite,
+            sample.speed >= 0,
+            sample.speed <= maximumSpeed
+        else { return nil }
 
         let lowSpeed = sample.speed <= Self.lowSpeedThreshold
 
@@ -834,11 +848,11 @@ struct TrackSampleNormalizer: Sendable {
 
         let smoothedAltitude: Double?
         switch (previous?.altitude, sample.altitude, lowSpeed) {
-        case let (old?, _, true):
+        case (let old?, _, true):
             smoothedAltitude = old
-        case let (old?, new?, _):
+        case (let old?, let new?, _):
             smoothedAltitude = old * 0.7 + new * 0.3
-        case let (nil, altitude?, _), let (altitude?, nil, _):
+        case (nil, let altitude?, _), (let altitude?, nil, _):
             smoothedAltitude = altitude
         case (_, _, _):
             smoothedAltitude = nil
@@ -873,10 +887,12 @@ struct SegmentDraft: Sendable {
     let endedAt: Date
     let jumps: [JumpEvent]
 
-    init(kind: SegmentKind, points: [TrackSample], startedAt: Date, endedAt: Date,
-         runNumber: Int? = nil,
-         trailSequence: [String]? = nil,
-         jumps: [JumpEvent] = []) {
+    init(
+        kind: SegmentKind, points: [TrackSample], startedAt: Date, endedAt: Date,
+        runNumber: Int? = nil,
+        trailSequence: [String]? = nil,
+        jumps: [JumpEvent] = []
+    ) {
         self.kind = kind
         self.runNumber = runNumber
         self.trailSequence = trailSequence
@@ -913,7 +929,8 @@ extension Coordinate {
         let lat2 = other.latitude * .pi / 180
         let dLat = (other.latitude - latitude) * .pi / 180
         let dLon = (other.longitude - longitude) * .pi / 180
-        let a = sin(dLat / 2) * sin(dLat / 2)
+        let a =
+            sin(dLat / 2) * sin(dLat / 2)
             + cos(lat1) * cos(lat2) * sin(dLon / 2) * sin(dLon / 2)
         return earthRadius * 2 * atan2(sqrt(a), sqrt(1 - a))
     }

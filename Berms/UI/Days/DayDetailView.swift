@@ -91,20 +91,22 @@ struct DayDetailView: View {
                     ForEach(Array(runs.enumerated()), id: \.element.id) { index, segment in
                         let preheatedRun = preheatedRun(for: segment)
                         NavigationLink {
-                            RunMapView(number: index + 1,
-                                       segment: segment,
-                                       preparedBase: detailBase ?? preheatedRun?.base,
-                                       preparedDetail: detailBase?.segmentsByID[segment.id]
-                                           ?? preheatedRun?.detail,
-                                       preparedTrailDetails: trailDetails
-                                           ?? preheatedRun?.trailDetails)
+                            RunMapView(
+                                number: index + 1,
+                                segment: segment,
+                                preparedBase: detailBase ?? preheatedRun?.base,
+                                preparedDetail: detailBase?.segmentsByID[segment.id]
+                                    ?? preheatedRun?.detail,
+                                preparedTrailDetails: trailDetails
+                                    ?? preheatedRun?.trailDetails)
                         } label: {
-                            SegmentRow(number: index + 1, segment: segment,
-                                       detail: detailBase?.segmentsByID[segment.id]
-                                           ?? preheatedRun?.detail,
-                                       trailName: trailDetails?.sequenceBySegmentID[segment.id]
-                                           ?? preheatedRun?.trailDetails.sequenceBySegmentID[segment.id],
-                                       isPreparingDetails: trailDetails == nil && preheatedRun == nil)
+                            SegmentRow(
+                                number: index + 1, segment: segment,
+                                detail: detailBase?.segmentsByID[segment.id]
+                                    ?? preheatedRun?.detail,
+                                trailName: trailDetails?.sequenceBySegmentID[segment.id]
+                                    ?? preheatedRun?.trailDetails.sequenceBySegmentID[segment.id],
+                                isPreparingDetails: trailDetails == nil && preheatedRun == nil)
                         }
                     }
                 }
@@ -116,7 +118,9 @@ struct DayDetailView: View {
                     .accessibilityLabel("Session journal")
             }
         }
-        .navigationTitle(day.hasCustomName ? day.displayName : day.startedAt.formatted(date: .abbreviated, time: .omitted))
+        .navigationTitle(
+            day.hasCustomName ? day.displayName : day.startedAt.formatted(date: .abbreviated, time: .omitted)
+        )
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.visible, for: .navigationBar)
         .toolbar {
@@ -159,10 +163,13 @@ struct DayDetailView: View {
         } message: {
             Text("This removes the day and all of its runs, lifts, and map data.")
         }
-        .alert("Couldn't save", isPresented: Binding(
-            get: { saveErrorMessage != nil },
-            set: { if !$0 { saveErrorMessage = nil } }
-        )) {
+        .alert(
+            "Couldn't save",
+            isPresented: Binding(
+                get: { saveErrorMessage != nil },
+                set: { if !$0 { saveErrorMessage = nil } }
+            )
+        ) {
             Button("OK", role: .cancel) {}
         } message: {
             Text(saveErrorMessage ?? "")
@@ -184,19 +191,21 @@ struct DayDetailView: View {
             ShareSheet(items: [archive.url])
         }
         .sheet(isPresented: $showingShareCard) {
-            ShareCardSheet(day: day,
-                           base: detailBase,
-                           trailDetails: trailDetails,
-                           manualCatalogID: dayCatalogID)
+            ShareCardSheet(
+                day: day,
+                base: detailBase,
+                trailDetails: trailDetails,
+                manualCatalogID: dayCatalogID)
         }
         .task(id: day.id) {
             let dayID = day.id
             let startedAt = day.startedAt
             let endedAt = day.endedAt
             diagnosticLogURLs = await Task.detached(priority: .utility) {
-                RideRecorder.diagnosticLogURLs(for: dayID,
-                                               startedAt: startedAt,
-                                               endedAt: endedAt)
+                RideRecorder.diagnosticLogURLs(
+                    for: dayID,
+                    startedAt: startedAt,
+                    endedAt: endedAt)
             }.value
         }
         .task(id: preparationTaskKey) {
@@ -237,9 +246,10 @@ struct DayDetailView: View {
         isExportingDay = true
 
         let dayLogName = "Berms-\(day.id.uuidString).jsonl"
-        let rawFilename = diagnosticLogURLs.first {
-            $0.lastPathComponent.caseInsensitiveCompare(dayLogName) == .orderedSame
-        }?.lastPathComponent ?? diagnosticLogURLs.first?.lastPathComponent
+        let rawFilename =
+            diagnosticLogURLs.first {
+                $0.lastPathComponent.caseInsensitiveCompare(dayLogName) == .orderedSame
+            }?.lastPathComponent ?? diagnosticLogURLs.first?.lastPathComponent
 
         let export = BermsDataExport(day: day, trails: trails, rawDiagnosticsFilename: rawFilename)
         let logURLs = diagnosticLogURLs
@@ -273,7 +283,9 @@ struct DayDetailView: View {
         modelContext.delete(day)
         do {
             try modelContext.save()
-            logURLs.forEach { try? FileManager.default.removeItem(at: $0) }
+            for url in logURLs {
+                try? FileManager.default.removeItem(at: url)
+            }
             dismiss()
         } catch {
             modelContext.rollback()
@@ -293,15 +305,17 @@ struct DayDetailView: View {
                     SummaryStat(label: "Distance", value: BermsFormat.distance(day.distanceMeters))
                 }
                 AdaptiveStatRow {
-                    SummaryStat(label: day.activityMode.activeTimeTitle,
-                                value: BermsFormat.duration(day.activeSeconds))
+                    SummaryStat(
+                        label: day.activityMode.activeTimeTitle,
+                        value: BermsFormat.duration(day.activeSeconds))
                     SummaryStat(label: "Lift time", value: BermsFormat.duration(day.liftSeconds))
                 }
                 AdaptiveStatRow {
                     SummaryStat(label: "Top speed", value: BermsFormat.speed(day.maximumSpeedMetersPerSecond))
-                    SummaryStat(label: "Jumps",
-                                value: detailBase.map { "\($0.jumpCount)" } ?? "…",
-                                tint: .primary)
+                    SummaryStat(
+                        label: "Jumps",
+                        value: detailBase.map { "\($0.jumpCount)" } ?? "…",
+                        tint: .primary)
                 }
             }
         }
@@ -310,8 +324,9 @@ struct DayDetailView: View {
     @ViewBuilder
     private var dayMap: some View {
         if runs.isEmpty {
-            ContentUnavailableView("No route", systemImage: "map",
-                                   description: Text("This day has no recorded runs."))
+            ContentUnavailableView(
+                "No route", systemImage: "map",
+                description: Text("This day has no recorded runs."))
         } else if let detailBase {
             preparedDayMap(detailBase)
         } else if prepareFailed {
@@ -338,18 +353,21 @@ struct DayDetailView: View {
 
     @ViewBuilder
     private func preparedDayMap(_ detailBase: SessionDetailBase) -> some View {
-        SessionRouteMap(base: detailBase, trailDetails: trailDetails,
-                        onRunSelected: { segmentID in
-                            guard let index = runs.firstIndex(where: { $0.id == segmentID }) else { return }
-                            onRunSelected(RunMapDestination(dayID: day.id, runID: segmentID, number: index + 1))
-                        }, onExpand: { showingFullScreenMap = true })
+        SessionRouteMap(
+            base: detailBase, trailDetails: trailDetails,
+            onRunSelected: { segmentID in
+                guard let index = runs.firstIndex(where: { $0.id == segmentID }) else { return }
+                onRunSelected(RunMapDestination(dayID: day.id, runID: segmentID, number: index + 1))
+            }, onExpand: { showingFullScreenMap = true }
+        )
         .frame(height: 280)
         .fullScreenCover(isPresented: $showingFullScreenMap) {
-            FullScreenSummaryMap(title: day.activityMode == .ski ? "Ski Map" : "Ride Map",
-                                 base: detailBase,
-                                 trailDetails: trailDetails,
-                                 focusedSegmentID: nil,
-                                 focusedRunNumber: nil)
+            FullScreenSummaryMap(
+                title: day.activityMode == .ski ? "Ski Map" : "Ride Map",
+                base: detailBase,
+                trailDetails: trailDetails,
+                focusedSegmentID: nil,
+                focusedRunNumber: nil)
         }
     }
 
@@ -367,11 +385,13 @@ struct DayDetailView: View {
             return
         }
 
-        guard let input = await SessionDetailPresentationPreheater.makeInput(
-            dayID: day.id,
-            manualCatalogID: dayCatalogID,
-            container: modelContext.container
-        ) else { return }
+        guard
+            let input = await SessionDetailPresentationPreheater.makeInput(
+                dayID: day.id,
+                manualCatalogID: dayCatalogID,
+                container: modelContext.container
+            )
+        else { return }
         guard !Task.isCancelled else { return }
 
         do {
@@ -448,8 +468,9 @@ enum DayArchive {
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let json = try encoder.encode(export)
-        try json.write(to: folder.appendingPathComponent("Berms-\(export.parsed.dayID)-data.json"),
-                       options: .atomic)
+        try json.write(
+            to: folder.appendingPathComponent("Berms-\(export.parsed.dayID)-data.json"),
+            options: .atomic)
 
         for log in logURLs {
             try? fileManager.copyItem(at: log, to: folder.appendingPathComponent(log.lastPathComponent))
@@ -474,9 +495,11 @@ enum DayArchive {
         let fileManager = FileManager.default
         var coordinatorError: NSError?
         var copyError: Error?
-        NSFileCoordinator().coordinate(readingItemAt: folder,
-                                       options: .forUploading,
-                                       error: &coordinatorError) { archiveURL in
+        NSFileCoordinator().coordinate(
+            readingItemAt: folder,
+            options: .forUploading,
+            error: &coordinatorError
+        ) { archiveURL in
             do {
                 try fileManager.copyItem(at: archiveURL, to: destination)
             } catch {

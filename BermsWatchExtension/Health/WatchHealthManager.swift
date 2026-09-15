@@ -4,8 +4,8 @@ import Foundation
 @MainActor
 final class WatchHealthManager: NSObject, WatchHealthProvider, HKWorkoutSessionDelegate, HKLiveWorkoutBuilderDelegate {
     private let healthStore = HKHealthStore()
-    private let heartRateType = HKObjectType.quantityType(forIdentifier: .heartRate)!
-    private let activeEnergyType = HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)!
+    private let heartRateType = HKQuantityType(.heartRate)
+    private let activeEnergyType = HKQuantityType(.activeEnergyBurned)
 
     private(set) var snapshot = WatchHealthSnapshot.unavailable
     var onSnapshotChange: ((WatchHealthSnapshot) -> Void)?
@@ -26,11 +26,12 @@ final class WatchHealthManager: NSObject, WatchHealthProvider, HKWorkoutSessionD
 
         authorizationInFlight = true
         let requestGeneration = generation
-        updateSnapshot(WatchHealthSnapshot(
-            heartRateBeatsPerMinute: nil,
-            activeCalories: nil,
-            availability: .waiting
-        ))
+        updateSnapshot(
+            WatchHealthSnapshot(
+                heartRateBeatsPerMinute: nil,
+                activeCalories: nil,
+                availability: .waiting
+            ))
         Task { @MainActor [weak self] in
             guard let self else { return }
             defer { if generation == requestGeneration { authorizationInFlight = false } }
@@ -120,11 +121,13 @@ final class WatchHealthManager: NSObject, WatchHealthProvider, HKWorkoutSessionD
         var next = snapshot
         next.availability = .available
         if let statistics = builder.statistics(for: heartRateType),
-           let quantity = statistics.mostRecentQuantity() {
+            let quantity = statistics.mostRecentQuantity()
+        {
             next.heartRateBeatsPerMinute = quantity.doubleValue(for: HKUnit.count().unitDivided(by: .minute()))
         }
         if let statistics = builder.statistics(for: activeEnergyType),
-           let quantity = statistics.sumQuantity() {
+            let quantity = statistics.sumQuantity()
+        {
             next.activeCalories = quantity.doubleValue(for: .kilocalorie())
         }
         updateSnapshot(next)
@@ -136,21 +139,27 @@ final class WatchHealthManager: NSObject, WatchHealthProvider, HKWorkoutSessionD
         onSnapshotChange?(snapshot)
     }
 
-    nonisolated func workoutSession(_ workoutSession: HKWorkoutSession,
-                                    didChangeTo toState: HKWorkoutSessionState,
-                                    from fromState: HKWorkoutSessionState,
-                                    date: Date) {}
+    nonisolated func workoutSession(
+        _ workoutSession: HKWorkoutSession,
+        didChangeTo toState: HKWorkoutSessionState,
+        from fromState: HKWorkoutSessionState,
+        date: Date
+    ) {}
 
-    nonisolated func workoutSession(_ workoutSession: HKWorkoutSession,
-                                    didFailWithError error: Error) {
+    nonisolated func workoutSession(
+        _ workoutSession: HKWorkoutSession,
+        didFailWithError error: Error
+    ) {
         Task { @MainActor [weak self] in
             guard let self, self.workoutSession === workoutSession else { return }
             self.stop()
         }
     }
 
-    nonisolated func workoutBuilder(_ workoutBuilder: HKLiveWorkoutBuilder,
-                                    didCollectDataOf types: Set<HKSampleType>) {
+    nonisolated func workoutBuilder(
+        _ workoutBuilder: HKLiveWorkoutBuilder,
+        didCollectDataOf types: Set<HKSampleType>
+    ) {
         Task { @MainActor [weak self] in
             self?.readLatestStatistics()
         }
@@ -158,8 +167,10 @@ final class WatchHealthManager: NSObject, WatchHealthProvider, HKWorkoutSessionD
 
     nonisolated func workoutBuilderDidCollectEvent(_ workoutBuilder: HKLiveWorkoutBuilder) {}
 
-    nonisolated func workoutBuilder(_ workoutBuilder: HKLiveWorkoutBuilder,
-                                    didFinishWithError error: Error?) {
+    nonisolated func workoutBuilder(
+        _ workoutBuilder: HKLiveWorkoutBuilder,
+        didFinishWithError error: Error?
+    ) {
         Task { @MainActor [weak self] in
             guard let self, error != nil, self.workoutBuilder === workoutBuilder else { return }
             self.updateSnapshot(.unavailable)

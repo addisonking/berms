@@ -25,9 +25,11 @@ struct StudioView: View {
             handleDrop(urls)
             return true
         }
-        .fileImporter(isPresented: $showImporter,
-                      allowedContentTypes: importContentTypes,
-                      allowsMultipleSelection: true) { result in
+        .fileImporter(
+            isPresented: $showImporter,
+            allowedContentTypes: importContentTypes,
+            allowsMultipleSelection: true
+        ) { result in
             Task { @MainActor in
                 if case .success(let urls) = result {
                     importURLs(urls)
@@ -72,9 +74,10 @@ struct StudioView: View {
         .navigationSplitViewColumnWidth(min: 240, ideal: 280)
         .overlay {
             if !library.hasContent {
-                ContentUnavailableView("Nothing here yet",
-                                       systemImage: "square.and.arrow.down",
-                                       description: Text("Drop clips and a Berms log anywhere in this window."))
+                ContentUnavailableView(
+                    "Nothing here yet",
+                    systemImage: "square.and.arrow.down",
+                    description: Text("Drop clips and a Berms log anywhere in this window."))
             }
         }
     }
@@ -100,15 +103,17 @@ struct StudioView: View {
     @ViewBuilder
     private var emptyDetail: some View {
         if library.hasContent {
-            ContentUnavailableView("Select a session",
-                                   systemImage: "calendar.day.timeline.left",
-                                   description: Text("Pick a session to see its runs and clips."))
+            ContentUnavailableView(
+                "Select a session",
+                systemImage: "calendar.day.timeline.left",
+                description: Text("Pick a session to see its runs and clips."))
         } else {
             ContentUnavailableView {
                 Label("Drop your footage", systemImage: "square.and.arrow.down")
             } description: {
-                Text("Drag the day's GoPro clips and the Berms log straight from Downloads — "
-                     + "no folders needed. Clips attach to runs by time.")
+                Text(
+                    "Drag the day's GoPro clips and the Berms log straight from Downloads — "
+                        + "no folders needed. Clips attach to runs by time.")
             } actions: {
                 Button("Add files…") { showImporter = true }
             }
@@ -139,9 +144,11 @@ struct StudioView: View {
                     .foregroundStyle(library.messageIsError ? Color.red : Color.secondary)
             }
             Spacer()
-            Text("\(library.sessions.count) sessions · \(library.runCount) runs · "
-                 + "\(library.clipCount) clips · \(library.unmatchedCount) unsorted")
-                .foregroundStyle(.secondary)
+            Text(
+                "\(library.sessions.count) sessions · \(library.runCount) runs · "
+                    + "\(library.clipCount) clips · \(library.unmatchedCount) unsorted"
+            )
+            .foregroundStyle(.secondary)
         }
         .font(.callout)
         .padding(.horizontal, 12)
@@ -168,17 +175,25 @@ struct StudioView: View {
         importFrom(videoFiles: videoFiles, logFiles: logFiles, securityScopedURLs: scopedURLs)
     }
 
-    private func importFrom(videoFiles: [URL], logFiles: [URL],
-                            securityScopedURLs: [URL] = []) {
+    private func importFrom(
+        videoFiles: [URL], logFiles: [URL],
+        securityScopedURLs: [URL] = []
+    ) {
         guard !videoFiles.isEmpty || !logFiles.isEmpty else {
-            securityScopedURLs.forEach { $0.stopAccessingSecurityScopedResource() }
+            for url in securityScopedURLs {
+                url.stopAccessingSecurityScopedResource()
+            }
             library.message = "Nothing to import from that drop"
             library.messageIsError = true
             return
         }
         library.busy = "Importing…"
         Task {
-            defer { securityScopedURLs.forEach { $0.stopAccessingSecurityScopedResource() } }
+            defer {
+                for url in securityScopedURLs {
+                    url.stopAccessingSecurityScopedResource()
+                }
+            }
             do {
                 let newClips = try await Task.detached {
                     try FootageScanner.clips(fromFiles: videoFiles)
@@ -242,9 +257,12 @@ struct StudioView: View {
     }
 
     nonisolated private static func logFiles(in root: URL) -> [URL] {
-        guard let enumerator = FileManager.default.enumerator(at: root,
-                                                              includingPropertiesForKeys: nil,
-                                                              options: [.skipsHiddenFiles]) else {
+        guard
+            let enumerator = FileManager.default.enumerator(
+                at: root,
+                includingPropertiesForKeys: nil,
+                options: [.skipsHiddenFiles])
+        else {
             return []
         }
         var result: [URL] = []
@@ -255,8 +273,11 @@ struct StudioView: View {
     nonisolated private static func extract(_ url: URL) -> URL? {
         let destination = FileManager.default.temporaryDirectory
             .appendingPathComponent("Berms-unzip-\(UUID().uuidString)", isDirectory: true)
-        guard (try? FileManager.default.createDirectory(at: destination,
-                                                        withIntermediateDirectories: true)) != nil else {
+        guard
+            (try? FileManager.default.createDirectory(
+                at: destination,
+                withIntermediateDirectories: true)) != nil
+        else {
             return nil
         }
         let process = Process()
@@ -299,10 +320,12 @@ private struct StudioExportProgressView: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                     Spacer(minLength: 8)
-                    Text("Elapsed \(StudioFormat.duration(progress.elapsed(at: context.date))) · \(etaLabel(at: context.date))")
-                        .font(.caption)
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
+                    Text(
+                        "Elapsed \(StudioFormat.duration(progress.elapsed(at: context.date))) · \(etaLabel(at: context.date))"
+                    )
+                    .font(.caption)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -335,7 +358,8 @@ private struct StudioExportProgressView: View {
     }
 
     private func accessibilityValue(at date: Date) -> String {
-        var value = "\(Int((progress.fraction * 100).rounded())) percent, "
+        var value =
+            "\(Int((progress.fraction * 100).rounded())) percent, "
             + "\(progress.completed) of \(progress.total) videos"
         if progress.failed > 0 {
             value += ", \(progress.failed) failed"
@@ -421,10 +445,12 @@ struct SessionDetailView: View {
                     .help("Hide runs that don't have any matching footage")
             }
             if runs.isEmpty {
-                Text(showOnlyRunsWithClips
-                     ? "No runs have clips yet. Add the matching footage, or turn off the filter to see every run."
-                     : "This session has no runs.")
-                    .foregroundStyle(.secondary)
+                Text(
+                    showOnlyRunsWithClips
+                        ? "No runs have clips yet. Add the matching footage, or turn off the filter to see every run."
+                        : "This session has no runs."
+                )
+                .foregroundStyle(.secondary)
             } else {
                 VStack(spacing: 0) {
                     ForEach(runs) { run in
@@ -551,10 +577,12 @@ struct SessionSettingsView: View {
                         }
                         Spacer()
                     }
-                    Text("Shifts this session's clip timestamps when the camera clock is wrong, "
-                         + "so clips land on the right runs.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    Text(
+                        "Shifts this session's clip timestamps when the camera clock is wrong, "
+                            + "so clips land on the right runs."
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 }
             }
             .formStyle(.grouped)
@@ -568,8 +596,10 @@ struct SessionSettingsView: View {
             .padding(12)
         }
         .frame(width: 480, height: 400)
-        .fileImporter(isPresented: $showOutputPicker,
-                      allowedContentTypes: [.folder]) { result in
+        .fileImporter(
+            isPresented: $showOutputPicker,
+            allowedContentTypes: [.folder]
+        ) { result in
             if case .success(let url) = result {
                 library.setOutputDirectory(url, for: session.id)
             }
@@ -588,13 +618,15 @@ struct SessionSettingsView: View {
     }
 
     private var trimStartBinding: Binding<Double> {
-        Binding(get: { library.trimStart(for: session.id) },
-                set: { library.setTrimStart($0, for: session.id) })
+        Binding(
+            get: { library.trimStart(for: session.id) },
+            set: { library.setTrimStart($0, for: session.id) })
     }
 
     private var trimEndBinding: Binding<Double> {
-        Binding(get: { library.trimEnd(for: session.id) },
-                set: { library.setTrimEnd($0, for: session.id) })
+        Binding(
+            get: { library.trimEnd(for: session.id) },
+            set: { library.setTrimEnd($0, for: session.id) })
     }
 }
 
@@ -611,9 +643,11 @@ struct InboxDetailView: View {
                     Text("Unsorted footage")
                         .font(.title2)
                         .fontWeight(.semibold)
-                    Text("These clips don't line up with any session. Add the matching Berms log, "
-                         + "or fix a session's footage clock.")
-                        .foregroundStyle(.secondary)
+                    Text(
+                        "These clips don't line up with any session. Add the matching Berms log, "
+                            + "or fix a session's footage clock."
+                    )
+                    .foregroundStyle(.secondary)
                 }
                 VStack(spacing: 0) {
                     let clips = library.inboxClips()

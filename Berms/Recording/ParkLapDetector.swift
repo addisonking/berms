@@ -53,16 +53,19 @@ final class ParkLapDetector {
         defer { reset() }
 
         guard phase != .idle,
-              currentPoints.count >= configuration.minimumSamples,
-              let first = currentPoints.first,
-              let last = currentPoints.last else {
+            currentPoints.count >= configuration.minimumSamples,
+            let first = currentPoints.first,
+            let last = currentPoints.last
+        else {
             return nil
         }
 
-        return .finished(SegmentDraft(kind: phase == .lift ? .lift : .run,
-                                      points: currentPoints,
-                                      startedAt: first.timestamp,
-                                      endedAt: last.timestamp))
+        return .finished(
+            SegmentDraft(
+                kind: phase == .lift ? .lift : .run,
+                points: currentPoints,
+                startedAt: first.timestamp,
+                endedAt: last.timestamp))
     }
 
     func reset() {
@@ -73,7 +76,6 @@ final class ParkLapDetector {
         isInRunBreak = false
         lastSample = nil
     }
-
 
     func restore(kind: SegmentKind, points: [TrackSample]) {
         phase = kind == .lift ? .lift : .run
@@ -127,14 +129,16 @@ final class ParkLapDetector {
         let opposite: SegmentKind = expected == .lift ? .run : .lift
         let localWindow = Array(windowIncluding(sample).suffix(3))
         if !isPattern(opposite, in: localWindow),
-           !sample.isStationary && !sample.isAutomotive,
-           (isPattern(expected, in: windowIncluding(sample))
-            || (expected == .run && isLevelMovement(in: localWindow))) {
+            !sample.isStationary && !sample.isAutomotive,
+            isPattern(expected, in: windowIncluding(sample))
+                || (expected == .run && isLevelMovement(in: localWindow))
+        {
             if !candidatePoints.isEmpty {
-                currentPoints.append(contentsOf: candidatePoints.filter {
-                    !$0.isStationary && !$0.isAutomotive
-                        && $0.timestamp > (currentPoints.last?.timestamp ?? .distantPast)
-                })
+                currentPoints.append(
+                    contentsOf: candidatePoints.filter {
+                        !$0.isStationary && !$0.isAutomotive
+                            && $0.timestamp > (currentPoints.last?.timestamp ?? .distantPast)
+                    })
                 candidatePoints.removeAll(keepingCapacity: true)
             }
             currentPoints.append(sample)
@@ -158,22 +162,25 @@ final class ParkLapDetector {
         phase = opposite == .lift ? .lift : .run
 
         guard let first = oldPoints.first, let last = oldPoints.last,
-              oldPoints.count >= configuration.minimumSamples else {
+            oldPoints.count >= configuration.minimumSamples
+        else {
             return [.started(kind: opposite, points: currentPoints)]
         }
 
-        let finished = SegmentDraft(kind: oldKind, points: oldPoints,
-                                    startedAt: first.timestamp, endedAt: last.timestamp)
+        let finished = SegmentDraft(
+            kind: oldKind, points: oldPoints,
+            startedAt: first.timestamp, endedAt: last.timestamp)
         return [.finished(finished), .started(kind: opposite, points: currentPoints)]
     }
 
-
     private func processLearnedEndpoint(_ sample: TrackSample, expected: SegmentKind) -> [DetectorEvent]? {
-        guard let endpoint = configuration.learnedLifts.first(where: {
-            expected == .run ? $0.containsBottom(sample.coordinate) : $0.containsTop(sample.coordinate)
-        }),
-        sample.speed <= configuration.endpointSpeedThreshold,
-        !sample.isAutomotive else {
+        guard
+            let endpoint = configuration.learnedLifts.first(where: {
+                expected == .run ? $0.containsBottom(sample.coordinate) : $0.containsTop(sample.coordinate)
+            }),
+            sample.speed <= configuration.endpointSpeedThreshold,
+            !sample.isAutomotive
+        else {
             // Not at a learned station after all: keep the buffered points
             // instead of silently dropping that part of the route.
             flushEndpointCandidate()
@@ -182,16 +189,18 @@ final class ParkLapDetector {
 
         endpointCandidate.append(sample)
         while endpointCandidate.count > configuration.minimumSamples,
-              let first = endpointCandidate.first,
-              sample.timestamp.timeIntervalSince(first.timestamp)
-                > configuration.endpointConfirmationSeconds + 5 {
+            let first = endpointCandidate.first,
+            sample.timestamp.timeIntervalSince(first.timestamp)
+                > configuration.endpointConfirmationSeconds + 5
+        {
             endpointCandidate.removeFirst()
         }
         guard let first = endpointCandidate.first,
-              sample.timestamp.timeIntervalSince(first.timestamp) >= configuration.endpointConfirmationSeconds,
-              endpointCandidate.allSatisfy({
-                  expected == .run ? endpoint.containsBottom($0.coordinate) : endpoint.containsTop($0.coordinate)
-              }) else {
+            sample.timestamp.timeIntervalSince(first.timestamp) >= configuration.endpointConfirmationSeconds,
+            endpointCandidate.allSatisfy({
+                expected == .run ? endpoint.containsBottom($0.coordinate) : endpoint.containsTop($0.coordinate)
+            })
+        else {
             return []
         }
 
@@ -203,27 +212,34 @@ final class ParkLapDetector {
         currentPoints.removeAll(keepingCapacity: true)
 
         guard finishedPoints.count >= configuration.minimumSamples,
-              let firstPoint = finishedPoints.first,
-              let lastPoint = finishedPoints.last else {
+            let firstPoint = finishedPoints.first,
+            let lastPoint = finishedPoints.last
+        else {
             return []
         }
-        return [.finished(SegmentDraft(kind: expected, points: finishedPoints,
-                                       startedAt: firstPoint.timestamp, endedAt: lastPoint.timestamp))]
+        return [
+            .finished(
+                SegmentDraft(
+                    kind: expected, points: finishedPoints,
+                    startedAt: firstPoint.timestamp, endedAt: lastPoint.timestamp))
+        ]
     }
 
     private func flushEndpointCandidate() {
         guard !endpointCandidate.isEmpty else { return }
-        currentPoints.append(contentsOf: endpointCandidate.filter {
-            !$0.isStationary && !$0.isAutomotive
-                && $0.timestamp > (currentPoints.last?.timestamp ?? .distantPast)
-        })
+        currentPoints.append(
+            contentsOf: endpointCandidate.filter {
+                !$0.isStationary && !$0.isAutomotive
+                    && $0.timestamp > (currentPoints.last?.timestamp ?? .distantPast)
+            })
         endpointCandidate.removeAll(keepingCapacity: true)
     }
 
     private func confirmedKind(in points: [TrackSample]) -> SegmentKind? {
         guard points.count >= configuration.minimumSamples,
-              let first = points.first, let last = points.last,
-              last.timestamp.timeIntervalSince(first.timestamp) >= configuration.minimumConfirmationSeconds else {
+            let first = points.first, let last = points.last,
+            last.timestamp.timeIntervalSince(first.timestamp) >= configuration.minimumConfirmationSeconds
+        else {
             return nil
         }
 
@@ -234,10 +250,12 @@ final class ParkLapDetector {
 
     private func isPattern(_ kind: SegmentKind, in points: [TrackSample]) -> Bool {
         guard points.count >= 2,
-              let firstAltitude = points.first?.altitude,
-              let lastAltitude = points.last?.altitude else { return false }
+            let firstPoint = points.first, let lastPoint = points.last,
+            let firstAltitude = firstPoint.altitude,
+            let lastAltitude = lastPoint.altitude
+        else { return false }
 
-        let duration = points.last!.timestamp.timeIntervalSince(points.first!.timestamp)
+        let duration = lastPoint.timestamp.timeIntervalSince(firstPoint.timestamp)
         guard duration > 0 else { return false }
 
         let verticalRate = (lastAltitude - firstAltitude) / duration
@@ -260,8 +278,9 @@ final class ParkLapDetector {
 
     private func isLevelMovement(in points: [TrackSample]) -> Bool {
         guard let first = points.first, let last = points.last,
-              let firstAltitude = first.altitude, let lastAltitude = last.altitude,
-              last.speed >= configuration.minimumMovementSpeed else { return false }
+            let firstAltitude = first.altitude, let lastAltitude = last.altitude,
+            last.speed >= configuration.minimumMovementSpeed
+        else { return false }
         let duration = last.timestamp.timeIntervalSince(first.timestamp)
         guard duration > 0 else { return false }
         return (lastAltitude - firstAltitude) / duration <= 0
@@ -276,8 +295,9 @@ final class ParkLapDetector {
         guard let last = candidatePoints.last else { return }
         let maximumDuration = max(configuration.minimumConfirmationSeconds + 5, 20)
         while candidatePoints.count > configuration.minimumSamples,
-              let first = candidatePoints.first,
-              last.timestamp.timeIntervalSince(first.timestamp) > maximumDuration {
+            let first = candidatePoints.first,
+            last.timestamp.timeIntervalSince(first.timestamp) > maximumDuration
+        {
             candidatePoints.removeFirst()
         }
     }

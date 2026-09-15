@@ -99,9 +99,11 @@ final class SessionDetailPresentationCache: ObservableObject {
 enum SessionDetailPresentationPreheater {
     static func latestCompletedRun(in days: [RideDay]) -> (day: RideDay, run: RideSegment)? {
         days.filter { $0.isFinished }.compactMap { day in
-            guard let run = day.segments
-                .filter({ $0.kind == .run })
-                .max(by: { $0.startedAt < $1.startedAt }) else {
+            guard
+                let run = day.segments
+                    .filter({ $0.kind == .run })
+                    .max(by: { $0.startedAt < $1.startedAt })
+            else {
                 return nil
             }
             return (day: day, run: run)
@@ -190,9 +192,12 @@ enum SessionDetailPresentationPreheater {
         container: ModelContainer,
         onBase: @MainActor (SessionDetailBase) -> Void = { _ in }
     ) async throws -> SessionDetailPresentationCache.RunEntry? {
-        guard let input = await makeInput(segmentID: segmentID,
-                                          manualCatalogID: manualCatalogID,
-                                          container: container) else {
+        guard
+            let input = await makeInput(
+                segmentID: segmentID,
+                manualCatalogID: manualCatalogID,
+                container: container)
+        else {
             return nil
         }
         let entry = try await build(input, onBase: onBase)

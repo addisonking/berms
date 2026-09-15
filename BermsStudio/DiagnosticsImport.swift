@@ -41,8 +41,9 @@ enum DiagnosticsImporter {
         let startedAt = segments.map(\.startedAt).min() ?? .now
         let endedAt = segments.map(\.endedAt).max()
 
-        return StudioDay(id: dayID, name: nil, startedAt: startedAt, endedAt: endedAt,
-                         segments: segments)
+        return StudioDay(
+            id: dayID, name: nil, startedAt: startedAt, endedAt: endedAt,
+            segments: segments)
     }
 
     private static func makeSegment(_ draft: SegmentDraft, id: String) -> StudioSegment {

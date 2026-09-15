@@ -6,10 +6,11 @@ import UIKit
 extension MapStyle {
     // Keep the system basemap subdued so route and trail overlays stay legible.
     static var bermsMonochrome: MapStyle {
-        .standard(elevation: .flat,
-                  emphasis: .muted,
-                  pointsOfInterest: .excludingAll,
-                  showsTraffic: false)
+        .standard(
+            elevation: .flat,
+            emphasis: .muted,
+            pointsOfInterest: .excludingAll,
+            showsTraffic: false)
     }
 }
 
@@ -34,12 +35,13 @@ struct TrailMapOverlay: Identifiable {
 
 extension TrailMapOverlay {
     init(detail: SessionDetailTrailOverlay) {
-        self.init(id: detail.id,
-                  trailID: detail.trailID,
-                  name: detail.name,
-                  difficulty: detail.difficulty,
-                  points: detail.points,
-                  score: detail.score)
+        self.init(
+            id: detail.id,
+            trailID: detail.trailID,
+            name: detail.name,
+            difficulty: detail.difficulty,
+            points: detail.points,
+            score: detail.score)
     }
 }
 
@@ -60,19 +62,23 @@ enum TrailMapRendering {
     static let accentDash: [CGFloat] = [3, 5]
 }
 
-func trailMapStrokeStyle(for difficulty: TrailDifficulty,
-                                 lineWidth: CGFloat = TrailMapRendering.lineWidth) -> StrokeStyle {
-    StrokeStyle(lineWidth: lineWidth,
-                lineCap: .round,
-                lineJoin: .round,
-                dash: difficulty == .doubleBlack ? TrailMapRendering.doubleBlackDash : [])
+func trailMapStrokeStyle(
+    for difficulty: TrailDifficulty,
+    lineWidth: CGFloat = TrailMapRendering.lineWidth
+) -> StrokeStyle {
+    StrokeStyle(
+        lineWidth: lineWidth,
+        lineCap: .round,
+        lineJoin: .round,
+        dash: difficulty == .doubleBlack ? TrailMapRendering.doubleBlackDash : [])
 }
 
 func trailMapAccentStrokeStyle(lineWidth: CGFloat = TrailMapRendering.accentLineWidth) -> StrokeStyle {
-    StrokeStyle(lineWidth: lineWidth,
-                lineCap: .round,
-                lineJoin: .round,
-                dash: TrailMapRendering.accentDash)
+    StrokeStyle(
+        lineWidth: lineWidth,
+        lineCap: .round,
+        lineJoin: .round,
+        dash: TrailMapRendering.accentDash)
 }
 
 func trailLabelCoordinate(for points: [RoutePoint]) -> CLLocationCoordinate2D? {
@@ -91,8 +97,10 @@ struct TrailMapLabelItem: Identifiable {
 
 /// One label per trail name so repeated runs of the same trail do not stack
 /// pills. The longest matched slice represents the trail.
-func trailMapLabelItems(for overlays: [TrailMapOverlay],
-                        limit: Int = 12) -> [TrailMapLabelItem] {
+func trailMapLabelItems(
+    for overlays: [TrailMapOverlay],
+    limit: Int = 12
+) -> [TrailMapLabelItem] {
     var order: [String] = []
     var representatives: [String: TrailMapOverlay] = [:]
     for overlay in overlays {
@@ -109,31 +117,38 @@ func trailMapLabelItems(for overlays: [TrailMapOverlay],
     }
     return order.prefix(limit).compactMap { key in
         guard let overlay = representatives[key],
-              let coordinate = trailLabelCoordinate(for: overlay.points) else { return nil }
-        return TrailMapLabelItem(id: key,
-                                 name: overlay.name,
-                                 difficulty: overlay.difficulty,
-                                 color: overlay.color,
-                                 coordinate: coordinate)
+            let coordinate = trailLabelCoordinate(for: overlay.points)
+        else { return nil }
+        return TrailMapLabelItem(
+            id: key,
+            name: overlay.name,
+            difficulty: overlay.difficulty,
+            color: overlay.color,
+            coordinate: coordinate)
     }
 }
 
 @MainActor
 @MapContentBuilder
-func trailMapContent(coordinates: [CLLocationCoordinate2D],
-                             difficulty: TrailDifficulty,
-                             color: Color? = nil,
-                             lineWidth: CGFloat = TrailMapRendering.lineWidth,
-                             tag: UUID? = nil) -> some MapContent {
+func trailMapContent(
+    coordinates: [CLLocationCoordinate2D],
+    difficulty: TrailDifficulty,
+    color: Color? = nil,
+    lineWidth: CGFloat = TrailMapRendering.lineWidth,
+    tag: UUID? = nil
+) -> some MapContent {
     if let tag {
         MapPolyline(coordinates: coordinates)
-            .stroke(color ?? .bermsDifficulty(difficulty),
-                    style: trailMapStrokeStyle(for: difficulty, lineWidth: lineWidth))
+            .stroke(
+                color ?? .bermsDifficulty(difficulty),
+                style: trailMapStrokeStyle(for: difficulty, lineWidth: lineWidth)
+            )
             .tag(tag)
     } else {
         MapPolyline(coordinates: coordinates)
-            .stroke(color ?? .bermsDifficulty(difficulty),
-                    style: trailMapStrokeStyle(for: difficulty, lineWidth: lineWidth))
+            .stroke(
+                color ?? .bermsDifficulty(difficulty),
+                style: trailMapStrokeStyle(for: difficulty, lineWidth: lineWidth))
     }
 
     if difficulty == .doubleBlack {
@@ -150,8 +165,10 @@ func trailDistance(from coordinate: Coordinate, to points: [RoutePoint]) -> Doub
 
     let latitudeScale = max(0.1, cos(coordinate.latitude * .pi / 180))
     func project(_ value: Coordinate) -> (x: Double, y: Double) {
-        ((value.longitude - coordinate.longitude) * 111_000 * latitudeScale,
-         (value.latitude - coordinate.latitude) * 111_000)
+        (
+            (value.longitude - coordinate.longitude) * 111_000 * latitudeScale,
+            (value.latitude - coordinate.latitude) * 111_000
+        )
     }
 
     let origin = project(coordinate)
@@ -161,7 +178,8 @@ func trailDistance(from coordinate: Coordinate, to points: [RoutePoint]) -> Doub
         let dx = b.x - a.x
         let dy = b.y - a.y
         let denominator = dx * dx + dy * dy
-        let fraction = denominator > 0
+        let fraction =
+            denominator > 0
             ? max(0, min(1, ((origin.x - a.x) * dx + (origin.y - a.y) * dy) / denominator))
             : 0
         return hypot(origin.x - (a.x + dx * fraction), origin.y - (a.y + dy * fraction))
@@ -232,10 +250,10 @@ struct TrailMapLabel: View {
                 .foregroundStyle(.primary)
                 .fixedSize(horizontal: false, vertical: true)
         }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .background(.regularMaterial, in: Capsule())
-            .accessibilityLabel("\(name), \(difficulty.title) trail")
-            .allowsHitTesting(false)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(.regularMaterial, in: Capsule())
+        .accessibilityLabel("\(name), \(difficulty.title) trail")
+        .allowsHitTesting(false)
     }
 }

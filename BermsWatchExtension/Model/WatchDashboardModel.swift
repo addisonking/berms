@@ -18,18 +18,20 @@ final class WatchDashboardModel: ObservableObject {
     private var healthTask: Task<Void, Never>?
     private var commandTimeoutTask: Task<Void, Never>?
 
-    init(transport: WatchRideTransportClient? = nil,
-         healthProvider: WatchHealthProvider? = nil) {
-#if DEBUG
-        let demoEnabled = ProcessInfo.processInfo.arguments.contains("-BermsWatchDemo")
-        isDemo = demoEnabled
-        self.transport = transport ?? (demoEnabled ? WatchDemoTransport() : WatchConnectivityClient())
-        self.healthProvider = healthProvider ?? (demoEnabled ? WatchDemoHealthProvider() : WatchHealthManager())
-#else
-        isDemo = false
-        self.transport = transport ?? WatchConnectivityClient()
-        self.healthProvider = healthProvider ?? WatchHealthManager()
-#endif
+    init(
+        transport: WatchRideTransportClient? = nil,
+        healthProvider: WatchHealthProvider? = nil
+    ) {
+        #if DEBUG
+            let demoEnabled = ProcessInfo.processInfo.arguments.contains("-BermsWatchDemo")
+            isDemo = demoEnabled
+            self.transport = transport ?? (demoEnabled ? WatchDemoTransport() : WatchConnectivityClient())
+            self.healthProvider = healthProvider ?? (demoEnabled ? WatchDemoHealthProvider() : WatchHealthManager())
+        #else
+            isDemo = false
+            self.transport = transport ?? WatchConnectivityClient()
+            self.healthProvider = healthProvider ?? WatchHealthManager()
+        #endif
 
         state = self.transport.state
         isReachable = self.transport.isReachable
@@ -153,17 +155,17 @@ final class WatchDashboardModel: ObservableObject {
         healthStatus = status
     }
 
-#if DEBUG
-    func demoToggleReachable() {
-        (transport as? WatchDemoTransport)?.toggleReachable()
-    }
+    #if DEBUG
+        func demoToggleReachable() {
+            (transport as? WatchDemoTransport)?.toggleReachable()
+        }
 
-    func demoRefresh() {
-        (transport as? WatchDemoTransport)?.refresh()
-    }
+        func demoRefresh() {
+            (transport as? WatchDemoTransport)?.refresh()
+        }
 
-    func demoFinish() {
-        (transport as? WatchDemoTransport)?.finish()
-    }
-#endif
+        func demoFinish() {
+            (transport as? WatchDemoTransport)?.finish()
+        }
+    #endif
 }

@@ -134,13 +134,15 @@ struct StudioExport: Decodable {
                 segments: day.segments.map { segment in
                     let kind = SegmentKind(rawValue: segment.kind ?? "run") ?? .run
                     let route = (segment.route ?? []).map {
-                        RoutePoint(latitude: $0.latitude, longitude: $0.longitude,
-                                   altitude: $0.altitude ?? 0, speed: $0.speed ?? 0,
-                                   timestamp: $0.timestamp)
+                        RoutePoint(
+                            latitude: $0.latitude, longitude: $0.longitude,
+                            altitude: $0.altitude ?? 0, speed: $0.speed ?? 0,
+                            timestamp: $0.timestamp)
                     }
                     let jumps = (segment.jumps ?? []).map { jump -> JumpEvent in
                         let takeoff = jump.takeoffAt.timeIntervalSinceReferenceDate
-                        let airtime = jump.airtimeSeconds
+                        let airtime =
+                            jump.airtimeSeconds
                             ?? max(0, jump.landingAt.timeIntervalSince(jump.takeoffAt))
                         return JumpEvent(
                             takeoffTimestamp: jump.takeoffAt,
@@ -174,7 +176,8 @@ struct StudioExport: Decodable {
             let container = try decoder.singleValueContainer()
             let value = try container.decode(String.self)
             guard let date = StudioDateParser.parse(value) else {
-                throw DecodingError.dataCorruptedError(in: container,
+                throw DecodingError.dataCorruptedError(
+                    in: container,
                     debugDescription: "Unrecognized date \(value)")
             }
             return date
@@ -183,8 +186,11 @@ struct StudioExport: Decodable {
     }
 
     private static func runNumber(from id: String) -> Int? {
-        guard let match = id.range(of: #"(?:^|[-_])run[-_]?([0-9]+)$"#,
-                                   options: .regularExpression) else {
+        guard
+            let match = id.range(
+                of: #"(?:^|[-_])run[-_]?([0-9]+)$"#,
+                options: .regularExpression)
+        else {
             return nil
         }
         let suffix = id[match].split { $0 == "-" || $0 == "_" }.last

@@ -79,9 +79,10 @@ struct StudioExportProgress: Equatable, Sendable {
     }
 
     private var workCompleted: Double {
-        Double(completed) + activeItems.reduce(0.0) { total, item in
-            total + min(max(item.fraction, 0), 1)
-        }
+        Double(completed)
+            + activeItems.reduce(0.0) { total, item in
+                total + min(max(item.fraction, 0), 1)
+            }
     }
 }
 
@@ -144,7 +145,9 @@ final class StudioLibrary {
     }
 
     func clearAll() {
-        accessedScopes.forEach { $0.stopAccessingSecurityScopedResource() }
+        for scope in accessedScopes {
+            scope.stopAccessingSecurityScopedResource()
+        }
         accessedScopes = []
         days = []
         clips = []
@@ -218,9 +221,10 @@ final class StudioLibrary {
     func runRefs(in session: StudioSession) -> [RunRef] {
         session.runs.enumerated().map { index, segment in
             let runNumber = segment.runNumber ?? index + 1
-            return RunRef(sessionID: session.id, segmentID: segment.id,
-                          runNumber: runNumber,
-                          title: segment.title, subtitle: runSubtitle(segment, number: runNumber))
+            return RunRef(
+                sessionID: session.id, segmentID: segment.id,
+                runNumber: runNumber,
+                title: segment.title, subtitle: runSubtitle(segment, number: runNumber))
         }
     }
 
@@ -252,7 +256,8 @@ final class StudioLibrary {
     }
 
     func exportURL(session: StudioSession, run: RunRef) -> URL {
-        let filename = "\(slug(StudioFormat.dayLabel(session.day.startedAt)))"
+        let filename =
+            "\(slug(StudioFormat.dayLabel(session.day.startedAt)))"
             + "-run-\(String(format: "%02d", run.runNumber))"
             + "-\(slug(run.title)).mp4"
         return outputDirectory(for: session.id).appendingPathComponent(filename)
@@ -265,7 +270,8 @@ final class StudioLibrary {
 
     func exportPlan(for ref: RunRef) -> ExportPlan? {
         guard let session = session(id: ref.sessionID),
-              let segment = run(for: ref) else { return nil }
+            let segment = run(for: ref)
+        else { return nil }
         let orderedClips = orderedClips(forRun: segment, in: session)
         let clips = orderedClips.map { $0.parts.map(\.path) }
         guard clips.contains(where: { !$0.isEmpty }) else { return nil }
@@ -274,10 +280,11 @@ final class StudioLibrary {
         let estimatedDuration = orderedClips.reduce(0) { total, clip in
             total + max(0, clip.duration - trimStart - trimEnd)
         }
-        return ExportPlan(runID: ref.id, title: ref.title,
-                          output: exportURL(session: session, run: ref), clips: clips,
-                          estimatedDuration: estimatedDuration,
-                          trimStart: trimStart, trimEnd: trimEnd)
+        return ExportPlan(
+            runID: ref.id, title: ref.title,
+            output: exportURL(session: session, run: ref), clips: clips,
+            estimatedDuration: estimatedDuration,
+            trimStart: trimStart, trimEnd: trimEnd)
     }
 
     func exportableRunCount(in session: StudioSession) -> Int {
@@ -296,34 +303,38 @@ final class StudioLibrary {
         }
 
         let concurrency = max(1, concurrency)
-        let operationID = startExport(total: plans.count,
-                                      activeItems: plans.prefix(concurrency).map {
-                                          StudioExportItemProgress(id: $0.id, title: $0.title, fraction: 0)
-                                      })
+        let operationID = startExport(
+            total: plans.count,
+            activeItems: plans.prefix(concurrency).map {
+                StudioExportItemProgress(id: $0.id, title: $0.title, fraction: 0)
+            })
         Task {
             var failures = 0
             var index = 0
             while index < plans.count {
                 let chunk = Array(plans[index..<min(index + concurrency, plans.count)])
-                setActiveExportItems(chunk.map {
-                    StudioExportItemProgress(id: $0.id, title: $0.title, fraction: 0)
-                }, for: operationID)
+                setActiveExportItems(
+                    chunk.map {
+                        StudioExportItemProgress(id: $0.id, title: $0.title, fraction: 0)
+                    }, for: operationID)
                 await withTaskGroup(of: StudioExportAttempt.self) { group in
                     for plan in chunk {
                         let reportProgress: @Sendable (Double) -> Void = { [library = self] fraction in
                             Task { @MainActor in
-                                library.updateExportItemProgress(fraction,
-                                                                 itemID: plan.id,
-                                                                 for: operationID)
+                                library.updateExportItemProgress(
+                                    fraction,
+                                    itemID: plan.id,
+                                    for: operationID)
                             }
                         }
                         group.addTask {
                             do {
-                                try FfmpegStitcher.concat(clips: plan.clips, output: plan.output,
-                                                          estimatedDuration: plan.estimatedDuration,
-                                                          trimStart: plan.trimStart,
-                                                          trimEnd: plan.trimEnd,
-                                                          progress: reportProgress)
+                                try FfmpegStitcher.concat(
+                                    clips: plan.clips, output: plan.output,
+                                    estimatedDuration: plan.estimatedDuration,
+                                    trimStart: plan.trimStart,
+                                    trimEnd: plan.trimEnd,
+                                    progress: reportProgress)
                                 return StudioExportAttempt(id: plan.id, succeeded: true)
                             } catch {
                                 return StudioExportAttempt(id: plan.id, succeeded: false)
@@ -353,8 +364,9 @@ final class StudioLibrary {
     func startExport(total: Int, activeItems: [StudioExportItemProgress]) -> UUID {
         let operationID = UUID()
         exportID = operationID
-        exportProgress = StudioExportProgress(completed: 0, failed: 0, total: total,
-                                               activeItems: activeItems, startedAt: .now)
+        exportProgress = StudioExportProgress(
+            completed: 0, failed: 0, total: total,
+            activeItems: activeItems, startedAt: .now)
         busy = "Exporting…"
         messageIsError = false
         return operationID
@@ -368,7 +380,8 @@ final class StudioLibrary {
 
     func updateExportItemProgress(_ fraction: Double, itemID: String, for operationID: UUID) {
         guard exportID == operationID, var progress = exportProgress,
-              let index = progress.activeItems.firstIndex(where: { $0.id == itemID }) else {
+            let index = progress.activeItems.firstIndex(where: { $0.id == itemID })
+        else {
             return
         }
         progress.activeItems[index].fraction = min(max(fraction, 0), 1)
@@ -407,9 +420,10 @@ final class StudioLibrary {
         }
 
         sessions = days.enumerated().map { index, day in
-            StudioSession(id: day.id, day: day,
-                          offsetSeconds: offsets[day.id] ?? 0,
-                          clipIndices: assignments[index] ?? [])
+            StudioSession(
+                id: day.id, day: day,
+                offsetSeconds: offsets[day.id] ?? 0,
+                clipIndices: assignments[index] ?? [])
         }
         inboxClipIndices = inbox
     }
@@ -424,7 +438,7 @@ final class StudioLibrary {
             let clipEnd = clipStart.addingTimeInterval(clip.duration)
             let overlap = min(clipEnd, dayEnd).timeIntervalSince(max(clipStart, dayStart))
             guard overlap > 0 else { continue }
-            if best == nil || overlap > best!.overlap {
+            if overlap > (best?.overlap ?? -.infinity) {
                 best = (index, overlap)
             }
         }
@@ -440,7 +454,8 @@ final class StudioLibrary {
 
     private func span(of day: StudioDay) -> (Date, Date)? {
         guard let start = day.segments.map(\.startedAt).min(),
-              let end = day.segments.map(\.endedAt).max() else { return nil }
+            let end = day.segments.map(\.endedAt).max()
+        else { return nil }
         return (start, end)
     }
 
@@ -479,7 +494,8 @@ final class StudioLibrary {
         var result: [StudioDay] = []
         for day in sorted {
             if var last = result.last, let lastEnd = span(of: last)?.1,
-               day.startedAt.timeIntervalSince(lastEnd) < 2 * 3600 {
+                day.startedAt.timeIntervalSince(lastEnd) < 2 * 3600
+            {
                 last.segments = mergeSegments(last.segments + day.segments)
                 last.endedAt = max(last.endedAt ?? lastEnd, day.endedAt ?? day.startedAt)
                 result[result.count - 1] = last
@@ -503,8 +519,9 @@ final class StudioLibrary {
             var merged = result[index]
             merged.name = merged.name ?? day.name
             merged.startedAt = min(merged.startedAt, day.startedAt)
-            merged.endedAt = max(merged.endedAt ?? merged.startedAt,
-                                  day.endedAt ?? day.startedAt)
+            merged.endedAt = max(
+                merged.endedAt ?? merged.startedAt,
+                day.endedAt ?? day.startedAt)
             merged.segments = mergeSegments(merged.segments + day.segments)
             result[index] = merged
         }
@@ -514,11 +531,13 @@ final class StudioLibrary {
     private func mergeSegments(_ input: [StudioSegment]) -> [StudioSegment] {
         var result: [StudioSegment] = []
         for segment in input.sorted(by: { $0.startedAt < $1.startedAt }) {
-            guard let index = result.firstIndex(where: { existing in
-                existing.kind == segment.kind
-                    && abs(existing.startedAt.timeIntervalSince(segment.startedAt)) < 3
-                    && abs(existing.endedAt.timeIntervalSince(segment.endedAt)) < 3
-            }) else {
+            guard
+                let index = result.firstIndex(where: { existing in
+                    existing.kind == segment.kind
+                        && abs(existing.startedAt.timeIntervalSince(segment.startedAt)) < 3
+                        && abs(existing.endedAt.timeIntervalSince(segment.endedAt)) < 3
+                })
+            else {
                 result.append(segment)
                 continue
             }

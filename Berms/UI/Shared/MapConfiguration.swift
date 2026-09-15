@@ -16,8 +16,9 @@ struct RouteMapConfiguration {
         var hasValidPoint = false
         for point in points {
             guard point.latitude.isFinite, point.longitude.isFinite,
-                  (-90...90).contains(point.latitude),
-                  (-180...180).contains(point.longitude) else { continue }
+                (-90...90).contains(point.latitude),
+                (-180...180).contains(point.longitude)
+            else { continue }
             if !hasValidPoint {
                 minLatitude = point.latitude
                 maxLatitude = point.latitude

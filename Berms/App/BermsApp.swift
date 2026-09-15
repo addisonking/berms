@@ -7,8 +7,10 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         rawValue: "UIApplicationLaunchOptionsLocationKey"
     )
 
-    func application(_ application: UIApplication,
-                     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+    func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+    ) -> Bool {
         let autoResume = launchOptions?[Self.locationLaunchOptionKey] != nil
         // A location relaunch belongs to the same ride. Keep its existing
         // Live Activity so restoration cannot race a blanket cleanup.
@@ -21,9 +23,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
 
     func applicationDidEnterBackground(_ application: UIApplication) {
         RideRecorder.shared.appDidEnterBackground()
-#if DEBUG
-        TrailMapper.shared.stopIfIdle()
-#endif
+        #if DEBUG
+            TrailMapper.shared.stopIfIdle()
+        #endif
     }
 
     func applicationWillTerminate(_ application: UIApplication) {
@@ -31,9 +33,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         // callback above handles the usual app-switcher force-close path.
         RideRecorder.shared.locationService.stop()
         BermsLiveActivityCoordinator.shared.endAll()
-#if DEBUG
-        TrailMapper.shared.locationService.stop()
-#endif
+        #if DEBUG
+            TrailMapper.shared.locationService.stop()
+        #endif
     }
 }
 

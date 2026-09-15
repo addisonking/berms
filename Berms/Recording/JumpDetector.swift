@@ -17,8 +17,10 @@ struct JumpEvent: Codable, Hashable, Sendable {
     let landingMonotonicSeconds: Double
     let airtime: TimeInterval
 
-    init(takeoffTimestamp: Date, landingTimestamp: Date,
-         takeoffMonotonicSeconds: Double, landingMonotonicSeconds: Double) {
+    init(
+        takeoffTimestamp: Date, landingTimestamp: Date,
+        takeoffMonotonicSeconds: Double, landingMonotonicSeconds: Double
+    ) {
         self.takeoffTimestamp = takeoffTimestamp
         self.landingTimestamp = landingTimestamp
         self.takeoffMonotonicSeconds = takeoffMonotonicSeconds
@@ -111,17 +113,19 @@ final class JumpDetector: @unchecked Sendable {
         previousSample = sample
 
         guard context.phase == .run,
-              context.speed.isFinite,
-              context.speed >= configuration.minimumRidingSpeed,
-              !context.isStationary,
-              !context.isAutomotive else {
+            context.speed.isFinite,
+            context.speed >= configuration.minimumRidingSpeed,
+            !context.isStationary,
+            !context.isAutomotive
+        else {
             runContextStart = nil
             return rejectCandidate(sample, reason: "run_context_invalid")
         }
 
         let contextAge = sample.monotonicSeconds - context.monotonicSeconds
         guard contextAge <= configuration.maximumTrackContextAge,
-              contextAge >= -configuration.maximumMotionGap else {
+            contextAge >= -configuration.maximumMotionGap
+        else {
             runContextStart = nil
             return rejectCandidate(sample, reason: "track_context_stale")
         }
@@ -130,8 +134,10 @@ final class JumpDetector: @unchecked Sendable {
             runContextStart = sample.monotonicSeconds
             return []
         }
-        guard sample.monotonicSeconds - (runContextStart ?? sample.monotonicSeconds)
-                >= configuration.minimumRunContextSeconds else {
+        guard
+            sample.monotonicSeconds - (runContextStart ?? sample.monotonicSeconds)
+                >= configuration.minimumRunContextSeconds
+        else {
             return []
         }
 
@@ -141,7 +147,8 @@ final class JumpDetector: @unchecked Sendable {
         self.cooldownUntil = nil
 
         guard let forceG = totalAccelerationG(for: sample),
-              forceG.isFinite else {
+            forceG.isFinite
+        else {
             return rejectCandidate(sample, reason: "invalid_gravity")
         }
 
@@ -182,8 +189,11 @@ final class JumpDetector: @unchecked Sendable {
         guard forceG <= configuration.lowForceThresholdG else { return [] }
         self.candidateStart = sample
         candidateMaximumRotationRate = rotationRate
-        return [diagnostic("jump_candidate_started", sample,
-                           "low_force_g=\(format(forceG))")]
+        return [
+            diagnostic(
+                "jump_candidate_started", sample,
+                "low_force_g=\(format(forceG))")
+        ]
     }
 
     private func rejectCandidate(_ sample: DeviceMotionSample, reason: String) -> [JumpDetectorEvent] {
@@ -194,17 +204,19 @@ final class JumpDetector: @unchecked Sendable {
     }
 
     private func diagnostic(_ kind: String, _ sample: DeviceMotionSample, _ detail: String) -> JumpDetectorEvent {
-        .diagnostic(kind: kind, timestamp: sample.recordedAt,
-                    monotonicSeconds: sample.monotonicSeconds, detail: detail)
+        .diagnostic(
+            kind: kind, timestamp: sample.recordedAt,
+            monotonicSeconds: sample.monotonicSeconds, detail: detail)
     }
 
     private func totalAccelerationG(for sample: DeviceMotionSample) -> Double? {
         let x = sample.gravityX + sample.userAccelerationX
         let y = sample.gravityY + sample.userAccelerationY
         let z = sample.gravityZ + sample.userAccelerationZ
-        let gravityMagnitude = sqrt(sample.gravityX * sample.gravityX
-                                    + sample.gravityY * sample.gravityY
-                                    + sample.gravityZ * sample.gravityZ)
+        let gravityMagnitude = sqrt(
+            sample.gravityX * sample.gravityX
+                + sample.gravityY * sample.gravityY
+                + sample.gravityZ * sample.gravityZ)
         guard gravityMagnitude.isFinite, gravityMagnitude >= 0.65, gravityMagnitude <= 1.35 else {
             return nil
         }
@@ -212,9 +224,10 @@ final class JumpDetector: @unchecked Sendable {
     }
 
     private func rotationRateMagnitude(of sample: DeviceMotionSample) -> Double {
-        sqrt(sample.rotationRateX * sample.rotationRateX
-             + sample.rotationRateY * sample.rotationRateY
-             + sample.rotationRateZ * sample.rotationRateZ)
+        sqrt(
+            sample.rotationRateX * sample.rotationRateX
+                + sample.rotationRateY * sample.rotationRateY
+                + sample.rotationRateZ * sample.rotationRateZ)
     }
 
     private func format(_ value: Double) -> String {
@@ -314,8 +327,9 @@ struct JumpLogReplayer {
                 continue
             }
             if record.kind == "detector_input", record.accepted == true,
-               let phase = record.phaseAfter.flatMap(DetectorPhase.init(rawValue:)),
-               let monotonic = record.trackMonotonicSeconds ?? Optional(record.monotonicSeconds) {
+                let phase = record.phaseAfter.flatMap(DetectorPhase.init(rawValue:)),
+                let monotonic = record.trackMonotonicSeconds ?? Optional(record.monotonicSeconds)
+            {
                 context = JumpTrackContext(
                     timestamp: record.timestamp,
                     monotonicSeconds: monotonic,

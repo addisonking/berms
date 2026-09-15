@@ -16,8 +16,9 @@ struct RunDetailView: View {
                     header(clipCount: clips.count)
                     stats(for: segment)
                     trails(for: segment)
-                    clipSection(title: "Clips (\(clips.count))", clips: clips,
-                                emptyText: "No footage matched this run.")
+                    clipSection(
+                        title: "Clips (\(clips.count))", clips: clips,
+                        emptyText: "No footage matched this run.")
                 }
                 .padding(24)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -115,13 +116,15 @@ struct RunDetailView: View {
         Task {
             do {
                 try await Task.detached {
-                    try FfmpegStitcher.concat(clips: plan.clips, output: plan.output,
-                                              estimatedDuration: plan.estimatedDuration,
-                                              trimStart: plan.trimStart, trimEnd: plan.trimEnd,
-                                              progress: reportProgress)
+                    try FfmpegStitcher.concat(
+                        clips: plan.clips, output: plan.output,
+                        estimatedDuration: plan.estimatedDuration,
+                        trimStart: plan.trimStart, trimEnd: plan.trimEnd,
+                        progress: reportProgress)
                 }.value
                 library.completeExportItem(plan.id, succeeded: true, for: operationID)
-                library.message = "Exported \(plan.output.lastPathComponent) → \(plan.output.deletingLastPathComponent().path)"
+                library.message =
+                    "Exported \(plan.output.lastPathComponent) → \(plan.output.deletingLastPathComponent().path)"
                 library.messageIsError = false
             } catch {
                 library.completeExportItem(plan.id, succeeded: false, for: operationID)

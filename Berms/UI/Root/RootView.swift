@@ -64,9 +64,10 @@ struct RootView: View {
             recorder.handleLiveActivityOpen()
         }
         .alert(item: $startupIssue) { issue in
-            Alert(title: Text(issue.title),
-                  message: Text(issue.message),
-                  dismissButton: .cancel(Text("OK")))
+            Alert(
+                title: Text(issue.title),
+                message: Text(issue.message),
+                dismissButton: .cancel(Text("OK")))
         }
     }
 }

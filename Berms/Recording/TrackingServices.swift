@@ -88,7 +88,8 @@ final class LocationService: NSObject, ObservableObject, @preconcurrency CLLocat
 
         manager.allowsBackgroundLocationUpdates = true
         manager.showsBackgroundLocationIndicator = true
-        let authorization: CLServiceSession.AuthorizationRequirement = authorizationStatus == .authorizedAlways ? .always : .whenInUse
+        let authorization: CLServiceSession.AuthorizationRequirement =
+            authorizationStatus == .authorizedAlways ? .always : .whenInUse
         serviceSession = CLServiceSession(authorization: authorization)
         backgroundSession = CLBackgroundActivitySession()
         isRunning = true
@@ -115,7 +116,8 @@ final class LocationService: NSObject, ObservableObject, @preconcurrency CLLocat
                 }
                 guard let self, !Task.isCancelled else { return }
                 guard self.isRunning, self.handler != nil,
-                      self.updateGeneration == generation else { return }
+                    self.updateGeneration == generation
+                else { return }
                 self.stopUpdates()
                 self.beginUpdates()
             }
@@ -180,7 +182,8 @@ final class MotionService: ObservableObject, @unchecked Sendable {
         isCycling = false
         isAutomotive = false
         let authorization = CMAltimeter.authorizationStatus()
-        altimeterAvailable = CMAltimeter.isRelativeAltitudeAvailable()
+        altimeterAvailable =
+            CMAltimeter.isRelativeAltitudeAvailable()
             && authorization != .denied && authorization != .restricted
         motionAvailable = altimeterAvailable
         deviceMotionManager.deviceMotionUpdateInterval = 0.04
@@ -229,23 +232,24 @@ final class MotionService: ObservableObject, @unchecked Sendable {
         { data, _ in
             guard let data else { return }
             let attitude = data.attitude.quaternion
-            handler?(DeviceMotionSample(
-                recordedAt: .now,
-                monotonicSeconds: data.timestamp,
-                userAccelerationX: data.userAcceleration.x,
-                userAccelerationY: data.userAcceleration.y,
-                userAccelerationZ: data.userAcceleration.z,
-                rotationRateX: data.rotationRate.x,
-                rotationRateY: data.rotationRate.y,
-                rotationRateZ: data.rotationRate.z,
-                gravityX: data.gravity.x,
-                gravityY: data.gravity.y,
-                gravityZ: data.gravity.z,
-                quaternionW: attitude.w,
-                quaternionX: attitude.x,
-                quaternionY: attitude.y,
-                quaternionZ: attitude.z
-            ))
+            handler?(
+                DeviceMotionSample(
+                    recordedAt: .now,
+                    monotonicSeconds: data.timestamp,
+                    userAccelerationX: data.userAcceleration.x,
+                    userAccelerationY: data.userAcceleration.y,
+                    userAccelerationZ: data.userAcceleration.z,
+                    rotationRateX: data.rotationRate.x,
+                    rotationRateY: data.rotationRate.y,
+                    rotationRateZ: data.rotationRate.z,
+                    gravityX: data.gravity.x,
+                    gravityY: data.gravity.y,
+                    gravityZ: data.gravity.z,
+                    quaternionW: attitude.w,
+                    quaternionX: attitude.x,
+                    quaternionY: attitude.y,
+                    quaternionZ: attitude.z
+                ))
         }
     }
 

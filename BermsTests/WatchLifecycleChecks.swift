@@ -15,10 +15,11 @@ final class WatchConnectivityClient: WatchRideTransportClient {
         return isReachable
     }
     func push(_ status: WatchRideStatus, rideID: String = "ride-a", age: Double = 0) {
-        state = WatchRideState(status: status, rideID: status == .idle ? nil : rideID,
-                              phase: "run", startedAt: .now, elapsedSeconds: 90,
-                              distanceMeters: 200, descentMeters: 20, speedMetersPerSecond: 5,
-                              updatedAt: .now.addingTimeInterval(-age))
+        state = WatchRideState(
+            status: status, rideID: status == .idle ? nil : rideID,
+            phase: "run", startedAt: .now, elapsedSeconds: 90,
+            distanceMeters: 200, descentMeters: 20, speedMetersPerSecond: 5,
+            updatedAt: .now.addingTimeInterval(-age))
         onStateChange?(state)
     }
 }
@@ -46,12 +47,14 @@ struct WatchLifecycleChecks {
         precondition(!model.canTogglePause && !health.events.contains("start"), "Cached rides must not start health")
         transport.push(.recording)
         precondition(model.canTogglePause && health.events.last == "start")
-        precondition(model.state.distanceMeters == 200 && model.health == .unavailable,
-                     "Route metrics must work without health access")
+        precondition(
+            model.state.distanceMeters == 200 && model.health == .unavailable,
+            "Route metrics must work without health access")
 
         model.togglePause()
-        precondition(model.state.status == .recording && model.commandInFlight,
-                     "Pause must wait for iPhone confirmation")
+        precondition(
+            model.state.status == .recording && model.commandInFlight,
+            "Pause must wait for iPhone confirmation")
         transport.push(.paused)
         transport.onCommandResult?(true, transport.state)
         precondition(model.canTogglePause && health.events.last == "pause")
@@ -81,8 +84,9 @@ struct WatchLifecycleChecks {
         precondition(transport.commands.last == .finish && model.commandInFlight)
         precondition(model.state.isActive, "Finish must wait for iPhone confirmation")
         transport.onCommandResult?(false, transport.state)
-        precondition(model.state.isActive && !model.commandInFlight && model.message != nil,
-                     "A rejected finish must leave the ride available")
+        precondition(
+            model.state.isActive && !model.commandInFlight && model.message != nil,
+            "A rejected finish must leave the ride available")
         model.finishRide()
         transport.push(.idle)
         transport.onCommandResult?(true, transport.state)
@@ -90,6 +94,8 @@ struct WatchLifecycleChecks {
         let finishedCommandCount = transport.commands.count
         model.finishRide()
         precondition(transport.commands.count == finishedCommandCount, "Idle rides cannot be finished")
-        print("PASS: idle, stale launch, unavailable health, confirmed pause/resume, long pause, disconnect/reconnect, new ride, rejected finish, confirmed finish")
+        print(
+            "PASS: idle, stale launch, unavailable health, confirmed pause/resume, long pause, disconnect/reconnect, new ride, rejected finish, confirmed finish"
+        )
     }
 }

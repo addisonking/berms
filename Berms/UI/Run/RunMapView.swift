@@ -21,10 +21,11 @@ struct FullScreenSummaryMap: View {
         NavigationStack {
             Group {
                 if let base {
-                    SessionRouteMap(base: base, trailDetails: trailDetails,
-                                    focusedSegmentID: focusedSegmentID,
-                                    focusedRunNumber: focusedRunNumber,
-                                    extendsUnderBars: true)
+                    SessionRouteMap(
+                        base: base, trailDetails: trailDetails,
+                        focusedSegmentID: focusedSegmentID,
+                        focusedRunNumber: focusedRunNumber,
+                        extendsUnderBars: true)
                 } else {
                     ProgressView("Loading map…")
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -56,11 +57,13 @@ struct RunMapView: View {
     @State private var isPreparing = false
     @State private var prepareFailed = false
 
-    init(number: Int,
-         segment: RideSegment,
-         preparedBase: SessionDetailBase? = nil,
-         preparedDetail: SessionDetailSegment? = nil,
-         preparedTrailDetails: SessionDetailTrailDetails? = nil) {
+    init(
+        number: Int,
+        segment: RideSegment,
+        preparedBase: SessionDetailBase? = nil,
+        preparedDetail: SessionDetailSegment? = nil,
+        preparedTrailDetails: SessionDetailTrailDetails? = nil
+    ) {
         self.number = number
         self.segment = segment
         self.preparedBase = preparedBase
@@ -113,17 +116,20 @@ struct RunMapView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             } else if routePoints.isEmpty {
-                ContentUnavailableView("No route", systemImage: "map",
-                                       description: Text("This run has no recorded GPS route."))
+                ContentUnavailableView(
+                    "No route", systemImage: "map",
+                    description: Text("This run has no recorded GPS route."))
             } else {
                 List {
                     Section {
                         if let activeBase {
-                            SessionRouteMap(base: activeBase, trailDetails: activeTrailDetails,
-                                            focusedSegmentID: segment.id, focusedRunNumber: number,
-                                            onExpand: { showingFullScreenMap = true })
-                                .frame(height: 320)
-                                .listRowInsets(EdgeInsets())
+                            SessionRouteMap(
+                                base: activeBase, trailDetails: activeTrailDetails,
+                                focusedSegmentID: segment.id, focusedRunNumber: number,
+                                onExpand: { showingFullScreenMap = true }
+                            )
+                            .frame(height: 320)
+                            .listRowInsets(EdgeInsets())
                         }
                     }
                     Section("Run stats") {
@@ -134,10 +140,11 @@ struct RunMapView: View {
                     }
                 }
                 .fullScreenCover(isPresented: $showingFullScreenMap) {
-                    FullScreenSummaryMap(title: "Run \(number)", base: activeBase,
-                                         trailDetails: activeTrailDetails,
-                                         focusedSegmentID: segment.id,
-                                         focusedRunNumber: number)
+                    FullScreenSummaryMap(
+                        title: "Run \(number)", base: activeBase,
+                        trailDetails: activeTrailDetails,
+                        focusedSegmentID: segment.id,
+                        focusedRunNumber: number)
                 }
             }
         }
@@ -155,24 +162,28 @@ struct RunMapView: View {
     /// it, so decoding and trail matching never run on the rendering path.
     @MainActor
     private func prepareIfNeeded(force: Bool = false) async {
-        guard preparedDetail == nil, activeDetail == nil, (!isPreparing || force) else { return }
+        guard preparedDetail == nil, activeDetail == nil, !isPreparing || force else { return }
         if force { prepareFailed = false }
         let activityMode = segment.day?.activityMode ?? .bikePark
-        let catalogID = segment.day?.catalogID
+        let catalogID =
+            segment.day?.catalogID
             ?? TrailCatalogRegistry.catalog(for: activityMode)?.id
         let selectionID = catalogID ?? TrailCatalogRegistry.automaticSelectionID
         var runKey: String?
         if let dayID = segment.day?.id {
-            runKey = SessionDetailPresentationPreheater.runCacheKey(dayID: dayID,
-                                                                     segmentID: segment.id,
-                                                                     selectionID: selectionID,
-                                                                     trails: trails)
+            runKey = SessionDetailPresentationPreheater.runCacheKey(
+                dayID: dayID,
+                segmentID: segment.id,
+                selectionID: selectionID,
+                trails: trails)
             // A prepared day already covers every run in it, so reuse it before matching again.
-            let dayKey = SessionDetailPresentationPreheater.cacheKey(dayID: dayID,
-                                                                     selectionID: selectionID,
-                                                                     trails: trails)
+            let dayKey = SessionDetailPresentationPreheater.cacheKey(
+                dayID: dayID,
+                selectionID: selectionID,
+                trails: trails)
             if let dayEntry = SessionDetailPresentationCache.shared.entry(for: dayKey),
-               dayEntry.base.segmentsByID[segment.id] != nil {
+                dayEntry.base.segmentsByID[segment.id] != nil
+            {
                 ownBase = dayEntry.base
                 ownTrailDetails = dayEntry.trailDetails
                 return
@@ -186,12 +197,14 @@ struct RunMapView: View {
         isPreparing = true
         defer { isPreparing = false }
         do {
-            guard let entry = try await SessionDetailPresentationPreheater.prepareRun(
-                segmentID: segment.id,
-                manualCatalogID: catalogID,
-                container: modelContext.container,
-                onBase: { ownBase = $0 }
-            ) else { return }
+            guard
+                let entry = try await SessionDetailPresentationPreheater.prepareRun(
+                    segmentID: segment.id,
+                    manualCatalogID: catalogID,
+                    container: modelContext.container,
+                    onBase: { ownBase = $0 }
+                )
+            else { return }
             guard !Task.isCancelled else { return }
             ownTrailDetails = entry.trailDetails
             if let runKey {
@@ -213,7 +226,10 @@ struct RunStatsCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: BermsSpacing.control) {
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: dynamicTypeSize.isAccessibilitySize ? 1 : 2), alignment: .leading, spacing: BermsSpacing.content) {
+            LazyVGrid(
+                columns: Array(repeating: GridItem(.flexible()), count: dynamicTypeSize.isAccessibilitySize ? 1 : 2),
+                alignment: .leading, spacing: BermsSpacing.content
+            ) {
                 // Decoded values wait for the prepared detail; reading them from the
                 // segment would decode its route and jumps on the rendering path.
                 SummaryStat(label: "Duration", value: detail.map { BermsFormat.duration($0.duration) } ?? "…")
@@ -243,11 +259,13 @@ struct TrailSequenceCard: View {
             Text(sequence)
                 .font(.headline)
                 .fixedSize(horizontal: false, vertical: true)
-            Text(sequence == "Trail not identified"
-                 ? "Run \(runNumber) · GPS route only"
-                 : "Run \(runNumber)")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(Color.bermsMuted)
+            Text(
+                sequence == "Trail not identified"
+                    ? "Run \(runNumber) · GPS route only"
+                    : "Run \(runNumber)"
+            )
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(Color.bermsMuted)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
@@ -262,11 +280,13 @@ struct SegmentRow: View {
     var trailName: String?
     let isPreparingDetails: Bool
 
-    init(number: Int,
-         segment: RideSegment,
-         detail: SessionDetailSegment? = nil,
-         trailName: String? = nil,
-         isPreparingDetails: Bool = false) {
+    init(
+        number: Int,
+        segment: RideSegment,
+        detail: SessionDetailSegment? = nil,
+        trailName: String? = nil,
+        isPreparingDetails: Bool = false
+    ) {
         self.number = number
         self.segment = segment
         self.detail = detail
@@ -290,9 +310,13 @@ struct SegmentRow: View {
                         .font(.caption)
                         .foregroundStyle(Color.bermsMuted)
                 }
-                Text(kind == .run ? BermsFormat.elevation(verticalMeters) + " descent" : BermsFormat.elevation(verticalMeters) + " up")
-                    .font(.caption)
-                    .foregroundStyle(Color.bermsMuted)
+                Text(
+                    kind == .run
+                        ? BermsFormat.elevation(verticalMeters) + " descent"
+                        : BermsFormat.elevation(verticalMeters) + " up"
+                )
+                .font(.caption)
+                .foregroundStyle(Color.bermsMuted)
             }
             Spacer()
             Text(BermsFormat.speed(maximumSpeedMetersPerSecond))

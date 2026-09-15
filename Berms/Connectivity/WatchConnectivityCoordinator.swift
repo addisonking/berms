@@ -48,7 +48,8 @@ final class WatchConnectivityCoordinator: NSObject, ObservableObject, WatchRideS
         guard session.isPaired, session.isWatchAppInstalled else { return }
         let now = Date.now
         if force || !session.isReachable
-            || now.timeIntervalSince(lastContextSend) >= 5 {
+            || now.timeIntervalSince(lastContextSend) >= 5
+        {
             lastContextSend = now
             try? session.updateApplicationContext([WatchRideWire.state: encodedState])
         }
@@ -82,9 +83,11 @@ final class WatchConnectivityCoordinator: NSObject, ObservableObject, WatchRideS
         }
     }
 
-    nonisolated func session(_ session: WCSession,
-                             activationDidCompleteWith activationState: WCSessionActivationState,
-                             error: Error?) {
+    nonisolated func session(
+        _ session: WCSession,
+        activationDidCompleteWith activationState: WCSessionActivationState,
+        error: Error?
+    ) {
         let reachable = session.isReachable
         Task { @MainActor [weak self] in
             guard let self else { return }
@@ -105,14 +108,18 @@ final class WatchConnectivityCoordinator: NSObject, ObservableObject, WatchRideS
         }
     }
 
-    nonisolated func session(_ session: WCSession,
-                             didReceiveApplicationContext applicationContext: [String: Any]) {
+    nonisolated func session(
+        _ session: WCSession,
+        didReceiveApplicationContext applicationContext: [String: Any]
+    ) {
         // The phone is the source of truth. The watch sends no state back through context.
     }
 
-    nonisolated func session(_ session: WCSession,
-                             didReceiveMessage message: [String: Any],
-                             replyHandler: @escaping ([String: Any]) -> Void) {
+    nonisolated func session(
+        _ session: WCSession,
+        didReceiveMessage message: [String: Any],
+        replyHandler: @escaping ([String: Any]) -> Void
+    ) {
         if message[WatchRideWire.requestState] as? Bool == true {
             let reply = WatchReplyHandler(replyHandler)
             Task { @MainActor in
@@ -122,13 +129,15 @@ final class WatchConnectivityCoordinator: NSObject, ObservableObject, WatchRideS
             return
         }
         guard let data = message[WatchRideWire.command] as? Data,
-              let request = try? WatchRideCodec.decode(WatchRideCommandRequest.self, from: data) else {
+            let request = try? WatchRideCodec.decode(WatchRideCommandRequest.self, from: data)
+        else {
             // Never answer with a fresh idle state: that would clobber whatever
             // the watch is showing. Reply with the recorder's real state instead.
             let reply = WatchReplyHandler(replyHandler)
             Task { @MainActor in
-                let response = WatchRideCommandReply(accepted: false,
-                                                     state: RideRecorder.shared.currentWatchRideState)
+                let response = WatchRideCommandReply(
+                    accepted: false,
+                    state: RideRecorder.shared.currentWatchRideState)
                 reply.send([WatchRideWire.reply: (try? WatchRideCodec.encode(response)) ?? Data()])
             }
             return

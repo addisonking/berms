@@ -1,5 +1,5 @@
-import CryptoKit
 import Combine
+import CryptoKit
 import Foundation
 import SwiftData
 
@@ -53,7 +53,7 @@ enum TrailCatalogRegistry {
     static let catalogs: [TrailCatalogDescriptor] = [mountainCreek]
     static let catalogsBySeason: [SeasonBucket: [TrailCatalogDescriptor]] = [
         .summer: [mountainCreek],
-        .winter: [mountainCreekWinter]
+        .winter: [mountainCreekWinter],
     ]
 
     static var defaultCatalog: TrailCatalogDescriptor { catalogs[0] }
@@ -70,8 +70,10 @@ enum TrailCatalogRegistry {
         } ?? defaultCatalog
     }
 
-    static func catalog(for mode: ActivityMode,
-                        coordinate: Coordinate? = nil) -> TrailCatalogDescriptor? {
+    static func catalog(
+        for mode: ActivityMode,
+        coordinate: Coordinate? = nil
+    ) -> TrailCatalogDescriptor? {
         let candidates = catalogsBySeason[mode.season] ?? []
         guard !candidates.isEmpty else { return nil }
         guard let coordinate else { return candidates.first }
@@ -118,7 +120,8 @@ final class TrailCatalogSelection: ObservableObject {
     }
 
     func setSelectionID(_ id: String) {
-        let newValue = id == TrailCatalogRegistry.automaticSelectionID
+        let newValue =
+            id == TrailCatalogRegistry.automaticSelectionID
             ? nil
             : TrailCatalogRegistry.catalog(withID: id)?.id
         manualCatalogID = newValue
@@ -131,18 +134,22 @@ final class TrailCatalogSelection: ObservableObject {
 
     func catalog(for coordinate: Coordinate?) -> TrailCatalogDescriptor {
         if let manualCatalogID,
-           let manualCatalog = TrailCatalogRegistry.catalog(withID: manualCatalogID) {
+            let manualCatalog = TrailCatalogRegistry.catalog(withID: manualCatalogID)
+        {
             return manualCatalog
         }
         guard let coordinate else { return TrailCatalogRegistry.defaultCatalog }
         return TrailCatalogRegistry.nearestCatalog(to: coordinate)
     }
 
-    func catalog(for mode: ActivityMode,
-                 coordinate: Coordinate? = nil) -> TrailCatalogDescriptor? {
+    func catalog(
+        for mode: ActivityMode,
+        coordinate: Coordinate? = nil
+    ) -> TrailCatalogDescriptor? {
         if let manualCatalogID,
-           let manualCatalog = TrailCatalogRegistry.catalog(withID: manualCatalogID),
-           manualCatalog.season == mode.season {
+            let manualCatalog = TrailCatalogRegistry.catalog(withID: manualCatalogID),
+            manualCatalog.season == mode.season
+        {
             return manualCatalog
         }
         return TrailCatalogRegistry.catalog(for: mode, coordinate: coordinate)
@@ -152,8 +159,10 @@ final class TrailCatalogSelection: ObservableObject {
         self.trails(trails, mode: .bikePark, near: coordinate)
     }
 
-    func trails(_ trails: [Trail], mode: ActivityMode,
-                near coordinate: Coordinate? = nil) -> [Trail] {
+    func trails(
+        _ trails: [Trail], mode: ActivityMode,
+        near coordinate: Coordinate? = nil
+    ) -> [Trail] {
         guard let catalog = catalog(for: mode, coordinate: coordinate) else { return [] }
         return TrailCatalogRegistry.trails(trails, for: catalog)
     }
@@ -162,7 +171,7 @@ final class TrailCatalogSelection: ObservableObject {
 @MainActor
 enum TrailCatalogImporter {
     // Compatibility constants for code that used the original importer API.
-    static let mountainCreekResourceName = TrailCatalogRegistry.mountainCreek.bundledResourceName!
+    static let mountainCreekResourceName = TrailCatalogRegistry.mountainCreek.bundledResourceName
     static let mountainCreekImportVersion = TrailCatalogRegistry.mountainCreek.importVersion
 
     private static let versionKeyPrefix = "berms.trailCatalogImport"
@@ -194,9 +203,10 @@ enum TrailCatalogImporter {
         defaults: UserDefaults = .standard,
         now: Date = .now
     ) throws -> Summary? {
-        try importCatalogIfNeeded(TrailCatalogRegistry.mountainCreek,
-                                  into: context, bundle: bundle,
-                                  defaults: defaults, now: now)
+        try importCatalogIfNeeded(
+            TrailCatalogRegistry.mountainCreek,
+            into: context, bundle: bundle,
+            defaults: defaults, now: now)
     }
 
     static func importCatalogsIfNeeded(
@@ -206,10 +216,13 @@ enum TrailCatalogImporter {
         now: Date = .now
     ) throws -> [(catalog: TrailCatalogDescriptor, summary: Summary)] {
         try TrailCatalogRegistry.catalogs.compactMap { catalog in
-            guard let summary = try importCatalogIfNeeded(catalog, into: context,
-                                                           bundle: bundle,
-                                                           defaults: defaults,
-                                                           now: now) else {
+            guard
+                let summary = try importCatalogIfNeeded(
+                    catalog, into: context,
+                    bundle: bundle,
+                    defaults: defaults,
+                    now: now)
+            else {
                 return nil
             }
             return (catalog: catalog, summary: summary)
@@ -225,13 +238,16 @@ enum TrailCatalogImporter {
     ) throws -> Summary? {
         guard !isImported(catalog, defaults: defaults) else { return nil }
         guard let resourceName = catalog.bundledResourceName,
-              let url = bundle.url(forResource: resourceName,
-                                   withExtension: "geojson") else {
+            let url = bundle.url(
+                forResource: resourceName,
+                withExtension: "geojson")
+        else {
             return nil
         }
         let data = try Data(contentsOf: url)
-        return try `import`(data: data, into: context, defaults: defaults,
-                            now: now, catalog: catalog)
+        return try `import`(
+            data: data, into: context, defaults: defaults,
+            now: now, catalog: catalog)
     }
 
     static func `import`(
@@ -248,8 +264,9 @@ enum TrailCatalogImporter {
         }
 
         let existingTrails = try context.fetch(FetchDescriptor<Trail>())
-        var trailsByID = Dictionary(existingTrails.map { ($0.id, $0) },
-                                    uniquingKeysWith: { first, _ in first })
+        var trailsByID = Dictionary(
+            existingTrails.map { ($0.id, $0) },
+            uniquingKeysWith: { first, _ in first })
         var trailsCreated = 0
         var passesCreated = 0
         var existingTrailsSkipped = 0
@@ -258,7 +275,8 @@ enum TrailCatalogImporter {
 
         for feature in collection.features {
             guard let slug = feature.properties.slug?.trimmedNonEmpty,
-                  let name = feature.properties.name?.trimmedNonEmpty else {
+                let name = feature.properties.name?.trimmedNonEmpty
+            else {
                 invalidFeaturesSkipped += 1
                 continue
             }
@@ -266,8 +284,9 @@ enum TrailCatalogImporter {
                 continue
             }
             guard let difficulty = difficulty(from: feature.properties, catalog: catalog),
-                  let points = feature.geometry.routePoints(referenceDate: now),
-                  points.count >= 2 else {
+                let points = feature.geometry.routePoints(referenceDate: now),
+                points.count >= 2
+            else {
                 invalidFeaturesSkipped += 1
                 continue
             }
@@ -287,8 +306,9 @@ enum TrailCatalogImporter {
                     continue
                 }
             } else {
-                trail = Trail(name: name, difficulty: difficulty, resort: catalog.resortName,
-                              catalogID: catalog.id)
+                trail = Trail(
+                    name: name, difficulty: difficulty, resort: catalog.resortName,
+                    catalogID: catalog.id)
                 trail.id = id
                 context.insert(trail)
                 trailsByID[id] = trail
@@ -318,16 +338,20 @@ enum TrailCatalogImporter {
         )
     }
 
-    private static func difficulty(from properties: GeoJSONProperties,
-                                   catalog: TrailCatalogDescriptor) -> TrailDifficulty? {
+    private static func difficulty(
+        from properties: GeoJSONProperties,
+        catalog: TrailCatalogDescriptor
+    ) -> TrailDifficulty? {
         if catalog.id == TrailCatalogRegistry.mountainCreek.id,
-           let slug = properties.slug?.trimmedNonEmpty,
-           let officialDifficulty = mountainCreekOfficialDifficultyBySlug[slug] {
+            let slug = properties.slug?.trimmedNonEmpty,
+            let officialDifficulty = mountainCreekOfficialDifficultyBySlug[slug]
+        {
             return officialDifficulty
         }
 
         if let rawValue = properties.difficulty,
-           let difficulty = TrailDifficulty(rawValue: rawValue) {
+            let difficulty = TrailDifficulty(rawValue: rawValue)
+        {
             return difficulty
         }
 
@@ -355,7 +379,7 @@ enum TrailCatalogImporter {
         "the-pit": .doubleBlack,
         "covenant-d2z0pq": .doubleBlack,
         "anthem-2cky0y": .doubleBlack,
-        "phantom-drop": .doubleBlack
+        "phantom-drop": .doubleBlack,
     ]
 
     // RidePal published the same Lower Asylum centerline three times. Keep
@@ -363,7 +387,7 @@ enum TrailCatalogImporter {
     // it during the v2 catalog migration.
     private static let mountainCreekRetiredTrailSlugs: [String: String] = [
         "lower-asylum-196712": "lower-asylum-1f4u6s",
-        "lower-asylum-dud3va": "lower-asylum-1f4u6s"
+        "lower-asylum-dud3va": "lower-asylum-1f4u6s",
     ]
 
     private static func retiredTrailSlugs(for catalog: TrailCatalogDescriptor) -> Set<String> {
@@ -371,17 +395,20 @@ enum TrailCatalogImporter {
         return Set(mountainCreekRetiredTrailSlugs.keys)
     }
 
-    private static func reconcileRetiredTrails(for catalog: TrailCatalogDescriptor,
-                                               trailsByID: [UUID: Trail],
-                                               context: ModelContext) {
+    private static func reconcileRetiredTrails(
+        for catalog: TrailCatalogDescriptor,
+        trailsByID: [UUID: Trail],
+        context: ModelContext
+    ) {
         guard catalog.id == TrailCatalogRegistry.mountainCreek.id else { return }
 
         for (retiredSlug, canonicalSlug) in mountainCreekRetiredTrailSlugs {
             let retiredID = stableID(for: retiredSlug, catalog: catalog)
             let canonicalID = stableID(for: canonicalSlug, catalog: catalog)
             guard let retiredTrail = trailsByID[retiredID],
-                  let canonicalTrail = trailsByID[canonicalID],
-                  retiredTrail.id != canonicalTrail.id else {
+                let canonicalTrail = trailsByID[canonicalID],
+                retiredTrail.id != canonicalTrail.id
+            else {
                 continue
             }
 
@@ -402,12 +429,13 @@ enum TrailCatalogImporter {
         var bytes = Array(SHA256.hash(data: Data("\(catalog.stableIDNamespace):\(slug)".utf8)).prefix(16))
         bytes[6] = (bytes[6] & 0x0F) | 0x50
         bytes[8] = (bytes[8] & 0x3F) | 0x80
-        return UUID(uuid: (
-            bytes[0], bytes[1], bytes[2], bytes[3],
-            bytes[4], bytes[5], bytes[6], bytes[7],
-            bytes[8], bytes[9], bytes[10], bytes[11],
-            bytes[12], bytes[13], bytes[14], bytes[15]
-        ))
+        return UUID(
+            uuid: (
+                bytes[0], bytes[1], bytes[2], bytes[3],
+                bytes[4], bytes[5], bytes[6], bytes[7],
+                bytes[8], bytes[9], bytes[10], bytes[11],
+                bytes[12], bytes[13], bytes[14], bytes[15]
+            ))
     }
 
     /// Catalog centerlines keyed by the stable trail ID the importer assigns.
@@ -417,18 +445,21 @@ enum TrailCatalogImporter {
         bundle: Bundle = .main
     ) -> [UUID: [RoutePoint]] {
         guard let resourceName = catalog.bundledResourceName,
-              let url = bundle.url(forResource: resourceName,
-                                   withExtension: "geojson"),
-              let data = try? Data(contentsOf: url),
-              let collection = try? JSONDecoder().decode(GeoJSONFeatureCollection.self, from: data) else {
+            let url = bundle.url(
+                forResource: resourceName,
+                withExtension: "geojson"),
+            let data = try? Data(contentsOf: url),
+            let collection = try? JSONDecoder().decode(GeoJSONFeatureCollection.self, from: data)
+        else {
             return [:]
         }
         let reference = Date(timeIntervalSince1970: 0)
         var routes: [UUID: [RoutePoint]] = [:]
         for feature in collection.features {
             guard let slug = feature.properties.slug?.trimmedNonEmpty,
-                  let points = feature.geometry.routePoints(referenceDate: reference),
-                  points.count >= 2 else { continue }
+                let points = feature.geometry.routePoints(referenceDate: reference),
+                points.count >= 2
+            else { continue }
             routes[stableID(for: slug, catalog: catalog)] = points
         }
         return routes
@@ -438,8 +469,10 @@ enum TrailCatalogImporter {
         "\(versionKeyPrefix).\(catalog.id).version"
     }
 
-    private static func isImported(_ catalog: TrailCatalogDescriptor,
-                                   defaults: UserDefaults) -> Bool {
+    private static func isImported(
+        _ catalog: TrailCatalogDescriptor,
+        defaults: UserDefaults
+    ) -> Bool {
         let current = defaults.string(forKey: versionKey(for: catalog))
         if current == catalog.importVersion { return true }
         return catalog.legacyImportVersionKeys.contains {
@@ -528,10 +561,11 @@ private enum GeoJSONGeometry: Decodable {
         let startDate = referenceDate.addingTimeInterval(-Double(coordinates.count - 1))
         let points = coordinates.enumerated().compactMap { index, coordinate -> RoutePoint? in
             guard coordinate.count >= 2,
-                  coordinate[0].isFinite,
-                  coordinate[1].isFinite,
-                  (-180...180).contains(coordinate[0]),
-                  (-90...90).contains(coordinate[1]) else {
+                coordinate[0].isFinite,
+                coordinate[1].isFinite,
+                (-180...180).contains(coordinate[0]),
+                (-90...90).contains(coordinate[1])
+            else {
                 return nil
             }
             return RoutePoint(
@@ -546,8 +580,8 @@ private enum GeoJSONGeometry: Decodable {
     }
 }
 
-private extension String {
-    var trimmedNonEmpty: String? {
+extension String {
+    fileprivate var trimmedNonEmpty: String? {
         let value = trimmingCharacters(in: .whitespacesAndNewlines)
         return value.isEmpty ? nil : value
     }

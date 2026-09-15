@@ -51,12 +51,14 @@ public struct BermsActivityAttributes: ActivityAttributes {
             isSkiDay ? "Ski day" : "Berms"
         }
 
-        public init(phase: String, isPaused: Bool, runCount: Int, startedAt: Date,
-                    elapsedSeconds: TimeInterval, distanceMeters: Double, descentMeters: Double,
-                    topSpeedMetersPerSecond: Double, metric: BermsLiveActivityMetric = .descent,
-                    jumpCount: Int = 0, liftCount: Int = 0, longestAirtime: TimeInterval = 0,
-                    totalAirtime: TimeInterval = 0, lastUpdated: Date = .now,
-                    activityModeRawValue: String? = nil) {
+        public init(
+            phase: String, isPaused: Bool, runCount: Int, startedAt: Date,
+            elapsedSeconds: TimeInterval, distanceMeters: Double, descentMeters: Double,
+            topSpeedMetersPerSecond: Double, metric: BermsLiveActivityMetric = .descent,
+            jumpCount: Int = 0, liftCount: Int = 0, longestAirtime: TimeInterval = 0,
+            totalAirtime: TimeInterval = 0, lastUpdated: Date = .now,
+            activityModeRawValue: String? = nil
+        ) {
             self.phase = phase
             self.isPaused = isPaused
             self.runCount = runCount

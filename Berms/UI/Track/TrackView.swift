@@ -31,9 +31,11 @@ struct TrackView: View {
             }
             .navigationTitle(recorder.isRecording ? "" : "Berms")
             .navigationBarTitleDisplayMode(recorder.isRecording ? .inline : .large)
-            .navigationSubtitle(recorder.isRecording
-                                ? Text("")
-                                : Text("\(Date.now.formatted(.dateTime.weekday(.wide).month(.wide).day())) · Beta"))
+            .navigationSubtitle(
+                recorder.isRecording
+                    ? Text("")
+                    : Text("\(Date.now.formatted(.dateTime.weekday(.wide).month(.wide).day())) · Beta")
+            )
             .toolbarBackground(.hidden, for: .navigationBar)
             .toolbarVisibility(recorder.isRecording ? .hidden : .visible, for: .navigationBar)
             .toolbar {
@@ -57,19 +59,25 @@ struct TrackView: View {
                 onDayFinished(finishedDay)
             }
         }
-        .alert("Unfinished ride", isPresented: Binding(
-            get: { recorder.needsRecoveryPrompt },
-            set: { _ in }
-        )) {
+        .alert(
+            "Unfinished ride",
+            isPresented: Binding(
+                get: { recorder.needsRecoveryPrompt },
+                set: { _ in }
+            )
+        ) {
             Button("Resume") { recorder.resumePendingSession() }
             Button("Discard", role: .destructive) { recorder.discardPendingSession() }
         } message: {
             Text("Berms found a ride that was not finished. Resume it or discard the saved data.")
         }
-        .alert("Recording issue", isPresented: Binding(
-            get: { recorder.errorMessage != nil },
-            set: { if !$0 { recorder.errorMessage = nil } }
-        )) {
+        .alert(
+            "Recording issue",
+            isPresented: Binding(
+                get: { recorder.errorMessage != nil },
+                set: { if !$0 { recorder.errorMessage = nil } }
+            )
+        ) {
             Button("OK", role: .cancel) { recorder.errorMessage = nil }
         } message: {
             Text(recorder.errorMessage ?? "")
@@ -117,9 +125,10 @@ struct TrackView: View {
                 }
                 .padding(.horizontal, BermsSpacing.content)
                 .padding(.vertical, BermsSpacing.section)
-                .frame(maxWidth: .infinity,
-                       minHeight: geometry.size.height,
-                       alignment: .center)
+                .frame(
+                    maxWidth: .infinity,
+                    minHeight: geometry.size.height,
+                    alignment: .center)
             }
             .scrollBounceBehavior(.basedOnSize)
         }
@@ -141,7 +150,9 @@ struct TrackView: View {
                         } description: {
                             Text(gpsEmptyMessage)
                         } actions: {
-                            if recorder.locationAuthorization == .denied || recorder.locationAuthorization == .restricted {
+                            if recorder.locationAuthorization == .denied
+                                || recorder.locationAuthorization == .restricted
+                            {
                                 Button("Open Settings", action: openLocationSettings)
                                     .buttonStyle(.bordered)
                             }
@@ -178,18 +189,21 @@ struct TrackView: View {
 
     private var liveStatsOverlay: some View {
         let run = recorder.currentRunMetrics
-        let runTitle = run.map {
-            recorder.activeSegmentKind == .run ? "Run \($0.number)" : "Last run \($0.number)"
-        } ?? "Waiting for a run"
+        let runTitle =
+            run.map {
+                recorder.activeSegmentKind == .run ? "Run \($0.number)" : "Last run \($0.number)"
+            } ?? "Waiting for a run"
         let bestJump = run?.longestJumpAirtime ?? 0
 
         return VStack(spacing: BermsSpacing.control) {
             AdaptiveStatRow {
-                Label(runTitle,
-                      systemImage: recorder.isPaused ? "pause.circle.fill" : "record.circle")
-                    .font(.subheadline.weight(.semibold))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .accessibilityValue(recorder.isPaused ? "Paused" : "Recording")
+                Label(
+                    runTitle,
+                    systemImage: recorder.isPaused ? "pause.circle.fill" : "record.circle"
+                )
+                .font(.subheadline.weight(.semibold))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityValue(recorder.isPaused ? "Paused" : "Recording")
                 TimelineView(.periodic(from: .now, by: 1)) { timeline in
                     Text("Session \(BermsFormat.duration(recorder.elapsed(at: timeline.date)))")
                         .font(.subheadline)
@@ -202,17 +216,22 @@ struct TrackView: View {
 
             VStack(spacing: BermsSpacing.control) {
                 AdaptiveStatRow {
-                    SummaryStat(animatesValue: true, numericValue: true, label: "Top speed",
-                                value: run.map { BermsFormat.speed($0.topSpeedMetersPerSecond) } ?? "—")
-                    SummaryStat(animatesValue: true, numericValue: true, label: "Best jump",
-                                value: bestJump > 0 ? BermsFormat.airtime(bestJump) : "—")
-                        .accessibilityLabel("Best jump airtime")
+                    SummaryStat(
+                        animatesValue: true, numericValue: true, label: "Top speed",
+                        value: run.map { BermsFormat.speed($0.topSpeedMetersPerSecond) } ?? "—")
+                    SummaryStat(
+                        animatesValue: true, numericValue: true, label: "Best jump",
+                        value: bestJump > 0 ? BermsFormat.airtime(bestJump) : "—"
+                    )
+                    .accessibilityLabel("Best jump airtime")
                 }
                 AdaptiveStatRow {
-                    SummaryStat(animatesValue: true, numericValue: true, label: "Jumps",
-                                value: run?.jumpCount.map { String($0) } ?? "—")
-                    SummaryStat(animatesValue: true, numericValue: true, label: "Distance",
-                                value: run.map { BermsFormat.distance($0.distanceMeters) } ?? "—")
+                    SummaryStat(
+                        animatesValue: true, numericValue: true, label: "Jumps",
+                        value: run?.jumpCount.map { String($0) } ?? "—")
+                    SummaryStat(
+                        animatesValue: true, numericValue: true, label: "Distance",
+                        value: run.map { BermsFormat.distance($0.distanceMeters) } ?? "—")
                 }
             }
 
@@ -220,9 +239,10 @@ struct TrackView: View {
                 TimelineView(.periodic(from: .now, by: 1)) { timeline in
                     Label(gpsStatusText(at: timeline.date), systemImage: "location.fill")
                         .font(.caption)
-                        .foregroundStyle(recorder.locationAuthorization == .denied
-                                         || recorder.locationAuthorization == .restricted
-                                         ? .red : Color.bermsMuted)
+                        .foregroundStyle(
+                            recorder.locationAuthorization == .denied
+                                || recorder.locationAuthorization == .restricted
+                                ? .red : Color.bermsMuted)
                 }
                 if !recorder.motionAvailable {
                     Text("Motion off")
@@ -239,10 +259,12 @@ struct TrackView: View {
                         if recorder.pause() { BermsMotion.recordingFeedback() }
                     }
                 } label: {
-                    Label(recorder.isPaused ? "Resume" : "Pause",
-                          systemImage: recorder.isPaused ? "play.fill" : "pause.fill")
-                        .bermsValueMotion(recorder.isPaused ? "Resume" : "Pause")
-                        .frame(maxWidth: .infinity)
+                    Label(
+                        recorder.isPaused ? "Resume" : "Pause",
+                        systemImage: recorder.isPaused ? "play.fill" : "pause.fill"
+                    )
+                    .bermsValueMotion(recorder.isPaused ? "Resume" : "Pause")
+                    .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(.bermsTrail)
@@ -286,18 +308,21 @@ struct TrackView: View {
                 BermsMotion.recordingFeedback()
             }
         } label: {
-            Label(needsLocationPermission ? "Allow Location" : recorder.selectedActivityMode.startTitle,
-                  systemImage: needsLocationPermission ? "location.fill" : "play.fill")
-                .foregroundStyle(Color.bermsOnAccent)
-                .font(.headline)
-                .frame(maxWidth: 260)
-                .padding(.vertical, 8)
+            Label(
+                needsLocationPermission ? "Allow Location" : recorder.selectedActivityMode.startTitle,
+                systemImage: needsLocationPermission ? "location.fill" : "play.fill"
+            )
+            .foregroundStyle(Color.bermsOnAccent)
+            .font(.headline)
+            .frame(maxWidth: 260)
+            .padding(.vertical, 8)
         }
         .buttonStyle(.borderedProminent)
         .tint(.bermsTrail)
         .controlSize(.large)
-        .disabled(recorder.locationAuthorization == .denied
-                  || recorder.locationAuthorization == .restricted)
+        .disabled(
+            recorder.locationAuthorization == .denied
+                || recorder.locationAuthorization == .restricted)
     }
 
     private var liveMap: some View {
@@ -329,21 +354,27 @@ struct TrackView: View {
 
     private var liveMapControls: some View {
         MapControlStack {
-            MapLayersMenu(preferences: mapLayerPreferences,
-                          actualTrailsAvailable: !nearbyTrails.isEmpty,
-                          showsJumpsControl: false,
-                          showsPreviousRunsControl: true,
-                          onSettings: { showingSettings = true })
-            MapActionButton(title: "My location",
-                            systemImage: mapPosition.followsUserLocation ? "location.fill" : "location") {
+            MapLayersMenu(
+                preferences: mapLayerPreferences,
+                actualTrailsAvailable: !nearbyTrails.isEmpty,
+                showsJumpsControl: false,
+                showsPreviousRunsControl: true,
+                onSettings: { showingSettings = true })
+            MapActionButton(
+                title: "My location",
+                systemImage: mapPosition.followsUserLocation ? "location.fill" : "location"
+            ) {
                 withAnimation(reduceMotion ? nil : BermsMotion.recenter) {
-                    mapPosition = .userLocation(followsHeading: !mapPosition.followsUserHeading
-                                                && mapPosition.followsUserLocation,
-                                                fallback: .automatic)
+                    mapPosition = .userLocation(
+                        followsHeading: !mapPosition.followsUserHeading
+                            && mapPosition.followsUserLocation,
+                        fallback: .automatic)
                 }
             }
-            .accessibilityValue(mapPosition.followsUserHeading ? "Following heading"
-                                : mapPosition.followsUserLocation ? "Following location" : "Not following")
+            .accessibilityValue(
+                mapPosition.followsUserHeading
+                    ? "Following heading"
+                    : mapPosition.followsUserLocation ? "Following location" : "Not following")
         }
         .padding(.top, BermsSpacing.control)
         .padding(.trailing, BermsSpacing.content)

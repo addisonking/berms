@@ -32,21 +32,26 @@ struct SettingsView: View {
                         Label("Trail Library", systemImage: "map")
                     }
 
-                    Picker("Resort", selection: Binding(
-                        get: { trailCatalogSelection.selectionID },
-                        set: { trailCatalogSelection.setSelectionID($0) }
-                    )) {
+                    Picker(
+                        "Resort",
+                        selection: Binding(
+                            get: { trailCatalogSelection.selectionID },
+                            set: { trailCatalogSelection.setSelectionID($0) }
+                        )
+                    ) {
                         Text("Automatic").tag(TrailCatalogRegistry.automaticSelectionID)
                         ForEach(TrailCatalogRegistry.catalogs) { catalog in
                             Text(catalog.resortName).tag(catalog.id)
                         }
                     }
                     .pickerStyle(.menu)
-                    Text(trailCatalogSelection.isAutomatic
-                         ? "Automatic chooses the nearest bundled resort from GPS."
-                         : "Using this resort until you switch back to Automatic.")
-                        .font(.caption)
-                        .foregroundStyle(Color.bermsMuted)
+                    Text(
+                        trailCatalogSelection.isAutomatic
+                            ? "Automatic chooses the nearest bundled resort from GPS."
+                            : "Using this resort until you switch back to Automatic."
+                    )
+                    .font(.caption)
+                    .foregroundStyle(Color.bermsMuted)
                 }
                 Section("Jump detection") {
                     Picker("Sensitivity", selection: sensitivityBinding) {
@@ -74,15 +79,20 @@ struct SettingsView: View {
                     Text("Shown at the right of the Live Activity and Dynamic Island while recording.")
                 }
                 Section {
-                    Toggle("Raw motion logging", isOn: Binding(
-                        get: { recorder.rawMotionLoggingEnabled },
-                        set: { recorder.setRawMotionLoggingEnabled($0) }
-                    ))
+                    Toggle(
+                        "Raw motion logging",
+                        isOn: Binding(
+                            get: { recorder.rawMotionLoggingEnabled },
+                            set: { recorder.setRawMotionLoggingEnabled($0) }
+                        )
+                    )
                     .tint(.green)
                 } header: {
                     Text("Diagnostics")
                 } footer: {
-                    Text("Keeps high-rate motion samples with each ride so sessions can be re-analyzed. Uses extra storage and is off by default.")
+                    Text(
+                        "Keeps high-rate motion samples with each ride so sessions can be re-analyzed. Uses extra storage and is off by default."
+                    )
                 }
             }
             .navigationTitle("Settings")

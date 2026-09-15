@@ -16,8 +16,10 @@ struct DaysView: View {
     @State private var calendarSelection = Date()
     @State private var pendingScrollID: UUID?
 
-    init(pendingDayID: Binding<UUID?> = .constant(nil),
-         onStartTracking: @escaping () -> Void = {}) {
+    init(
+        pendingDayID: Binding<UUID?> = .constant(nil),
+        onStartTracking: @escaping () -> Void = {}
+    ) {
         self._pendingDayID = pendingDayID
         self.onStartTracking = onStartTracking
     }
@@ -56,9 +58,10 @@ struct DaysView: View {
             }
             .navigationDestination(for: RunMapDestination.self) { destination in
                 if let day = days.first(where: { $0.id == destination.dayID }),
-                   let run = day.segments.first(where: {
-                       $0.id == destination.runID && $0.kind == .run
-                   }) {
+                    let run = day.segments.first(where: {
+                        $0.id == destination.runID && $0.kind == .run
+                    })
+                {
                     let preheatedRunKey = SessionDetailPresentationPreheater.runCacheKey(
                         dayID: day.id,
                         segmentID: run.id,
@@ -66,11 +69,12 @@ struct DaysView: View {
                         trails: trails
                     )
                     let preheatedRun = SessionDetailPresentationCache.shared.runEntry(for: preheatedRunKey)
-                    RunMapView(number: destination.number,
-                               segment: run,
-                               preparedBase: preheatedRun?.base,
-                               preparedDetail: preheatedRun?.detail,
-                               preparedTrailDetails: preheatedRun?.trailDetails)
+                    RunMapView(
+                        number: destination.number,
+                        segment: run,
+                        preparedBase: preheatedRun?.base,
+                        preparedDetail: preheatedRun?.detail,
+                        preparedTrailDetails: preheatedRun?.trailDetails)
                 }
             }
             .onAppear { openPendingDayIfNeeded() }
@@ -83,19 +87,25 @@ struct DaysView: View {
         .sheet(isPresented: $showingCalendar) {
             calendarSheet
         }
-        .alert("Delete day?", isPresented: Binding(
-            get: { dayToDelete != nil },
-            set: { if !$0 { dayToDelete = nil } }
-        ), presenting: dayToDelete) { day in
+        .alert(
+            "Delete day?",
+            isPresented: Binding(
+                get: { dayToDelete != nil },
+                set: { if !$0 { dayToDelete = nil } }
+            ), presenting: dayToDelete
+        ) { day in
             Button("Delete day", role: .destructive) { deleteDay(day) }
             Button("Cancel", role: .cancel) {}
         } message: { _ in
             Text("This removes the day and all of its runs, lifts, and map data.")
         }
-        .alert("Couldn't delete day", isPresented: Binding(
-            get: { deleteError != nil },
-            set: { if !$0 { deleteError = nil } }
-        )) {
+        .alert(
+            "Couldn't delete day",
+            isPresented: Binding(
+                get: { deleteError != nil },
+                set: { if !$0 { deleteError = nil } }
+            )
+        ) {
             Button("OK", role: .cancel) {}
         } message: {
             Text(deleteError ?? "")
@@ -103,13 +113,16 @@ struct DaysView: View {
     }
 
     private func deleteDay(_ day: RideDay) {
-        let logURLs = RideRecorder.diagnosticLogURLs(for: day.id,
-                                                     startedAt: day.startedAt,
-                                                     endedAt: day.endedAt)
+        let logURLs = RideRecorder.diagnosticLogURLs(
+            for: day.id,
+            startedAt: day.startedAt,
+            endedAt: day.endedAt)
         modelContext.delete(day)
         do {
             try modelContext.save()
-            logURLs.forEach { try? FileManager.default.removeItem(at: $0) }
+            for url in logURLs {
+                try? FileManager.default.removeItem(at: url)
+            }
         } catch {
             modelContext.rollback()
             deleteError = "The day could not be deleted. \(error.localizedDescription)"
@@ -163,12 +176,14 @@ struct DaysView: View {
         }
 
         do {
-            guard let entry = try await SessionDetailPresentationPreheater.prepareRun(
-                segmentID: latestRun.id,
-                manualCatalogID: day.catalogID
-                    ?? TrailCatalogRegistry.catalog(for: day.activityMode)?.id,
-                container: modelContext.container
-            ) else { return }
+            guard
+                let entry = try await SessionDetailPresentationPreheater.prepareRun(
+                    segmentID: latestRun.id,
+                    manualCatalogID: day.catalogID
+                        ?? TrailCatalogRegistry.catalog(for: day.activityMode)?.id,
+                    container: modelContext.container
+                )
+            else { return }
             guard !Task.isCancelled else { return }
             SessionDetailPresentationCache.shared.storeRun(entry, for: cacheKey)
         } catch is CancellationError {
@@ -226,13 +241,15 @@ struct DaysView: View {
 
     private var calendarSheet: some View {
         NavigationStack {
-            MonthCalendarView(recordedDays: recordedDayKeys,
-                              selectedDate: $calendarSelection,
-                              onSelectDate: { date in
-                                  calendarSelection = date
-                                  pendingScrollID = jumpTarget(for: date)
-                                  showingCalendar = false
-                              })
+            MonthCalendarView(
+                recordedDays: recordedDayKeys,
+                selectedDate: $calendarSelection,
+                onSelectDate: { date in
+                    calendarSelection = date
+                    pendingScrollID = jumpTarget(for: date)
+                    showingCalendar = false
+                }
+            )
             .navigationTitle("Jump to date")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -325,7 +342,8 @@ struct DaysView: View {
 
     private func openPendingDayIfNeeded() {
         guard let pendingDayID,
-              finishedDays.contains(where: { $0.id == pendingDayID }) else { return }
+            finishedDays.contains(where: { $0.id == pendingDayID })
+        else { return }
         navigationPath = NavigationPath([pendingDayID])
         self.pendingDayID = nil
     }

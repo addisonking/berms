@@ -1,5 +1,6 @@
 import Foundation
 import XCTest
+
 @testable import Berms
 
 final class ParkDayTests: XCTestCase {
@@ -8,7 +9,8 @@ final class ParkDayTests: XCTestCase {
         var finished: [SegmentDraft] = []
         var time = 0.0
         func feed(_ altitude: Double, speed: Double, cycling: Bool = false, stationary: Bool = false) {
-            for event in detector.process(point(time, altitude, speed: speed, cycling: cycling, stationary: stationary)) {
+            for event in detector.process(point(time, altitude, speed: speed, cycling: cycling, stationary: stationary))
+            {
                 if case .finished(let draft) = event { finished.append(draft) }
             }
             time += 1
@@ -66,7 +68,11 @@ final class ParkDayTests: XCTestCase {
         }
 
         XCTAssertEqual(detector.phase, .run)
-        XCTAssertFalse(events.contains { if case .finished = $0 { return true }; return false })
+        XCTAssertFalse(
+            events.contains {
+                if case .finished = $0 { return true }
+                return false
+            })
         XCTAssertEqual(detector.currentPoints.last?.altitude, 63)
     }
 
@@ -87,22 +93,34 @@ final class ParkDayTests: XCTestCase {
 
         for t in 0...20 {
             let events = detector.process(point(Double(t), Double(t) * 6, speed: 3))
-            finished += events.compactMap { if case .finished(let draft) = $0 { return draft }; return nil }
+            finished += events.compactMap {
+                if case .finished(let draft) = $0 { return draft }
+                return nil
+            }
         }
         for t in 21...29 {
             let events = detector.process(point(Double(t), 120, speed: 0, stationary: true))
-            finished += events.compactMap { if case .finished(let draft) = $0 { return draft }; return nil }
+            finished += events.compactMap {
+                if case .finished(let draft) = $0 { return draft }
+                return nil
+            }
         }
         XCTAssertEqual(detector.phase, .idle)
         XCTAssertEqual(finished.map(\.kind), [.lift])
 
         for t in 30...50 {
             let events = detector.process(point(Double(t), 120 - Double(t - 30) * 6, speed: 7, cycling: true))
-            finished += events.compactMap { if case .finished(let draft) = $0 { return draft }; return nil }
+            finished += events.compactMap {
+                if case .finished(let draft) = $0 { return draft }
+                return nil
+            }
         }
         for t in 51...59 {
             let events = detector.process(point(Double(t), 0, speed: 0, stationary: true))
-            finished += events.compactMap { if case .finished(let draft) = $0 { return draft }; return nil }
+            finished += events.compactMap {
+                if case .finished(let draft) = $0 { return draft }
+                return nil
+            }
         }
 
         XCTAssertEqual(detector.phase, .idle)
@@ -179,8 +197,9 @@ final class ParkDayTests: XCTestCase {
             }
         }
         for draft in finished {
-            let segment = RideSegment(kind: draft.kind, startedAt: draft.startedAt, endedAt: draft.endedAt,
-                                      routeData: try RouteCodec.encode(draft.routePoints), jumps: draft.jumps)
+            let segment = RideSegment(
+                kind: draft.kind, startedAt: draft.startedAt, endedAt: draft.endedAt,
+                routeData: try RouteCodec.encode(draft.routePoints), jumps: draft.jumps)
             segment.distanceMeters = draft.distanceMeters
             segment.verticalMeters = draft.netVerticalMeters
             segment.maximumSpeedMetersPerSecond = draft.maximumSpeed
@@ -194,25 +213,29 @@ final class ParkDayTests: XCTestCase {
                 + "\(BermsFormat.elevation(segment.verticalMeters)) "
                 + "\(BermsFormat.speed(segment.maximumSpeedMetersPerSecond))"
         }.joined(separator: " | ")
-        print("PROGRAM_SUMMARY runs=\(finished.filter { $0.kind == .run }.count) "
-              + "lifts=\(finished.filter { $0.kind == .lift }.count) "
-              + "duration=\(BermsFormat.duration(day.duration)) "
-              + "riding=\(BermsFormat.duration(day.activeSeconds)) "
-              + "liftTime=\(BermsFormat.duration(day.liftSeconds)) "
-              + "distance=\(BermsFormat.distance(day.distanceMeters)) "
-              + "descent=\(BermsFormat.elevation(day.descentMeters)) "
-              + "liftGain=\(BermsFormat.elevation(day.liftMeters)) "
-              + "topSpeed=\(BermsFormat.speed(day.maximumSpeedMetersPerSecond)) "
-              + "jumps=\(day.jumpCount) "
-              + "longestAirtime=\(BermsFormat.airtime(day.longestJumpAirtime))")
+        print(
+            "PROGRAM_SUMMARY runs=\(finished.filter { $0.kind == .run }.count) "
+                + "lifts=\(finished.filter { $0.kind == .lift }.count) "
+                + "duration=\(BermsFormat.duration(day.duration)) "
+                + "riding=\(BermsFormat.duration(day.activeSeconds)) "
+                + "liftTime=\(BermsFormat.duration(day.liftSeconds)) "
+                + "distance=\(BermsFormat.distance(day.distanceMeters)) "
+                + "descent=\(BermsFormat.elevation(day.descentMeters)) "
+                + "liftGain=\(BermsFormat.elevation(day.liftMeters)) "
+                + "topSpeed=\(BermsFormat.speed(day.maximumSpeedMetersPerSecond)) "
+                + "jumps=\(day.jumpCount) "
+                + "longestAirtime=\(BermsFormat.airtime(day.longestJumpAirtime))")
         print("PROGRAM_SEGMENTS \(segmentSummary)")
     }
 
-    private func point(_ seconds: Double, _ altitude: Double, speed: Double,
-                       cycling: Bool = false, stationary: Bool = false) -> TrackSample {
-        TrackSample(coordinate: Coordinate(latitude: 40 + seconds * 0.00001, longitude: -105),
-                    altitude: altitude, speed: speed,
-                    timestamp: Date(timeIntervalSince1970: 1_000 + seconds),
-                    isStationary: stationary, isCycling: cycling)
+    private func point(
+        _ seconds: Double, _ altitude: Double, speed: Double,
+        cycling: Bool = false, stationary: Bool = false
+    ) -> TrackSample {
+        TrackSample(
+            coordinate: Coordinate(latitude: 40 + seconds * 0.00001, longitude: -105),
+            altitude: altitude, speed: speed,
+            timestamp: Date(timeIntervalSince1970: 1_000 + seconds),
+            isStationary: stationary, isCycling: cycling)
     }
 }

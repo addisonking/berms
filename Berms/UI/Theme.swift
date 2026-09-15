@@ -40,7 +40,7 @@ extension Color {
 struct BermsBackground: View {
     var body: some View {
         Color.bermsInk
-        .ignoresSafeArea()
+            .ignoresSafeArea()
     }
 }
 
@@ -95,7 +95,8 @@ struct AdaptiveStatRow<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {
-        let layout = dynamicTypeSize.isAccessibilitySize
+        let layout =
+            dynamicTypeSize.isAccessibilitySize
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: BermsSpacing.content))
             : AnyLayout(HStackLayout(alignment: .top, spacing: BermsSpacing.content))
         layout { content }
@@ -111,8 +112,8 @@ private struct BermsValueMotion: ViewModifier {
     func body(content: Content) -> some View {
         if enabled {
             content
-            .contentTransition(reduceMotion ? .identity : (numeric ? .numericText() : .opacity))
-            .animation(reduceMotion ? nil : BermsMotion.content, value: value)
+                .contentTransition(reduceMotion ? .identity : (numeric ? .numericText() : .opacity))
+                .animation(reduceMotion ? nil : BermsMotion.content, value: value)
         } else {
             content
         }
