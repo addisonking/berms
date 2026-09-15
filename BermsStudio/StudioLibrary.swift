@@ -16,6 +16,7 @@ struct ExportPlan: Identifiable, Sendable {
     let title: String
     let output: URL
     let clips: [[URL]]
+    let estimatedDuration: TimeInterval
     let trimStart: TimeInterval
     let trimEnd: TimeInterval
 
@@ -45,6 +46,50 @@ enum SidebarItem: Hashable {
     case session(String)
 }
 
+struct StudioExportItemProgress: Equatable, Sendable {
+    let id: String
+    let title: String
+    var fraction: Double
+}
+
+struct StudioExportProgress: Equatable, Sendable {
+    var completed: Int
+    var failed: Int
+    let total: Int
+    var activeItems: [StudioExportItemProgress]
+    let startedAt: Date
+
+    var fraction: Double {
+        guard total > 0 else { return 0 }
+        return min(max(workCompleted / Double(total), 0), 1)
+    }
+
+    func elapsed(at date: Date) -> TimeInterval {
+        max(0, date.timeIntervalSince(startedAt))
+    }
+
+    func estimatedTimeRemaining(at date: Date) -> TimeInterval? {
+        let totalWork = Double(total)
+        guard workCompleted > 0, workCompleted < totalWork else {
+            return workCompleted >= totalWork ? 0 : nil
+        }
+        let elapsed = elapsed(at: date)
+        guard elapsed > 0 else { return nil }
+        return max(0, elapsed * (totalWork - workCompleted) / workCompleted)
+    }
+
+    private var workCompleted: Double {
+        Double(completed) + activeItems.reduce(0.0) { total, item in
+            total + min(max(item.fraction, 0), 1)
+        }
+    }
+}
+
+private struct StudioExportAttempt: Sendable {
+    let id: String
+    let succeeded: Bool
+}
+
 @MainActor
 @Observable
 final class StudioLibrary {
@@ -58,12 +103,14 @@ final class StudioLibrary {
     var message = "Ready"
     var messageIsError = false
     var busy: String?
+    private(set) var exportProgress: StudioExportProgress?
 
     private var offsets: [String: Int] = [:]
     private var outputDirectories: [String: URL] = [:]
     private var accessedScopes: Set<URL> = []
     private var trimStarts: [String: TimeInterval] = [:]
     private var trimEnds: [String: TimeInterval] = [:]
+    private var exportID: UUID?
 
     init() {
         catalog = TrailCatalog.loadBundled()
@@ -219,12 +266,18 @@ final class StudioLibrary {
     func exportPlan(for ref: RunRef) -> ExportPlan? {
         guard let session = session(id: ref.sessionID),
               let segment = run(for: ref) else { return nil }
-        let clips = orderedClips(forRun: segment, in: session).map { $0.parts.map(\.path) }
+        let orderedClips = orderedClips(forRun: segment, in: session)
+        let clips = orderedClips.map { $0.parts.map(\.path) }
         guard clips.contains(where: { !$0.isEmpty }) else { return nil }
+        let trimStart = trimStart(for: ref.sessionID)
+        let trimEnd = trimEnd(for: ref.sessionID)
+        let estimatedDuration = orderedClips.reduce(0) { total, clip in
+            total + max(0, clip.duration - trimStart - trimEnd)
+        }
         return ExportPlan(runID: ref.id, title: ref.title,
                           output: exportURL(session: session, run: ref), clips: clips,
-                          trimStart: trimStart(for: ref.sessionID),
-                          trimEnd: trimEnd(for: ref.sessionID))
+                          estimatedDuration: estimatedDuration,
+                          trimStart: trimStart, trimEnd: trimEnd)
     }
 
     func exportableRunCount(in session: StudioSession) -> Int {
@@ -242,37 +295,49 @@ final class StudioLibrary {
             return
         }
 
-        busy = "Exporting 0 of \(plans.count)…"
-        messageIsError = false
+        let concurrency = max(1, concurrency)
+        let operationID = startExport(total: plans.count,
+                                      activeItems: plans.prefix(concurrency).map {
+                                          StudioExportItemProgress(id: $0.id, title: $0.title, fraction: 0)
+                                      })
         Task {
-            var completed = 0
             var failures = 0
             var index = 0
             while index < plans.count {
                 let chunk = Array(plans[index..<min(index + concurrency, plans.count)])
-                await withTaskGroup(of: Result<Void, Error>.self) { group in
+                setActiveExportItems(chunk.map {
+                    StudioExportItemProgress(id: $0.id, title: $0.title, fraction: 0)
+                }, for: operationID)
+                await withTaskGroup(of: StudioExportAttempt.self) { group in
                     for plan in chunk {
+                        let reportProgress: @Sendable (Double) -> Void = { [library = self] fraction in
+                            Task { @MainActor in
+                                library.updateExportItemProgress(fraction,
+                                                                 itemID: plan.id,
+                                                                 for: operationID)
+                            }
+                        }
                         group.addTask {
                             do {
                                 try FfmpegStitcher.concat(clips: plan.clips, output: plan.output,
+                                                          estimatedDuration: plan.estimatedDuration,
                                                           trimStart: plan.trimStart,
-                                                          trimEnd: plan.trimEnd)
-                                return .success(())
+                                                          trimEnd: plan.trimEnd,
+                                                          progress: reportProgress)
+                                return StudioExportAttempt(id: plan.id, succeeded: true)
                             } catch {
-                                return .failure(error)
+                                return StudioExportAttempt(id: plan.id, succeeded: false)
                             }
                         }
                     }
-                    for await result in group {
-                        completed += 1
-                        busy = "Exporting \(completed) of \(plans.count)…"
-                        if case .failure = result { failures += 1 }
+                    for await attempt in group {
+                        if !attempt.succeeded { failures += 1 }
+                        completeExportItem(attempt.id, succeeded: attempt.succeeded, for: operationID)
                     }
                 }
                 index += chunk.count
             }
 
-            busy = nil
             let directory = outputDirectory(for: session.id)
             if failures == 0 {
                 message = "Exported \(plans.count) videos → \(directory.path)"
@@ -280,7 +345,49 @@ final class StudioLibrary {
                 message = "Exported \(plans.count - failures) of \(plans.count) videos · \(failures) failed"
                 messageIsError = true
             }
+            finishExport(operationID)
         }
+    }
+
+    @discardableResult
+    func startExport(total: Int, activeItems: [StudioExportItemProgress]) -> UUID {
+        let operationID = UUID()
+        exportID = operationID
+        exportProgress = StudioExportProgress(completed: 0, failed: 0, total: total,
+                                               activeItems: activeItems, startedAt: .now)
+        busy = "Exporting…"
+        messageIsError = false
+        return operationID
+    }
+
+    func setActiveExportItems(_ items: [StudioExportItemProgress], for operationID: UUID) {
+        guard exportID == operationID, var progress = exportProgress else { return }
+        progress.activeItems = items
+        exportProgress = progress
+    }
+
+    func updateExportItemProgress(_ fraction: Double, itemID: String, for operationID: UUID) {
+        guard exportID == operationID, var progress = exportProgress,
+              let index = progress.activeItems.firstIndex(where: { $0.id == itemID }) else {
+            return
+        }
+        progress.activeItems[index].fraction = min(max(fraction, 0), 1)
+        exportProgress = progress
+    }
+
+    func completeExportItem(_ itemID: String, succeeded: Bool, for operationID: UUID) {
+        guard exportID == operationID, var progress = exportProgress else { return }
+        progress.completed += 1
+        if !succeeded { progress.failed += 1 }
+        progress.activeItems.removeAll { $0.id == itemID }
+        exportProgress = progress
+    }
+
+    func finishExport(_ operationID: UUID) {
+        guard exportID == operationID else { return }
+        exportID = nil
+        exportProgress = nil
+        busy = nil
     }
 
     // MARK: - derived state

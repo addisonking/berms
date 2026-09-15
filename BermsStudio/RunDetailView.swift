@@ -103,20 +103,32 @@ struct RunDetailView: View {
             return
         }
 
-        library.busy = "Exporting \(plan.title)…"
+        let operationID = library.startExport(
+            total: 1,
+            activeItems: [StudioExportItemProgress(id: plan.id, title: plan.title, fraction: 0)]
+        )
+        let reportProgress: @Sendable (Double) -> Void = { [library] fraction in
+            Task { @MainActor in
+                library.updateExportItemProgress(fraction, itemID: plan.id, for: operationID)
+            }
+        }
         Task {
             do {
                 try await Task.detached {
                     try FfmpegStitcher.concat(clips: plan.clips, output: plan.output,
-                                              trimStart: plan.trimStart, trimEnd: plan.trimEnd)
+                                              estimatedDuration: plan.estimatedDuration,
+                                              trimStart: plan.trimStart, trimEnd: plan.trimEnd,
+                                              progress: reportProgress)
                 }.value
+                library.completeExportItem(plan.id, succeeded: true, for: operationID)
                 library.message = "Exported \(plan.output.lastPathComponent) → \(plan.output.deletingLastPathComponent().path)"
                 library.messageIsError = false
             } catch {
+                library.completeExportItem(plan.id, succeeded: false, for: operationID)
                 library.message = "Export failed: \(error.localizedDescription)"
                 library.messageIsError = true
             }
-            library.busy = nil
+            library.finishExport(operationID)
         }
     }
 }

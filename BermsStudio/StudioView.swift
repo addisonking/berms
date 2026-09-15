@@ -129,7 +129,9 @@ struct StudioView: View {
 
     private var statusBar: some View {
         HStack(spacing: 8) {
-            if let busy = library.busy {
+            if let exportProgress = library.exportProgress {
+                StudioExportProgressView(progress: exportProgress)
+            } else if let busy = library.busy {
                 ProgressView().controlSize(.small)
                 Text(busy).foregroundStyle(.secondary)
             } else {
@@ -270,6 +272,81 @@ struct StudioView: View {
             return [try DiagnosticsImporter.loadDay(url: url)]
         }
         return try StudioExport.load(url).studioDays()
+    }
+}
+
+private struct StudioExportProgressView: View {
+    let progress: StudioExportProgress
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 8) {
+                    ProgressView(value: progress.fraction)
+                        .controlSize(.small)
+                        .frame(width: 140)
+                    Text("Exporting")
+                        .fontWeight(.medium)
+                    Text(videoCountDescription)
+                        .foregroundStyle(.secondary)
+                    Text("\(Int((progress.fraction * 100).rounded()))%")
+                        .font(.caption)
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                }
+                HStack(spacing: 8) {
+                    Text(activeDescription)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    Spacer(minLength: 8)
+                    Text("Elapsed \(StudioFormat.duration(progress.elapsed(at: context.date))) · \(etaLabel(at: context.date))")
+                        .font(.caption)
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Export progress")
+            .accessibilityValue(accessibilityValue(at: context.date))
+        }
+    }
+
+    private var activeDescription: String {
+        let titles = progress.activeItems.map(\.title)
+        if titles.isEmpty { return "Finishing…" }
+        if titles.count == 1 { return "Stitching \(titles[0])" }
+        return "Stitching " + titles.joined(separator: " · ")
+    }
+
+    private var videoCountDescription: String {
+        var description = "\(progress.completed) of \(progress.total) videos"
+        if progress.failed > 0 {
+            description += " · \(progress.failed) failed"
+        }
+        return description
+    }
+
+    private func etaLabel(at date: Date) -> String {
+        guard let eta = progress.estimatedTimeRemaining(at: date) else {
+            return "ETA calculating…"
+        }
+        return "ETA \(StudioFormat.duration(eta))"
+    }
+
+    private func accessibilityValue(at date: Date) -> String {
+        var value = "\(Int((progress.fraction * 100).rounded())) percent, "
+            + "\(progress.completed) of \(progress.total) videos"
+        if progress.failed > 0 {
+            value += ", \(progress.failed) failed"
+        }
+        value += ", elapsed \(StudioFormat.duration(progress.elapsed(at: date)))"
+        if let eta = progress.estimatedTimeRemaining(at: date) {
+            value += ", eta \(StudioFormat.duration(eta))"
+        } else {
+            value += ", eta calculating"
+        }
+        return value
     }
 }
 
