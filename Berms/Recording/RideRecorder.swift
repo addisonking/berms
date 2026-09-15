@@ -345,6 +345,7 @@ final class RideRecorder: ObservableObject {
     private static let diagnosticSummaryVersionKey = "berms.diagnosticSummaryVersion"
     private static let rawMotionLoggingKey = "berms.rawMotionLogging"
     private static let liveActivityMetricKey = "berms.liveActivityMetric"
+    private static let activityModeKey = "berms.activityMode"
 
     @Published private(set) var activeDay: RideDay?
     @Published private(set) var phase: DetectorPhase = .idle
@@ -355,6 +356,7 @@ final class RideRecorder: ObservableObject {
     @Published private(set) var jumpSensitivity: JumpSensitivity
     @Published private(set) var rawMotionLoggingEnabled: Bool
     @Published private(set) var liveActivityMetric: BermsLiveActivityMetric
+    @Published private(set) var selectedActivityMode: ActivityMode
     @Published private(set) var isRestoring = false
     @Published private(set) var needsRecoveryPrompt = false
     @Published var errorMessage: String?
@@ -386,6 +388,9 @@ final class RideRecorder: ObservableObject {
     init(context: ModelContext? = nil,
          watchStateSink: WatchRideStateSink? = WatchConnectivityCoordinator.shared,
          authorizationOverride: CLAuthorizationStatus? = nil) {
+        selectedActivityMode = ActivityMode(
+            rawValue: UserDefaults.standard.string(forKey: Self.activityModeKey) ?? ""
+        ) ?? .bikePark
         let storedSensitivity = JumpSensitivity(rawValue: UserDefaults.standard.string(forKey: "berms.jumpSensitivity") ?? "")
             ?? .standard
         jumpSensitivity = storedSensitivity
@@ -444,6 +449,16 @@ final class RideRecorder: ObservableObject {
 
     var isRecording: Bool { activeDay != nil }
 
+    var activeActivityMode: ActivityMode {
+        activeDay?.activityMode ?? selectedActivityMode
+    }
+
+    func setSelectedActivityMode(_ mode: ActivityMode) {
+        guard !isRecording, mode != selectedActivityMode else { return }
+        selectedActivityMode = mode
+        UserDefaults.standard.set(mode.rawValue, forKey: Self.activityModeKey)
+    }
+
     private var effectiveAuthorizationStatus: CLAuthorizationStatus {
         authorizationOverride ?? locationService.authorizationStatus
     }
@@ -463,6 +478,7 @@ final class RideRecorder: ObservableObject {
             descentMeters: liveDescent,
             speedMetersPerSecond: currentSpeed,
             run: currentRunMetrics,
+            activityModeRawValue: day.activityMode.rawValue,
             updatedAt: .now
         )
     }
@@ -588,6 +604,11 @@ final class RideRecorder: ObservableObject {
 
     @discardableResult
     func start() -> Bool {
+        start(mode: selectedActivityMode)
+    }
+
+    @discardableResult
+    func start(mode: ActivityMode) -> Bool {
         guard activeDay == nil else { return false }
         guard effectiveAuthorizationStatus != .denied,
               effectiveAuthorizationStatus != .restricted else { return false }
@@ -597,15 +618,19 @@ final class RideRecorder: ObservableObject {
         }
 
         let day = RideDay()
+        day.activityModeRawValue = mode.rawValue
+        day.catalogID = TrailCatalogRegistry.catalog(for: mode)?.id
         context.insert(day)
         do {
             try context.save()
             Self.pruneOldDiagnosticLogs()
             activeDay = day
+            selectedActivityMode = mode
+            UserDefaults.standard.set(mode.rawValue, forKey: Self.activityModeKey)
             diagnosticLogger = RawLogWriter(url: Self.debugLogURL(for: day.id))
             diagnosticLogger?.append(RawDiagnosticRecord(kind: "session_started", timestamp: day.startedAt,
                                                          detectorVersion: jumpDetector.detectorVersion,
-                                                         detail: "Berms recording started"))
+                                                         detail: "Berms recording started; mode=\(mode.rawValue),catalog=\(day.catalogID ?? "none")"))
             diagnosticLogger?.append(RawDiagnosticRecord(kind: "jump_detector_config",
                                                          detectorVersion: jumpDetector.detectorVersion,
                                                          detail: jumpDetector.configurationSummary))
@@ -619,8 +644,12 @@ final class RideRecorder: ObservableObject {
             activePoints = []
             phase = .idle
             UserDefaults.standard.set(true, forKey: "berms.recordingActive")
-            BermsLiveActivityCoordinator.shared.start(rideID: day.id, startedAt: day.startedAt,
-                                                      metric: liveActivityMetric)
+            BermsLiveActivityCoordinator.shared.start(
+                rideID: day.id,
+                startedAt: day.startedAt,
+                activityModeRawValue: day.activityMode.rawValue,
+                metric: liveActivityMetric
+            )
             startSensors()
             updateLiveActivity(force: true)
             return true
@@ -1034,6 +1063,8 @@ final class RideRecorder: ObservableObject {
 
     private func restore(day: RideDay) {
         activeDay = day
+        selectedActivityMode = day.activityMode
+        UserDefaults.standard.set(day.activityMode.rawValue, forKey: Self.activityModeKey)
         lastSample = nil
         lastSampleTimestamp = nil
         lastCheckpointDate = nil
@@ -1046,8 +1077,12 @@ final class RideRecorder: ObservableObject {
                                                      detail: day.isPaused
                                                      ? "Recovered paused day after relaunch"
                                                      : "Recovered active day after relaunch"))
-        BermsLiveActivityCoordinator.shared.start(rideID: day.id, startedAt: day.startedAt,
-                                                  metric: liveActivityMetric)
+        BermsLiveActivityCoordinator.shared.start(
+            rideID: day.id,
+            startedAt: day.startedAt,
+            activityModeRawValue: day.activityMode.rawValue,
+            metric: liveActivityMetric
+        )
         if day.isPaused {
             resetTrackingState(clearLastSample: true)
             updateLiveActivity(force: true)
@@ -1357,6 +1392,7 @@ final class RideRecorder: ObservableObject {
             liftCount: completedLiftCount,
             longestAirtime: activeLongestJumpAirtime,
             totalAirtime: activeTotalJumpAirtime,
+            activityModeRawValue: day.activityMode.rawValue,
             force: force
         )
         watchStateSink?.publish(currentWatchRideState, force: force)

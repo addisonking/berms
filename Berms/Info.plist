@@ -26,9 +26,9 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSHealthShareUsageDescription</key>
-	<string>Berms uses Apple Watch health data to display live heart rate and active energy during your ride.</string>
+	<string>Berms uses Apple Watch health data to display live heart rate and active energy during your ride or ski day.</string>
 	<key>NSHealthUpdateUsageDescription</key>
-	<string>Berms starts an Apple Watch workout session for live ride tracking without saving a separate workout.</string>
+	<string>Berms starts an Apple Watch workout session for live ride or ski tracking without saving a separate workout.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>Berms uses your location to keep recording runs and lifts while your iPhone is locked.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>

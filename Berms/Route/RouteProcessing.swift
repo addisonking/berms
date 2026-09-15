@@ -400,13 +400,14 @@ enum SessionDetailPresentationBuilder {
         trails: [Trail],
         manualCatalogID: String?
     ) -> SessionDetailPreparationInput {
+        let catalogTrails = trailsForCatalog(trails, catalogID: manualCatalogID)
         let segments = day.segments
             .filter { $0.kind == .run || $0.kind == .lift }
             .sorted { $0.startedAt < $1.startedAt }
             .map(makeSegmentInput)
         return SessionDetailPreparationInput(
             segments: segments,
-            trails: makeTrailInputs(trails),
+            trails: makeTrailInputs(catalogTrails),
             manualCatalogID: manualCatalogID
         )
     }
@@ -419,9 +420,10 @@ enum SessionDetailPresentationBuilder {
         let routePoints = (try? RouteCodec.decode(segment.routeData)) ?? []
         let activeResort = activeResort(for: routePoints.first,
                                         manualCatalogID: manualCatalogID)
+        let catalogTrails = trailsForCatalog(trails, catalogID: manualCatalogID)
         return SessionDetailPreparationInput(
             segments: [makeSegmentInput(segment)],
-            trails: makeTrailInputs(trails.filter { $0.resort == activeResort }),
+            trails: makeTrailInputs(catalogTrails.filter { $0.resort == activeResort }),
             manualCatalogID: manualCatalogID
         )
     }
@@ -481,6 +483,14 @@ enum SessionDetailPresentationBuilder {
                 passRouteData: trail.orderedPasses.map(\.routeData)
             )
         }
+    }
+
+    private static func trailsForCatalog(_ trails: [Trail], catalogID: String?) -> [Trail] {
+        guard let catalogID,
+              let catalog = TrailCatalogRegistry.catalog(withID: catalogID) else {
+            return trails
+        }
+        return TrailCatalogRegistry.trails(trails, for: catalog)
     }
 
     static func buildTrailDetails(

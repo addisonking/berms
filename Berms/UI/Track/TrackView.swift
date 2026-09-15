@@ -83,18 +83,27 @@ struct TrackView: View {
             ScrollView {
                 VStack(spacing: BermsSpacing.section) {
                     VStack(spacing: BermsSpacing.compact) {
-                        Image(systemName: "mountain.2.fill")
+                        Image(systemName: recorder.selectedActivityMode.systemImage)
                             .font(.largeTitle.weight(.semibold))
                             .foregroundStyle(Color.bermsTrail)
                             .accessibilityHidden(true)
-                        Text("Ready to track")
+                        Text(recorder.selectedActivityMode.readyTitle)
                             .font(.title2.weight(.semibold))
-                        Text("Track runs, lifts, and routes.")
+                        Text(recorder.selectedActivityMode.readyDescription)
                             .font(.subheadline)
                             .foregroundStyle(Color.bermsMuted)
                             .multilineTextAlignment(.center)
                             .frame(maxWidth: 300)
                     }
+
+                    Picker("Activity", selection: activityModeBinding) {
+                        ForEach(ActivityMode.allCases) { mode in
+                            Label(mode.title, systemImage: mode.systemImage)
+                                .tag(mode)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .accessibilityLabel("Activity mode")
 
                     startButton
 
@@ -283,7 +292,7 @@ struct TrackView: View {
                 BermsMotion.recordingFeedback()
             }
         } label: {
-            Label(needsLocationPermission ? "Allow Location" : "Start",
+            Label(needsLocationPermission ? "Allow Location" : recorder.selectedActivityMode.startTitle,
                   systemImage: needsLocationPermission ? "location.fill" : "play.fill")
                 .foregroundStyle(Color.bermsOnAccent)
                 .font(.headline)
@@ -353,6 +362,13 @@ struct TrackView: View {
         .accessibilityIdentifier("settingsButton")
     }
 
+    private var activityModeBinding: Binding<ActivityMode> {
+        Binding(
+            get: { recorder.selectedActivityMode },
+            set: { recorder.setSelectedActivityMode($0) }
+        )
+    }
+
     private var gpsEmptyTitle: String {
         switch recorder.locationAuthorization {
         case .denied, .restricted:
@@ -385,7 +401,11 @@ struct TrackView: View {
     }
 
     private var nearbyTrails: [Trail] {
-        let catalogTrails = trailCatalogSelection.trails(trails, near: currentCoordinate)
+        let catalogTrails = trailCatalogSelection.trails(
+            trails,
+            mode: recorder.activeActivityMode,
+            near: currentCoordinate
+        )
         guard !trailCatalogSelection.isAutomatic else {
             guard let coordinate = currentCoordinate else { return [] }
             return catalogTrails.filter { trail in

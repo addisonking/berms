@@ -9,7 +9,6 @@ struct DayDetailView: View {
     let onRunSelected: (RunMapDestination) -> Void
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
-    @EnvironmentObject private var trailCatalogSelection: TrailCatalogSelection
     @ObservedObject private var presentationCache = SessionDetailPresentationCache.shared
     @Query(sort: \Trail.updatedAt, order: .reverse) private var trails: [Trail]
     @State private var showingFullScreenMap = false
@@ -37,14 +36,22 @@ struct DayDetailView: View {
     }
 
     private var preparationTaskKey: String {
-        "\(day.id.uuidString)|\(trailCatalogSelection.selectionID)|"
+        "\(day.id.uuidString)|\(catalogSelectionID)|"
             + SessionDetailPresentationPreheater.trailRevision(for: trails)
+    }
+
+    private var dayCatalogID: String? {
+        day.catalogID ?? TrailCatalogRegistry.catalog(for: day.activityMode)?.id
+    }
+
+    private var catalogSelectionID: String {
+        dayCatalogID ?? TrailCatalogRegistry.automaticSelectionID
     }
 
     private func preparationCacheKey(for trails: [Trail]) -> String {
         SessionDetailPresentationPreheater.cacheKey(
             dayID: day.id,
-            selectionID: trailCatalogSelection.selectionID,
+            selectionID: catalogSelectionID,
             trails: trails
         )
     }
@@ -53,7 +60,7 @@ struct DayDetailView: View {
         let key = SessionDetailPresentationPreheater.runCacheKey(
             dayID: day.id,
             segmentID: segment.id,
-            selectionID: trailCatalogSelection.selectionID,
+            selectionID: catalogSelectionID,
             trails: trails
         )
         return presentationCache.runEntry(for: key)
@@ -62,6 +69,7 @@ struct DayDetailView: View {
     var body: some View {
         List {
             Section("Day summary") {
+                LabeledContent("Activity", value: day.activityMode.title)
                 if day.segments.isEmpty {
                     LabeledContent("Started", value: day.startedAt.formatted(date: .omitted, time: .shortened))
                     LabeledContent("Duration", value: BermsFormat.duration(day.duration))
@@ -179,7 +187,7 @@ struct DayDetailView: View {
             ShareCardSheet(day: day,
                            base: detailBase,
                            trailDetails: trailDetails,
-                           manualCatalogID: trailCatalogSelection.manualCatalogID)
+                           manualCatalogID: dayCatalogID)
         }
         .task(id: day.id) {
             let dayID = day.id
@@ -285,7 +293,8 @@ struct DayDetailView: View {
                     SummaryStat(label: "Distance", value: BermsFormat.distance(day.distanceMeters))
                 }
                 AdaptiveStatRow {
-                    SummaryStat(label: "Riding time", value: BermsFormat.duration(day.activeSeconds))
+                    SummaryStat(label: day.activityMode.activeTimeTitle,
+                                value: BermsFormat.duration(day.activeSeconds))
                     SummaryStat(label: "Lift time", value: BermsFormat.duration(day.liftSeconds))
                 }
                 AdaptiveStatRow {
@@ -336,7 +345,8 @@ struct DayDetailView: View {
                         }, onExpand: { showingFullScreenMap = true })
         .frame(height: 280)
         .fullScreenCover(isPresented: $showingFullScreenMap) {
-            FullScreenSummaryMap(title: "Ride Map", base: detailBase,
+            FullScreenSummaryMap(title: day.activityMode == .ski ? "Ski Map" : "Ride Map",
+                                 base: detailBase,
                                  trailDetails: trailDetails,
                                  focusedSegmentID: nil,
                                  focusedRunNumber: nil)
@@ -359,7 +369,7 @@ struct DayDetailView: View {
 
         guard let input = await SessionDetailPresentationPreheater.makeInput(
             dayID: day.id,
-            manualCatalogID: trailCatalogSelection.manualCatalogID,
+            manualCatalogID: dayCatalogID,
             container: modelContext.container
         ) else { return }
         guard !Task.isCancelled else { return }

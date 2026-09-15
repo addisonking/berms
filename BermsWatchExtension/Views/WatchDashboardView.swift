@@ -15,11 +15,11 @@ struct WatchDashboardView: View {
         .onChange(of: model.message) { _, message in
             if message != nil { showsCommandError = true }
         }
-        .alert("Finish ride?", isPresented: $showsFinishConfirmation) {
-            Button("Finish ride", role: .destructive, action: model.finishRide)
+        .alert(finishConfirmationTitle, isPresented: $showsFinishConfirmation) {
+            Button(finishConfirmationActionTitle, role: .destructive, action: model.finishRide)
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Your ride will be saved on iPhone.")
+            Text("Your session will be saved on iPhone.")
         }
     }
 
@@ -44,7 +44,7 @@ struct WatchDashboardView: View {
     private var statsPage: some View {
         VStack(alignment: .leading, spacing: 6) {
             if model.state.isActive {
-                Label(runTitle, systemImage: "figure.outdoor.cycle")
+                Label(runTitle, systemImage: model.state.isSkiDay ? "snowflake" : "figure.outdoor.cycle")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                 Spacer(minLength: 0)
@@ -75,7 +75,7 @@ struct WatchDashboardView: View {
         VStack(alignment: .leading, spacing: 12) {
             if model.state.isActive {
                 HStack(alignment: .firstTextBaseline) {
-                    Text(model.isStale ? "Disconnected" : model.state.status == .paused ? "Paused" : "Berms")
+                    Text(model.isStale ? "Disconnected" : model.state.status == .paused ? "Paused" : model.state.activityTitle)
                         .font(.footnote)
                         .contentTransition(.interpolate)
                     Spacer(minLength: 8)
@@ -214,6 +214,14 @@ struct WatchDashboardView: View {
     private var runTitle: String {
         guard let run = model.state.run else { return "Waiting for a run" }
         return model.state.phase == "run" ? "Run \(run.number)" : "Last run \(run.number)"
+    }
+
+    private var finishConfirmationTitle: String {
+        model.state.isSkiDay ? "Finish ski day?" : "Finish ride?"
+    }
+
+    private var finishConfirmationActionTitle: String {
+        model.state.isSkiDay ? "Finish ski day" : "Finish ride"
     }
 
     private let speedUnit = "mph"

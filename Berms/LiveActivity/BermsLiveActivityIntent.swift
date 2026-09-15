@@ -2,7 +2,7 @@ import AppIntents
 import Foundation
 
 struct ToggleBermsPauseIntent: LiveActivityIntent {
-    static let title: LocalizedStringResource = "Pause or Resume Ride"
+    static let title: LocalizedStringResource = "Pause or Resume Session"
 
     func perform() async throws -> some IntentResult {
         NotificationCenter.default.post(

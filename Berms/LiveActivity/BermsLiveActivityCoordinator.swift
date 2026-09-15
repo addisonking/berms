@@ -20,7 +20,9 @@ final class BermsLiveActivityCoordinator {
 
     private init() {}
 
-    func start(rideID: UUID, startedAt: Date, metric: BermsLiveActivityMetric) {
+    func start(rideID: UUID, startedAt: Date,
+               metric: BermsLiveActivityMetric,
+               activityModeRawValue: String? = nil) {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
         if let existing = Activity<BermsActivityAttributes>.activities.first(where: {
             $0.attributes.rideID == rideID.uuidString
@@ -41,7 +43,8 @@ final class BermsLiveActivityCoordinator {
             distanceMeters: 0,
             descentMeters: 0,
             topSpeedMetersPerSecond: 0,
-            metric: metric
+            metric: metric,
+            activityModeRawValue: activityModeRawValue
         )
         do {
             let requested = try Activity.request(
@@ -69,7 +72,8 @@ final class BermsLiveActivityCoordinator {
     func update(phase: DetectorPhase, isPaused: Bool, runCount: Int, startedAt: Date,
                 elapsed: TimeInterval, distance: Double, descent: Double, topSpeed: Double,
                 metric: BermsLiveActivityMetric, jumpCount: Int, liftCount: Int,
-                longestAirtime: TimeInterval, totalAirtime: TimeInterval, force: Bool = false) {
+                longestAirtime: TimeInterval, totalAirtime: TimeInterval,
+                activityModeRawValue: String? = nil, force: Bool = false) {
         guard let handle = activity,
               force || Date.now.timeIntervalSince(lastUpdate) >= 10 else { return }
         lastUpdate = .now
@@ -86,7 +90,8 @@ final class BermsLiveActivityCoordinator {
             jumpCount: jumpCount,
             liftCount: liftCount,
             longestAirtime: longestAirtime,
-            totalAirtime: totalAirtime
+            totalAirtime: totalAirtime,
+            activityModeRawValue: activityModeRawValue
         )
         let content = ActivityContent(state: state, staleDate: .now.addingTimeInterval(30))
         Task.detached {

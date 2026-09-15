@@ -11,7 +11,7 @@ struct BermsLiveActivity: Widget {
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    Label("Berms", systemImage: "mountain.2.fill")
+                    Label(context.state.activityTitle, systemImage: "mountain.2.fill")
                         .font(.headline)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
@@ -33,7 +33,7 @@ struct BermsLiveActivity: Widget {
                                 .frame(width: 44, height: 44)
                                 .contentShape(Rectangle())
                         }
-                        .accessibilityLabel(context.state.isPaused ? "Resume ride" : "Pause ride")
+                        .accessibilityLabel(pauseAccessibilityLabel(for: context))
                     }
                 }
             } compactLeading: {
@@ -45,7 +45,7 @@ struct BermsLiveActivity: Widget {
                     .accessibilityLabel("\(context.state.runCount) runs")
             } minimal: {
                 Image(systemName: "mountain.2.fill")
-                    .accessibilityLabel("Berms ride")
+                    .accessibilityLabel(context.state.isSkiDay ? "Berms ski day" : "Berms ride")
             }
             .widgetURL(URL(string: "berms://track"))
         }
@@ -54,7 +54,7 @@ struct BermsLiveActivity: Widget {
     private func lockScreenView(context: ActivityViewContext<BermsActivityAttributes>) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Label("Berms", systemImage: "mountain.2.fill")
+                Label(context.state.activityTitle, systemImage: "mountain.2.fill")
                     .font(.headline)
                 Spacer()
                 Text(statusText(context))
@@ -107,7 +107,14 @@ struct BermsLiveActivity: Widget {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(context.state.isPaused ? "Resume ride" : "Pause ride")
+        .accessibilityLabel(pauseAccessibilityLabel(for: context))
+    }
+
+    private func pauseAccessibilityLabel(
+        for context: ActivityViewContext<BermsActivityAttributes>
+    ) -> String {
+        let activity = context.state.isSkiDay ? "ski day" : "ride"
+        return context.state.isPaused ? "Resume \(activity)" : "Pause \(activity)"
     }
 
     private func metric(_ label: String, _ value: String) -> some View {

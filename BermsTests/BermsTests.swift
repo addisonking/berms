@@ -113,11 +113,13 @@ final class BermsTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
         let firstCatalog = TrailCatalogDescriptor(
-            id: "catalog-a", resortName: "Resort A", bundledResourceName: "a",
+            id: "catalog-a", season: .summer, resortID: "resort-a",
+            resortName: "Resort A", bundledResourceName: "a",
             importVersion: "a-v1", locationAnchor: Coordinate(latitude: 40, longitude: -105),
             stableIDNamespace: "berms:catalog-a", legacyImportVersionKeys: [])
         let secondCatalog = TrailCatalogDescriptor(
-            id: "catalog-b", resortName: "Resort B", bundledResourceName: "b",
+            id: "catalog-b", season: .summer, resortID: "resort-b",
+            resortName: "Resort B", bundledResourceName: "b",
             importVersion: "b-v1", locationAnchor: Coordinate(latitude: 41, longitude: -106),
             stableIDNamespace: "berms:catalog-b", legacyImportVersionKeys: [])
         let data = Data("""
@@ -241,6 +243,54 @@ final class BermsTests: XCTestCase {
         )
 
         XCTAssertEqual(visible.map(\.name), ["Creek trail"])
+    }
+
+    func testActivityModeResolvesSeasonalMountainCreekCatalogs() {
+        XCTAssertEqual(ActivityMode.bikePark.season, .summer)
+        XCTAssertEqual(ActivityMode.ski.season, .winter)
+        XCTAssertEqual(TrailCatalogRegistry.catalog(for: .bikePark)?.id,
+                       TrailCatalogRegistry.mountainCreek.id)
+        XCTAssertEqual(TrailCatalogRegistry.catalog(for: .ski)?.id,
+                       TrailCatalogRegistry.mountainCreekWinter.id)
+        XCTAssertNil(TrailCatalogRegistry.mountainCreekWinter.bundledResourceName)
+    }
+
+    func testSeasonalTrailSelectionDoesNotLeakSummerTrailsIntoWinter() {
+        let summerTrail = Trail(name: "Summer trail", difficulty: .green,
+                                resort: TrailCatalogRegistry.mountainCreek.resortName,
+                                catalogID: TrailCatalogRegistry.mountainCreek.id)
+        let legacyTrail = Trail(name: "Legacy trail", difficulty: .blue,
+                                resort: TrailCatalogRegistry.mountainCreek.resortName)
+        let winterTrail = Trail(name: "Winter trail", difficulty: .blue,
+                                resort: TrailCatalogRegistry.mountainCreekWinter.resortName,
+                                catalogID: TrailCatalogRegistry.mountainCreekWinter.id)
+
+        XCTAssertEqual(
+            TrailCatalogRegistry.trails(
+                [summerTrail, legacyTrail], for: TrailCatalogRegistry.mountainCreek
+            ).map(\.name),
+            ["Summer trail", "Legacy trail"]
+        )
+        XCTAssertEqual(
+            TrailCatalogRegistry.trails(
+                [summerTrail, legacyTrail, winterTrail],
+                for: TrailCatalogRegistry.mountainCreekWinter
+            ).map(\.name),
+            ["Winter trail"]
+        )
+    }
+
+    func testRideDayDefaultsToBikeAndExportsSeasonalMetadata() throws {
+        let day = RideDay(startedAt: Date(timeIntervalSince1970: 1_700_000_000))
+        XCTAssertEqual(day.activityMode, .bikePark)
+
+        day.activityModeRawValue = ActivityMode.ski.rawValue
+        day.catalogID = TrailCatalogRegistry.mountainCreekWinter.id
+
+        XCTAssertEqual(day.activityMode, .ski)
+        let export = BermsDataExport(day: day)
+        XCTAssertEqual(export.days.first?.activityMode, .ski)
+        XCTAssertEqual(export.days.first?.catalogID, TrailCatalogRegistry.mountainCreekWinter.id)
     }
 
     @MainActor
@@ -1222,12 +1272,14 @@ final class BermsTests: XCTestCase {
             phase: "run", isPaused: false, runCount: 2, startedAt: .now,
             elapsedSeconds: 120, distanceMeters: 2_000, descentMeters: 300,
             topSpeedMetersPerSecond: 14, metric: .totalAirtime, jumpCount: 4,
-            liftCount: 1, longestAirtime: 0.84, totalAirtime: 2.4
+            liftCount: 1, longestAirtime: 0.84, totalAirtime: 2.4,
+            activityModeRawValue: ActivityMode.ski.rawValue
         )
         let data = try JSONEncoder().encode(state)
         let decoded = try JSONDecoder().decode(BermsActivityAttributes.ContentState.self, from: data)
 
         XCTAssertEqual(decoded, state)
+        XCTAssertTrue(decoded.isSkiDay)
         XCTAssertFalse(attributes.rideID.isEmpty)
     }
 
@@ -1242,11 +1294,13 @@ final class BermsTests: XCTestCase {
             descentMeters: 210,
             speedMetersPerSecond: 12,
             run: .init(number: 2, distanceMeters: 450, descentMeters: 90, topSpeedMetersPerSecond: 18, longestJumpAirtime: 0.84, jumpCount: 2),
-            updatedAt: Date(timeIntervalSince1970: 142)
+            updatedAt: Date(timeIntervalSince1970: 142),
+            activityModeRawValue: ActivityMode.ski.rawValue
         )
 
         XCTAssertEqual(try WatchRideCodec.decode(WatchRideState.self,
                                                  from: WatchRideCodec.encode(state)), state)
+        XCTAssertTrue(state.isSkiDay)
         XCTAssertEqual(try WatchRideCodec.decode(WatchRideCommand.self,
                                                  from: WatchRideCodec.encode(WatchRideCommand.pause)), .pause)
         XCTAssertEqual(try WatchRideCodec.decode(WatchRideCommand.self,
@@ -2107,7 +2161,7 @@ final class BermsTests: XCTestCase {
 
         let export = BermsDataExport(day: day, exportedAt: base,
                                      rawDiagnosticsFilename: "Berms-day.jsonl")
-        XCTAssertEqual(export.version, 3)
+        XCTAssertEqual(export.version, 4)
         XCTAssertEqual(export.days[0].segments.compactMap(\.runNumber), [1, 2])
         XCTAssertEqual(export.parsed.runCount, 2)
         XCTAssertEqual(export.parsed.runs.map(\.number), [1, 2])
