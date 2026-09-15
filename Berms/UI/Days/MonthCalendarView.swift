@@ -33,9 +33,10 @@ struct MonthCalendarView: UIViewRepresentable {
     var recordedDays: Set<DayKey>
     @Binding var selectedDate: Date
     var onVisibleMonthChange: (DateComponents) -> Void = { _ in }
+    var onSelectDate: (Date) -> Void = { _ in }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(selectedDate: $selectedDate)
+        Coordinator(selectedDate: $selectedDate, onSelectDate: onSelectDate)
     }
 
     func makeUIView(context: Context) -> UICalendarView {
@@ -56,6 +57,7 @@ struct MonthCalendarView: UIViewRepresentable {
 
     func updateUIView(_ calendarView: UICalendarView, context: Context) {
         context.coordinator.onVisibleMonthChange = onVisibleMonthChange
+        context.coordinator.onSelectDate = onSelectDate
         context.coordinator.update(calendarView,
                                    selection: calendarView.selectionBehavior as? UICalendarSelectionSingleDate,
                                    recordedDays: recordedDays,
@@ -82,9 +84,11 @@ struct MonthCalendarView: UIViewRepresentable {
         private var recordedDays: Set<DayKey> = []
         private var lastSelectedComponents: DateComponents?
         var onVisibleMonthChange: (DateComponents) -> Void = { _ in }
+        var onSelectDate: (Date) -> Void = { _ in }
 
-        init(selectedDate: Binding<Date>) {
+        init(selectedDate: Binding<Date>, onSelectDate: @escaping (Date) -> Void) {
             self.selectedDate = selectedDate
+            self.onSelectDate = onSelectDate
         }
 
         func attach(recordedDays: Set<DayKey>, selectedComponents: DateComponents) {
@@ -129,6 +133,7 @@ struct MonthCalendarView: UIViewRepresentable {
                   let date = Calendar.current.date(from: dateComponents) else { return }
             lastSelectedComponents = Self.components(for: date)
             selectedDate.wrappedValue = date
+            onSelectDate(date)
         }
 
         private static func components(for date: Date) -> DateComponents {

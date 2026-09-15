@@ -13,8 +13,9 @@ struct DaysView: View {
     @State private var deleteError: String?
     @State private var dayToDelete: RideDay?
     @State private var navigationPath = NavigationPath()
-    @State private var selectedDate = Date()
-    @State private var didApplyDefaultSelection = false
+    @State private var showingCalendar = false
+    @State private var calendarSelection = Date()
+    @State private var pendingScrollID: UUID?
 
     init(pendingDayID: Binding<UUID?> = .constant(nil),
          onStartTracking: @escaping () -> Void = {}) {
@@ -29,15 +30,21 @@ struct DaysView: View {
                 if finishedDays.isEmpty {
                     emptyDaysView
                 } else {
-                    calendarContent
+                    sessionsList
                 }
             }
             .navigationTitle("Days")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
-                if showsTodayButton {
+                if !finishedDays.isEmpty {
                     ToolbarItem(placement: .topBarTrailing) {
-                        Button("Today") { selectedDate = .now }
+                        Button {
+                            calendarSelection = finishedDays.first?.startedAt ?? .now
+                            showingCalendar = true
+                        } label: {
+                            Image(systemName: "calendar")
+                        }
+                        .accessibilityLabel("Jump to date")
                     }
                 }
             }
@@ -67,18 +74,15 @@ struct DaysView: View {
                                preparedTrailDetails: preheatedRun?.trailDetails)
                 }
             }
-            .onAppear {
-                applyDefaultSelectionIfNeeded()
-                openPendingDayIfNeeded()
-            }
+            .onAppear { openPendingDayIfNeeded() }
             .onChange(of: pendingDayID) { _, _ in openPendingDayIfNeeded() }
-            .onChange(of: finishedDays.map(\.id)) { _, _ in
-                applyDefaultSelectionIfNeeded()
-                openPendingDayIfNeeded()
-            }
+            .onChange(of: finishedDays.map(\.id)) { _, _ in openPendingDayIfNeeded() }
         }
         .task(id: latestRunPreheatKey) {
             await preheatLatestRun()
+        }
+        .sheet(isPresented: $showingCalendar) {
+            calendarSheet
         }
         .alert("Delete day?", isPresented: Binding(
             get: { dayToDelete != nil },
@@ -173,78 +177,131 @@ struct DaysView: View {
         }
     }
 
-    private var calendarContent: some View {
-        List {
-            Section {
-                MonthCalendarView(recordedDays: recordedDayKeys,
-                                  selectedDate: $selectedDate,
-                                  onVisibleMonthChange: handleVisibleMonthChange)
-                    .listRowInsets(EdgeInsets())
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
-            }
-            Section {
-                if selectedDaySessions.isEmpty {
-                    Text("No sessions on this day.")
-                        .font(.subheadline)
-                        .foregroundStyle(Color.bermsMuted)
-                        .listRowSeparator(.hidden)
-                } else {
-                    ForEach(selectedDaySessions) { day in
-                        NavigationLink(value: day.id) {
-                            DayRow(day: day)
+    /// Sessions are sparse and rich, so the list stays primary: newest first,
+    /// grouped under month headers that carry the month's totals.
+    private var sessionsList: some View {
+        ScrollViewReader { proxy in
+            List {
+                ForEach(monthGroups) { group in
+                    Section {
+                        ForEach(group.days) { day in
+                            NavigationLink(value: day.id) {
+                                DayRow(day: day)
+                            }
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                dayDeleteAction(for: day)
+                            }
+                            .id(day.id)
                         }
-                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                            dayDeleteAction(for: day)
-                        }
+                    } header: {
+                        monthHeader(for: group)
                     }
                 }
-            } header: {
-                Text(selectedDate.formatted(date: .complete, time: .omitted))
-                    .textCase(nil)
+            }
+            .listSectionSpacing(.compact)
+            .onChange(of: pendingScrollID) { _, target in
+                guard let target else { return }
+                withAnimation { proxy.scrollTo(target, anchor: .top) }
+                pendingScrollID = nil
             }
         }
-        .listSectionSpacing(.compact)
     }
 
-    private var showsTodayButton: Bool {
-        !Calendar.current.isDate(selectedDate, equalTo: .now, toGranularity: .month)
-    }
-
-    /// Keep the agenda in step with the month on screen: paging away from the
-    /// selected day moves the selection into the month being viewed.
-    private func handleVisibleMonthChange(_ components: DateComponents) {
-        let calendar = Calendar.current
-        guard let month = calendar.date(from: components),
-              !calendar.isDate(selectedDate, equalTo: month, toGranularity: .month) else { return }
-        if let latestInMonth = finishedDays.first(where: {
-            calendar.isDate($0.startedAt, equalTo: month, toGranularity: .month)
-        }) {
-            selectedDate = latestInMonth.startedAt
-        } else if let firstOfMonth = calendar.date(from: calendar.dateComponents([.year, .month],
-                                                                                 from: month)) {
-            selectedDate = firstOfMonth
+    private func monthHeader(for group: MonthGroup) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(group.title)
+            Spacer(minLength: BermsSpacing.compact)
+            Text(group.summary)
+                .foregroundStyle(Color.bermsMuted)
         }
+        .textCase(nil)
+    }
+
+    private var calendarSheet: some View {
+        NavigationStack {
+            MonthCalendarView(recordedDays: recordedDayKeys,
+                              selectedDate: $calendarSelection,
+                              onSelectDate: { date in
+                                  calendarSelection = date
+                                  pendingScrollID = jumpTarget(for: date)
+                                  showingCalendar = false
+                              })
+            .navigationTitle("Jump to date")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { showingCalendar = false }
+                }
+            }
+        }
+        .presentationDetents([.medium])
+    }
+
+    private struct MonthGroup: Identifiable {
+        let year: Int
+        let month: Int
+        var days: [RideDay]
+
+        var id: String { "\(year)-\(month)" }
+
+        private var startDate: Date? {
+            Calendar.current.date(from: DateComponents(year: year, month: month, day: 1))
+        }
+
+        var title: String {
+            startDate?.formatted(.dateTime.month(.wide).year()) ?? ""
+        }
+
+        var summary: String {
+            let dayCount = days.count == 1 ? "1 day" : "\(days.count) days"
+            let runCount = days.reduce(0) { $0 + $1.segments.filter { $0.kind == .run }.count }
+            let runLabel = runCount == 1 ? "1 run" : "\(runCount) runs"
+            return "\(dayCount)  ·  \(runLabel)"
+        }
+    }
+
+    /// `finishedDays` is already newest-first, so walking it in order keeps the
+    /// month sections newest-first too.
+    private var monthGroups: [MonthGroup] {
+        let calendar = Calendar.current
+        var groups: [MonthGroup] = []
+        for day in finishedDays {
+            let components = calendar.dateComponents([.year, .month], from: day.startedAt)
+            let year = components.year ?? 0
+            let month = components.month ?? 0
+            if var last = groups.last, last.year == year, last.month == month {
+                last.days.append(day)
+                groups[groups.count - 1] = last
+            } else {
+                groups.append(MonthGroup(year: year, month: month, days: [day]))
+            }
+        }
+        return groups
     }
 
     private var recordedDayKeys: Set<MonthCalendarView.DayKey> {
         Set(finishedDays.map { MonthCalendarView.DayKey(date: $0.startedAt) })
     }
 
-    private var selectedDaySessions: [RideDay] {
-        finishedDays
-            .filter { Calendar.current.isDate($0.startedAt, inSameDayAs: selectedDate) }
-            .sorted { $0.startedAt < $1.startedAt }
-    }
-
-    /// Sessions are sparse, so open the month and day of the most recent ride
-    /// instead of landing on an empty today.
-    private func applyDefaultSelectionIfNeeded() {
-        guard !didApplyDefaultSelection, !finishedDays.isEmpty else { return }
-        didApplyDefaultSelection = true
-        guard !finishedDays.contains(where: { Calendar.current.isDateInToday($0.startedAt) }),
-              let mostRecent = finishedDays.first else { return }
-        selectedDate = mostRecent.startedAt
+    /// The calendar is a jump-to-date affordance, so land on the exact day when
+    /// it exists, otherwise the nearest session so the list still moves.
+    private func jumpTarget(for date: Date) -> UUID? {
+        let calendar = Calendar.current
+        if let sameDay = finishedDays.first(where: {
+            calendar.isDate($0.startedAt, inSameDayAs: date)
+        }) {
+            return sameDay.id
+        }
+        let components = calendar.dateComponents([.year, .month], from: date)
+        if let inMonth = finishedDays.first(where: {
+            let dayComponents = calendar.dateComponents([.year, .month], from: $0.startedAt)
+            return dayComponents.year == components.year && dayComponents.month == components.month
+        }) {
+            return inMonth.id
+        }
+        return finishedDays.min {
+            abs($0.startedAt.timeIntervalSince(date)) < abs($1.startedAt.timeIntervalSince(date))
+        }?.id
     }
 
     @ViewBuilder
@@ -261,8 +318,7 @@ struct DaysView: View {
 
     private func openPendingDayIfNeeded() {
         guard let pendingDayID,
-              let day = finishedDays.first(where: { $0.id == pendingDayID }) else { return }
-        selectedDate = day.startedAt
+              finishedDays.contains(where: { $0.id == pendingDayID }) else { return }
         navigationPath = NavigationPath([pendingDayID])
         self.pendingDayID = nil
     }

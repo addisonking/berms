@@ -29,16 +29,20 @@ struct DayRow: View {
         .accessibilityElement(children: .combine)
     }
 
-    /// The calendar already names the day, so unnamed sessions lead with their
-    /// start time.
+    /// The month header only names the month, so unnamed sessions lead with the
+    /// date and keep the start time in the metadata.
     private var title: String {
-        day.hasCustomName ? day.displayName : time
+        day.hasCustomName ? day.displayName : dayLabel
     }
 
     private var metadata: String {
         let stats = "\(day.segments.filter { $0.kind == .run }.count) runs  ·  \(BermsFormat.distance(day.distanceMeters))"
-        guard day.hasCustomName else { return stats }
-        return "\(time)  ·  \(stats)"
+        guard day.hasCustomName else { return "\(time)  ·  \(stats)" }
+        return "\(dayLabel)  ·  \(time)  ·  \(stats)"
+    }
+
+    private var dayLabel: String {
+        day.startedAt.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())
     }
 
     private var time: String {
