@@ -18,6 +18,11 @@ final class BermsLiveActivityCoordinator {
     private var lastUpdate = Date.distantPast
     private var isEndingAllActivities = false
 
+    /// Whether a Live Activity is running and can carry background location updates.
+    var isActivityActive: Bool {
+        activity != nil || !Activity<BermsActivityAttributes>.activities.isEmpty
+    }
+
     private init() {}
 
     func start(
@@ -106,14 +111,14 @@ final class BermsLiveActivityCoordinator {
     }
 
     func end() {
-        guard let handle = activity else { return }
-        activity = nil
-        Task.detached {
-            await handle.activity.end(nil, dismissalPolicy: .immediate)
-        }
+        endAllActivities()
     }
 
     func endAll() {
+        endAllActivities()
+    }
+
+    private func endAllActivities() {
         activity = nil
         lastUpdate = .distantPast
         isEndingAllActivities = true

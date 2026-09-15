@@ -1265,7 +1265,9 @@ final class RideRecorder: ObservableObject {
         motionService.start()
         motionAvailable = motionService.motionAvailable
         altitudeFusion.reset(barometerAvailable: motionService.altimeterAvailable)
-        locationService.start { [weak self] location, stationary in
+        let backgroundAccess: BackgroundLocationAccess =
+            BermsLiveActivityCoordinator.shared.isActivityActive ? .liveActivity : .activitySession
+        locationService.start(backgroundAccess: backgroundAccess) { [weak self] location, stationary in
             self?.consume(location: location, isStationary: stationary)
         }
         locationAuthorization = locationService.authorizationStatus
