@@ -38,32 +38,38 @@ final class WatchConnectivityClient: NSObject, WatchRideTransportClient, WCSessi
 
     func requestLatestState() {
         guard session.activationState == .activated, session.isReachable else { return }
-        session.sendMessage([WatchRideWire.requestState: true], replyHandler: { @Sendable [weak self] message in
-            guard let data = message[WatchRideWire.state] as? Data else { return }
-            Task { @MainActor in self?.receive(stateData: data) }
-        }, errorHandler: { @Sendable _ in })
+        session.sendMessage(
+            [WatchRideWire.requestState: true],
+            replyHandler: { @Sendable [weak self] message in
+                guard let data = message[WatchRideWire.state] as? Data else { return }
+                Task { @MainActor in self?.receive(stateData: data) }
+            }, errorHandler: { @Sendable _ in })
     }
 
     @discardableResult
     func send(command: WatchRideCommand) -> Bool {
         guard isReachable, session.activationState == .activated, let rideID = state.rideID,
-              let data = try? WatchRideCodec.encode(WatchRideCommandRequest(command: command, rideID: rideID)) else { return false }
+            let data = try? WatchRideCodec.encode(WatchRideCommandRequest(command: command, rideID: rideID))
+        else { return false }
 
-        session.sendMessage([WatchRideWire.command: data], replyHandler: { @Sendable [weak self] message in
-            guard let data = message[WatchRideWire.reply] as? Data else {
+        session.sendMessage(
+            [WatchRideWire.command: data],
+            replyHandler: { @Sendable [weak self] message in
+                guard let data = message[WatchRideWire.reply] as? Data else {
+                    Task { @MainActor [weak self] in
+                        self?.onCommandResult?(false, nil)
+                    }
+                    return
+                }
+                Task { @MainActor [weak self] in
+                    self?.receive(replyData: data)
+                }
+            },
+            errorHandler: { @Sendable [weak self] _ in
                 Task { @MainActor [weak self] in
                     self?.onCommandResult?(false, nil)
                 }
-                return
-            }
-            Task { @MainActor [weak self] in
-                self?.receive(replyData: data)
-            }
-        }, errorHandler: { @Sendable [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.onCommandResult?(false, nil)
-            }
-        })
+            })
         return true
     }
 
@@ -90,9 +96,11 @@ final class WatchConnectivityClient: NSObject, WatchRideTransportClient, WCSessi
         onStateChange?(state)
     }
 
-    nonisolated func session(_ session: WCSession,
-                             activationDidCompleteWith activationState: WCSessionActivationState,
-                             error: Error?) {
+    nonisolated func session(
+        _ session: WCSession,
+        activationDidCompleteWith activationState: WCSessionActivationState,
+        error: Error?
+    ) {
         let reachable = session.isReachable
         Task { @MainActor [weak self] in
             self?.updateReachability(reachable)
@@ -107,16 +115,20 @@ final class WatchConnectivityClient: NSObject, WatchRideTransportClient, WCSessi
         }
     }
 
-    nonisolated func session(_ session: WCSession,
-                             didReceiveApplicationContext applicationContext: [String: Any]) {
+    nonisolated func session(
+        _ session: WCSession,
+        didReceiveApplicationContext applicationContext: [String: Any]
+    ) {
         guard let data = applicationContext[WatchRideWire.state] as? Data else { return }
         Task { @MainActor [weak self] in
             self?.receive(stateData: data)
         }
     }
 
-    nonisolated func session(_ session: WCSession,
-                             didReceiveMessage message: [String: Any]) {
+    nonisolated func session(
+        _ session: WCSession,
+        didReceiveMessage message: [String: Any]
+    ) {
         guard let data = message[WatchRideWire.state] as? Data else { return }
         Task { @MainActor [weak self] in
             self?.receive(stateData: data)

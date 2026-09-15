@@ -128,10 +128,13 @@ struct ShareCardSheet: View {
         .sheet(item: $shareItem) { item in
             ShareSheet(items: [item.url])
         }
-        .alert("Couldn't save", isPresented: Binding(
-            get: { saveErrorMessage != nil },
-            set: { if !$0 { saveErrorMessage = nil } }
-        )) {
+        .alert(
+            "Couldn't save",
+            isPresented: Binding(
+                get: { saveErrorMessage != nil },
+                set: { if !$0 { saveErrorMessage = nil } }
+            )
+        ) {
             Button("OK", role: .cancel) {}
         } message: {
             Text(saveErrorMessage ?? "")
@@ -237,22 +240,24 @@ struct ShareCardSheet: View {
 
         isRendering = true
         let configuration = self.configuration
-        let content = ShareCardContentBuilder.build(day: day,
-                                                    base: base,
-                                                    trailDetails: trailDetails,
-                                                    manualCatalogID: manualCatalogID,
-                                                    configuration: configuration)
+        let content = ShareCardContentBuilder.build(
+            day: day,
+            base: base,
+            trailDetails: trailDetails,
+            manualCatalogID: manualCatalogID,
+            configuration: configuration)
         self.content = content
 
         var mapImage: UIImage?
         var unavailable = false
         if configuration.showsMap && content.hasRoute {
-            let request = ShareMapSnapshotRequest(size: configuration.preset.mapFrameSize,
-                                                  scale: ShareCardPreset.renderScale,
-                                                  mapStyle: configuration.mapStyle,
-                                                  routes: content.routes,
-                                                  trails: configuration.showsTrails ? content.trails : [],
-                                                  jumps: configuration.showsJumps ? content.jumps : [])
+            let request = ShareMapSnapshotRequest(
+                size: configuration.preset.mapFrameSize,
+                scale: ShareCardPreset.renderScale,
+                mapStyle: configuration.mapStyle,
+                routes: content.routes,
+                trails: configuration.showsTrails ? content.trails : [],
+                jumps: configuration.showsJumps ? content.jumps : [])
             do {
                 mapImage = try await snapshotter.snapshot(request)
             } catch is CancellationError {
@@ -263,9 +268,12 @@ struct ShareCardSheet: View {
         }
         guard !Task.isCancelled else { return }
 
-        guard let image = ShareCardRenderer.render(content: content,
-                                                   configuration: configuration,
-                                                   mapImage: mapImage) else {
+        guard
+            let image = ShareCardRenderer.render(
+                content: content,
+                configuration: configuration,
+                mapImage: mapImage)
+        else {
             isRendering = false
             return
         }
@@ -274,9 +282,10 @@ struct ShareCardSheet: View {
         mapUnavailable = unavailable
         exportURL = try? ShareCardRenderer.writePNG(
             image,
-            fileName: ShareCardRenderer.fileName(content: content,
-                                                 preset: configuration.preset,
-                                                 date: day.startedAt))
+            fileName: ShareCardRenderer.fileName(
+                content: content,
+                preset: configuration.preset,
+                date: day.startedAt))
         isRendering = false
     }
 }

@@ -31,18 +31,20 @@ struct WatchRideState: Codable, Equatable, Sendable {
     let updatedAt: Date
     let activityModeRawValue: String?
 
-    init(version: Int = WatchRideState.currentVersion,
-         status: WatchRideStatus,
-         rideID: String?,
-         phase: String,
-         startedAt: Date?,
-         elapsedSeconds: TimeInterval,
-         distanceMeters: Double,
-         descentMeters: Double,
-         speedMetersPerSecond: Double,
-         run: RunMetrics? = nil,
-         updatedAt: Date,
-         activityModeRawValue: String? = nil) {
+    init(
+        version: Int = WatchRideState.currentVersion,
+        status: WatchRideStatus,
+        rideID: String?,
+        phase: String,
+        startedAt: Date?,
+        elapsedSeconds: TimeInterval,
+        distanceMeters: Double,
+        descentMeters: Double,
+        speedMetersPerSecond: Double,
+        run: RunMetrics? = nil,
+        updatedAt: Date,
+        activityModeRawValue: String? = nil
+    ) {
         self.version = version
         self.status = status
         self.rideID = rideID
@@ -74,17 +76,19 @@ struct WatchRideState: Codable, Equatable, Sendable {
         updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? .distantPast
     }
 
-    static var idle: WatchRideState { WatchRideState(
-        status: .idle,
-        rideID: nil,
-        phase: "idle",
-        startedAt: nil,
-        elapsedSeconds: 0,
-        distanceMeters: 0,
-        descentMeters: 0,
-        speedMetersPerSecond: 0,
-        updatedAt: .now
-    ) }
+    static var idle: WatchRideState {
+        WatchRideState(
+            status: .idle,
+            rideID: nil,
+            phase: "idle",
+            startedAt: nil,
+            elapsedSeconds: 0,
+            distanceMeters: 0,
+            descentMeters: 0,
+            speedMetersPerSecond: 0,
+            updatedAt: .now
+        )
+    }
 
     var isActive: Bool { status != .idle }
 
@@ -110,9 +114,11 @@ struct WatchRideCommandRequest: Codable, Sendable {
     let command: WatchRideCommand
     let rideID: String
 
-    init(version: Int = WatchRideState.currentVersion,
-         command: WatchRideCommand,
-         rideID: String) {
+    init(
+        version: Int = WatchRideState.currentVersion,
+        command: WatchRideCommand,
+        rideID: String
+    ) {
         self.version = version
         self.command = command
         self.rideID = rideID

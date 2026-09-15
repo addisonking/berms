@@ -15,8 +15,9 @@ final class RawLogWriter: @unchecked Sendable {
 
     init(url: URL) {
         var directory = url.deletingLastPathComponent()
-        try? FileManager.default.createDirectory(at: directory,
-                                                   withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true)
         var values = URLResourceValues()
         values.isExcludedFromBackup = true
         try? directory.setResourceValues(values)
@@ -101,9 +102,10 @@ final class PersistenceController {
     private func importCatalogs(into context: ModelContext) {
         do {
             for result in try TrailCatalogImporter.importCatalogsIfNeeded(into: context) {
-                print("Imported \(result.catalog.resortName) trails: "
-                    + "\(result.summary.trailsCreated) trails, "
-                    + "\(result.summary.passesCreated) passes")
+                print(
+                    "Imported \(result.catalog.resortName) trails: "
+                        + "\(result.summary.trailsCreated) trails, "
+                        + "\(result.summary.passesCreated) passes")
             }
         } catch {
             catalogImportIssue = "Trail catalog import failed: \(error.localizedDescription)"
@@ -113,10 +115,13 @@ final class PersistenceController {
 
     private static func moveStoreAside() -> Bool {
         let fileManager = FileManager.default
-        guard let support = try? fileManager.url(for: .applicationSupportDirectory,
-                                                 in: .userDomainMask,
-                                                 appropriateFor: nil,
-                                                 create: true) else {
+        guard
+            let support = try? fileManager.url(
+                for: .applicationSupportDirectory,
+                in: .userDomainMask,
+                appropriateFor: nil,
+                create: true)
+        else {
             return false
         }
         let stamp = ISO8601DateFormatter().string(from: .now)
@@ -189,20 +194,24 @@ struct CatalogPassRepairInput: Sendable {
 enum CatalogPassRepair {
     static let creationTolerance: TimeInterval = 300
 
-    static func repairs(inputs: [CatalogPassRepairInput],
-                        catalogRoutes: [UUID: [RoutePoint]]) -> [RepairedRoute] {
+    static func repairs(
+        inputs: [CatalogPassRepairInput],
+        catalogRoutes: [UUID: [RoutePoint]]
+    ) -> [RepairedRoute] {
         inputs.compactMap { input in
             guard abs(input.recordedAt.timeIntervalSince(input.trailCreatedAt)) < creationTolerance,
-                  let points = catalogRoutes[input.trailID],
-                  points.count >= 2,
-                  let routeData = try? RouteCodec.encode(points) else {
+                let points = catalogRoutes[input.trailID],
+                points.count >= 2,
+                let routeData = try? RouteCodec.encode(points)
+            else {
                 return nil
             }
-            return RepairedRoute(id: input.id,
-                                 routeData: routeData,
-                                 distanceMeters: RouteMetrics.distance(of: points),
-                                 verticalMeters: 0,
-                                 maximumSpeedMetersPerSecond: 0)
+            return RepairedRoute(
+                id: input.id,
+                routeData: routeData,
+                distanceMeters: RouteMetrics.distance(of: points),
+                verticalMeters: 0,
+                maximumSpeedMetersPerSecond: 0)
         }
     }
 }
@@ -210,8 +219,9 @@ enum CatalogPassRepair {
 enum DiagnosticSummaryRebuilder {
     static func rebuild(dayID: UUID, logURL: URL) -> RebuiltDaySummary? {
         guard let data = try? Data(contentsOf: logURL),
-              let result = try? DiagnosticLogReplayer().replay(data: data),
-              !result.segments.isEmpty else {
+            let result = try? DiagnosticLogReplayer().replay(data: data),
+            !result.segments.isEmpty
+        else {
             return nil
         }
 
@@ -237,7 +247,8 @@ enum DiagnosticSummaryRebuilder {
     }
 
     static func rebuild(dayID: UUID, logURLs: [URL]) -> RebuiltDaySummary? {
-        let candidates = logURLs
+        let candidates =
+            logURLs
             .compactMap { rebuild(dayID: dayID, logURL: $0) }
             .flatMap(\.segments)
             .sorted { $0.startedAt < $1.startedAt }
@@ -287,8 +298,10 @@ enum DiagnosticSummaryRebuilder {
                 guard let firstTimestamp = firstRecordTimestamp(in: url) else { return false }
                 return range.contains(firstTimestamp)
             }
-            .sorted { firstRecordTimestamp(in: $0) ?? .distantPast
-                < firstRecordTimestamp(in: $1) ?? .distantPast }
+            .sorted {
+                firstRecordTimestamp(in: $0) ?? .distantPast
+                    < firstRecordTimestamp(in: $1) ?? .distantPast
+            }
     }
 
     private static func allLogURLs() -> [URL] {
@@ -303,7 +316,8 @@ enum DiagnosticSummaryRebuilder {
         guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? handle.close() }
         guard let data = try? handle.read(upToCount: 4096),
-              let firstLine = data.split(whereSeparator: { $0 == 0x0A || $0 == 0x0D }).first else {
+            let firstLine = data.split(whereSeparator: { $0 == 0x0A || $0 == 0x0D }).first
+        else {
             return nil
         }
         let decoder = JSONDecoder()
@@ -311,30 +325,42 @@ enum DiagnosticSummaryRebuilder {
         return try? decoder.decode(RawDiagnosticRecord.self, from: Data(firstLine)).timestamp
     }
 
-    static func cleanedRoute(samples: [TrackSample],
-                             kind: SegmentKind) -> (routeData: Data, distance: Double,
-                                                    vertical: Double, maximumSpeed: Double)? {
+    static func cleanedRoute(
+        samples: [TrackSample],
+        kind: SegmentKind
+    ) -> (
+        routeData: Data, distance: Double,
+        vertical: Double, maximumSpeed: Double
+    )? {
         let cleanedPoints = RouteCleaner().clean(samples).map(\.routePoint)
         guard cleanedPoints.count >= 2, let routeData = try? RouteCodec.encode(cleanedPoints) else {
             return nil
         }
-        return (routeData,
-                RouteMetrics.distance(of: cleanedPoints),
-                RouteMetrics.vertical(of: cleanedPoints, kind: kind),
-                RouteMetrics.maximumSpeed(of: cleanedPoints))
+        return (
+            routeData,
+            RouteMetrics.distance(of: cleanedPoints),
+            RouteMetrics.vertical(of: cleanedPoints, kind: kind),
+            RouteMetrics.maximumSpeed(of: cleanedPoints)
+        )
     }
 
-    static func cleanedRoute(points: [RoutePoint],
-                             kind: SegmentKind) -> (routeData: Data, distance: Double,
-                                                    vertical: Double, maximumSpeed: Double)? {
+    static func cleanedRoute(
+        points: [RoutePoint],
+        kind: SegmentKind
+    ) -> (
+        routeData: Data, distance: Double,
+        vertical: Double, maximumSpeed: Double
+    )? {
         let cleanedPoints = RouteCleaner().clean(points)
         guard cleanedPoints.count >= 2, let routeData = try? RouteCodec.encode(cleanedPoints) else {
             return nil
         }
-        return (routeData,
-                RouteMetrics.distance(of: cleanedPoints),
-                RouteMetrics.vertical(of: cleanedPoints, kind: kind),
-                RouteMetrics.maximumSpeed(of: cleanedPoints))
+        return (
+            routeData,
+            RouteMetrics.distance(of: cleanedPoints),
+            RouteMetrics.vertical(of: cleanedPoints, kind: kind),
+            RouteMetrics.maximumSpeed(of: cleanedPoints)
+        )
     }
 }
 
@@ -385,19 +411,24 @@ final class RideRecorder: ObservableObject {
     private var pendingRecoveryDay: RideDay?
     private(set) var migrationTask: Task<Void, Never>?
 
-    init(context: ModelContext? = nil,
-         watchStateSink: WatchRideStateSink? = WatchConnectivityCoordinator.shared,
-         authorizationOverride: CLAuthorizationStatus? = nil) {
-        selectedActivityMode = ActivityMode(
-            rawValue: UserDefaults.standard.string(forKey: Self.activityModeKey) ?? ""
-        ) ?? .bikePark
-        let storedSensitivity = JumpSensitivity(rawValue: UserDefaults.standard.string(forKey: "berms.jumpSensitivity") ?? "")
+    init(
+        context: ModelContext? = nil,
+        watchStateSink: WatchRideStateSink? = WatchConnectivityCoordinator.shared,
+        authorizationOverride: CLAuthorizationStatus? = nil
+    ) {
+        selectedActivityMode =
+            ActivityMode(
+                rawValue: UserDefaults.standard.string(forKey: Self.activityModeKey) ?? ""
+            ) ?? .bikePark
+        let storedSensitivity =
+            JumpSensitivity(rawValue: UserDefaults.standard.string(forKey: "berms.jumpSensitivity") ?? "")
             ?? .standard
         jumpSensitivity = storedSensitivity
         rawMotionLoggingEnabled = UserDefaults.standard.bool(forKey: Self.rawMotionLoggingKey)
-        liveActivityMetric = BermsLiveActivityMetric(
-            rawValue: UserDefaults.standard.string(forKey: Self.liveActivityMetricKey) ?? ""
-        ) ?? .descent
+        liveActivityMetric =
+            BermsLiveActivityMetric(
+                rawValue: UserDefaults.standard.string(forKey: Self.liveActivityMetricKey) ?? ""
+            ) ?? .descent
         jumpDetector = JumpDetector(configuration: storedSensitivity.configuration)
         self.context = context ?? PersistenceController.shared.container.mainContext
         self.watchStateSink = watchStateSink
@@ -439,12 +470,15 @@ final class RideRecorder: ObservableObject {
     /// Every diagnostic log that overlaps the day. Stopping and restarting the
     /// recorder during one riding day can leave the day's runs split across
     /// several files, and only one of them carries the day's ID.
-    nonisolated static func diagnosticLogURLs(for dayID: UUID,
-                                              startedAt: Date,
-                                              endedAt: Date?) -> [URL] {
-        DiagnosticSummaryRebuilder.logURLs(dayID: dayID,
-                                           startedAt: startedAt,
-                                           endedAt: endedAt ?? startedAt)
+    nonisolated static func diagnosticLogURLs(
+        for dayID: UUID,
+        startedAt: Date,
+        endedAt: Date?
+    ) -> [URL] {
+        DiagnosticSummaryRebuilder.logURLs(
+            dayID: dayID,
+            startedAt: startedAt,
+            endedAt: endedAt ?? startedAt)
     }
 
     var isRecording: Bool { activeDay != nil }
@@ -488,20 +522,22 @@ final class RideRecorder: ObservableObject {
         let runs = day.segments.filter { $0.kind == .run }
         if phase == .run {
             let points = RouteCleaner().clean(activePoints.map(\.routePoint))
-            return .init(number: runs.count + 1,
-                         distanceMeters: RouteMetrics.distance(of: points),
-                         descentMeters: RouteMetrics.vertical(of: points, kind: .run),
-                         topSpeedMetersPerSecond: RouteMetrics.maximumSpeed(of: points),
-                         longestJumpAirtime: jumpsForCurrentRun.map(\.airtime).max() ?? 0,
-                         jumpCount: jumpsForCurrentRun.count)
+            return .init(
+                number: runs.count + 1,
+                distanceMeters: RouteMetrics.distance(of: points),
+                descentMeters: RouteMetrics.vertical(of: points, kind: .run),
+                topSpeedMetersPerSecond: RouteMetrics.maximumSpeed(of: points),
+                longestJumpAirtime: jumpsForCurrentRun.map(\.airtime).max() ?? 0,
+                jumpCount: jumpsForCurrentRun.count)
         }
         guard let lastRun = runs.max(by: { $0.startedAt < $1.startedAt }) else { return nil }
-        return .init(number: runs.count,
-                     distanceMeters: lastRun.distanceMeters,
-                     descentMeters: lastRun.verticalMeters,
-                     topSpeedMetersPerSecond: lastRun.maximumSpeedMetersPerSecond,
-                     longestJumpAirtime: lastRun.jumps.map(\.airtime).max() ?? 0,
-                     jumpCount: lastRun.jumps.count)
+        return .init(
+            number: runs.count,
+            distanceMeters: lastRun.distanceMeters,
+            descentMeters: lastRun.verticalMeters,
+            topSpeedMetersPerSecond: lastRun.maximumSpeedMetersPerSecond,
+            longestJumpAirtime: lastRun.jumps.map(\.airtime).max() ?? 0,
+            jumpCount: lastRun.jumps.count)
     }
 
     var isPaused: Bool { activeDay?.isPaused == true }
@@ -546,8 +582,9 @@ final class RideRecorder: ObservableObject {
 
     var activeTopSpeed: Double {
         let currentRunPoints = phase == .run ? activePoints.map(\.routePoint) : []
-        return max(activeDay?.maximumSpeedMetersPerSecond ?? 0,
-                   RouteMetrics.maximumSpeed(of: currentRunPoints))
+        return max(
+            activeDay?.maximumSpeedMetersPerSecond ?? 0,
+            RouteMetrics.maximumSpeed(of: currentRunPoints))
     }
 
     var currentMapPoints: [RoutePoint] {
@@ -563,20 +600,22 @@ final class RideRecorder: ObservableObject {
         jumpSensitivity = sensitivity
         UserDefaults.standard.set(sensitivity.rawValue, forKey: "berms.jumpSensitivity")
         jumpDetector.update(configuration: sensitivity.configuration)
-        diagnosticLogger?.append(RawDiagnosticRecord(
-            kind: "jump_detector_sensitivity_changed",
-            detail: "sensitivity=\(sensitivity.rawValue),\(jumpDetector.configurationSummary)"
-        ))
+        diagnosticLogger?.append(
+            RawDiagnosticRecord(
+                kind: "jump_detector_sensitivity_changed",
+                detail: "sensitivity=\(sensitivity.rawValue),\(jumpDetector.configurationSummary)"
+            ))
     }
 
     func setRawMotionLoggingEnabled(_ enabled: Bool) {
         guard enabled != rawMotionLoggingEnabled else { return }
         rawMotionLoggingEnabled = enabled
         UserDefaults.standard.set(enabled, forKey: Self.rawMotionLoggingKey)
-        diagnosticLogger?.append(RawDiagnosticRecord(
-            kind: "raw_motion_logging_changed",
-            detail: "enabled=\(enabled)"
-        ))
+        diagnosticLogger?.append(
+            RawDiagnosticRecord(
+                kind: "raw_motion_logging_changed",
+                detail: "enabled=\(enabled)"
+            ))
     }
 
     func setLiveActivityMetric(_ metric: BermsLiveActivityMetric) {
@@ -588,16 +627,19 @@ final class RideRecorder: ObservableObject {
 
     private static func pruneOldDiagnosticLogs() {
         let fileManager = FileManager.default
-        guard let urls = try? fileManager.contentsOfDirectory(
-            at: diagnosticsDirectory,
-            includingPropertiesForKeys: [.contentModificationDateKey],
-            options: [.skipsHiddenFiles]
-        ) else { return }
+        guard
+            let urls = try? fileManager.contentsOfDirectory(
+                at: diagnosticsDirectory,
+                includingPropertiesForKeys: [.contentModificationDateKey],
+                options: [.skipsHiddenFiles]
+            )
+        else { return }
         let cutoff = Date.now.addingTimeInterval(-30 * 24 * 60 * 60)
         for url in urls where url.pathExtension == "jsonl" {
             guard let values = try? url.resourceValues(forKeys: [.contentModificationDateKey]),
-                  let modified = values.contentModificationDate,
-                  modified < cutoff else { continue }
+                let modified = values.contentModificationDate,
+                modified < cutoff
+            else { continue }
             try? fileManager.removeItem(at: url)
         }
     }
@@ -611,7 +653,8 @@ final class RideRecorder: ObservableObject {
     func start(mode: ActivityMode) -> Bool {
         guard activeDay == nil else { return false }
         guard effectiveAuthorizationStatus != .denied,
-              effectiveAuthorizationStatus != .restricted else { return false }
+            effectiveAuthorizationStatus != .restricted
+        else { return false }
         guard effectiveAuthorizationStatus != .notDetermined else {
             requestPermissionsIfNeeded()
             return false
@@ -628,12 +671,16 @@ final class RideRecorder: ObservableObject {
             selectedActivityMode = mode
             UserDefaults.standard.set(mode.rawValue, forKey: Self.activityModeKey)
             diagnosticLogger = RawLogWriter(url: Self.debugLogURL(for: day.id))
-            diagnosticLogger?.append(RawDiagnosticRecord(kind: "session_started", timestamp: day.startedAt,
-                                                         detectorVersion: jumpDetector.detectorVersion,
-                                                         detail: "Berms recording started; mode=\(mode.rawValue),catalog=\(day.catalogID ?? "none")"))
-            diagnosticLogger?.append(RawDiagnosticRecord(kind: "jump_detector_config",
-                                                         detectorVersion: jumpDetector.detectorVersion,
-                                                         detail: jumpDetector.configurationSummary))
+            diagnosticLogger?.append(
+                RawDiagnosticRecord(
+                    kind: "session_started", timestamp: day.startedAt,
+                    detectorVersion: jumpDetector.detectorVersion,
+                    detail: "Berms recording started; mode=\(mode.rawValue),catalog=\(day.catalogID ?? "none")"))
+            diagnosticLogger?.append(
+                RawDiagnosticRecord(
+                    kind: "jump_detector_config",
+                    detectorVersion: jumpDetector.detectorVersion,
+                    detail: jumpDetector.configurationSummary))
             jumpDetector.reset()
             jumpsForCurrentRun.removeAll(keepingCapacity: true)
             latestTrackContext = nil
@@ -689,12 +736,13 @@ final class RideRecorder: ObservableObject {
         resetTrackingState(clearLastSample: false)
         day.beginPause(at: pauseDate)
         clearCheckpoint(for: day)
-        diagnosticLogger?.append(RawDiagnosticRecord(
-            kind: "session_paused",
-            timestamp: pauseDate,
-            phaseBefore: phaseBefore.rawValue,
-            detail: "Berms recording paused"
-        ))
+        diagnosticLogger?.append(
+            RawDiagnosticRecord(
+                kind: "session_paused",
+                timestamp: pauseDate,
+                phaseBefore: phaseBefore.rawValue,
+                detail: "Berms recording paused"
+            ))
         saveContext(detail: "pause")
         updateLiveActivity(force: true)
         diagnosticLogger?.flush()
@@ -705,17 +753,19 @@ final class RideRecorder: ObservableObject {
     func resume() -> Bool {
         guard let day = activeDay, day.isPaused else { return false }
         guard effectiveAuthorizationStatus != .denied,
-              effectiveAuthorizationStatus != .restricted else { return false }
+            effectiveAuthorizationStatus != .restricted
+        else { return false }
         let resumeDate = Date.now
         let pausedDuration = day.endPause(at: resumeDate)
         objectWillChange.send()
         resetTrackingState(clearLastSample: true)
         trackingBoundaryDate = resumeDate
-        diagnosticLogger?.append(RawDiagnosticRecord(
-            kind: "session_resumed",
-            timestamp: resumeDate,
-            detail: "Berms recording resumed; paused_seconds=\(String(format: "%.1f", pausedDuration))"
-        ))
+        diagnosticLogger?.append(
+            RawDiagnosticRecord(
+                kind: "session_resumed",
+                timestamp: resumeDate,
+                detail: "Berms recording resumed; paused_seconds=\(String(format: "%.1f", pausedDuration))"
+            ))
         saveContext(detail: "resume")
         updateLiveActivity(force: true)
         startSensors()
@@ -735,11 +785,12 @@ final class RideRecorder: ObservableObject {
         } else {
             _ = day.endPause(at: stopDate)
         }
-        diagnosticLogger?.append(RawDiagnosticRecord(
-            kind: "session_stopped",
-            timestamp: stopDate,
-            detail: wasPaused ? "Berms recording stopped while paused" : "Berms recording stopped"
-        ))
+        diagnosticLogger?.append(
+            RawDiagnosticRecord(
+                kind: "session_stopped",
+                timestamp: stopDate,
+                detail: wasPaused ? "Berms recording stopped while paused" : "Berms recording stopped"
+            ))
 
         day.endedAt = stopDate
         clearCheckpoint(for: day)
@@ -767,10 +818,12 @@ final class RideRecorder: ObservableObject {
             handleJumpEvent(event)
         }
         if let event = detector.finish(), case .finished(let draft) = event {
-            diagnosticLogger?.append(RawDiagnosticRecord(kind: "detector_finished", timestamp: draft.endedAt,
-                                                         runNumber: draft.kind == .run ? completedRunCount + 1 : nil,
-                                                         trailSequence: trailSequence(for: draft),
-                                                         phaseBefore: draft.kind.rawValue, detail: reason))
+            diagnosticLogger?.append(
+                RawDiagnosticRecord(
+                    kind: "detector_finished", timestamp: draft.endedAt,
+                    runNumber: draft.kind == .run ? completedRunCount + 1 : nil,
+                    trailSequence: trailSequence(for: draft),
+                    phaseBefore: draft.kind.rawValue, detail: reason))
             save(draft, to: day)
         }
     }
@@ -803,8 +856,9 @@ final class RideRecorder: ObservableObject {
     @discardableResult
     func rebuildSummaryFromDiagnosticLog(for day: RideDay, from url: URL) -> Bool {
         guard day.isFinished,
-              let summary = DiagnosticSummaryRebuilder.rebuild(dayID: day.id, logURL: url),
-              reconcile(summary, to: day) else {
+            let summary = DiagnosticSummaryRebuilder.rebuild(dayID: day.id, logURL: url),
+            reconcile(summary, to: day)
+        else {
             return false
         }
         return saveContext(detail: "diagnostic_summary_rebuild")
@@ -814,8 +868,9 @@ final class RideRecorder: ObservableObject {
         let existing = day.segments.sorted { $0.startedAt < $1.startedAt }
         let rebuilt = summary.segments.sorted { $0.startedAt < $1.startedAt }
         guard !rebuilt.isEmpty,
-              existing.count == rebuilt.count,
-              zip(existing, rebuilt).allSatisfy({ $0.kind == $1.kind }) else {
+            existing.count == rebuilt.count,
+            zip(existing, rebuilt).allSatisfy({ $0.kind == $1.kind })
+        else {
             return false
         }
 
@@ -847,9 +902,11 @@ final class RideRecorder: ObservableObject {
     }
 
     private func startDiagnosticMigrationIfNeeded() {
-        guard UserDefaults.standard.string(forKey: Self.diagnosticSummaryVersionKey)
+        guard
+            UserDefaults.standard.string(forKey: Self.diagnosticSummaryVersionKey)
                 != Self.diagnosticSummaryVersion,
-              migrationTask == nil else { return }
+            migrationTask == nil
+        else { return }
 
         let dayInputs: [RepairDayInput]
         let segmentInputs: [SegmentRepairInput]
@@ -869,9 +926,10 @@ final class RideRecorder: ObservableObject {
             }
             passInputs = try context.fetch(FetchDescriptor<TrailPass>()).compactMap { pass in
                 guard let trail = pass.trail else { return nil }
-                return CatalogPassRepairInput(id: pass.id, trailID: trail.id,
-                                       trailCreatedAt: trail.createdAt,
-                                       recordedAt: pass.recordedAt)
+                return CatalogPassRepairInput(
+                    id: pass.id, trailID: trail.id,
+                    trailCreatedAt: trail.createdAt,
+                    recordedAt: pass.recordedAt)
             }
         } catch {
             errorMessage = "Could not update saved session summaries. Please try again."
@@ -887,28 +945,33 @@ final class RideRecorder: ObservableObject {
                         startedAt: input.startedAt,
                         endedAt: input.endedAt
                     )
-                    guard let summary = DiagnosticSummaryRebuilder.rebuild(
-                        dayID: input.id,
-                        logURLs: logURLs
-                    ),
-                    summary.segments.count == input.segmentKinds.count,
-                    summary.segments.sorted(by: { $0.startedAt < $1.startedAt }).map(\.kind)
-                        == input.segmentKinds else {
+                    guard
+                        let summary = DiagnosticSummaryRebuilder.rebuild(
+                            dayID: input.id,
+                            logURLs: logURLs
+                        ),
+                        summary.segments.count == input.segmentKinds.count,
+                        summary.segments.sorted(by: { $0.startedAt < $1.startedAt }).map(\.kind)
+                            == input.segmentKinds
+                    else {
                         return nil
                     }
                     return summary
                 }
                 let repairedSegments = segmentInputs.compactMap { input -> RepairedRoute? in
                     guard let points = try? RouteCodec.decode(input.routeData),
-                          let cleaned = DiagnosticSummaryRebuilder.cleanedRoute(points: points,
-                                                                                 kind: input.kind) else {
+                        let cleaned = DiagnosticSummaryRebuilder.cleanedRoute(
+                            points: points,
+                            kind: input.kind)
+                    else {
                         return nil
                     }
-                    return RepairedRoute(id: input.id,
-                                         routeData: cleaned.routeData,
-                                         distanceMeters: cleaned.distance,
-                                         verticalMeters: cleaned.vertical,
-                                         maximumSpeedMetersPerSecond: cleaned.maximumSpeed)
+                    return RepairedRoute(
+                        id: input.id,
+                        routeData: cleaned.routeData,
+                        distanceMeters: cleaned.distance,
+                        verticalMeters: cleaned.vertical,
+                        maximumSpeedMetersPerSecond: cleaned.maximumSpeed)
                 }
                 let catalogRoutePoints = TrailCatalogImporter.bundledRoutePoints(
                     catalog: TrailCatalogRegistry.mountainCreek
@@ -920,20 +983,24 @@ final class RideRecorder: ObservableObject {
                 return (rebuiltDays, repairedSegments, repairedPasses)
             }.value
             guard let self else { return }
-            self.applyDiagnosticMigration(rebuiltDays: work.0,
-                                          repairedSegments: work.1,
-                                          repairedPasses: work.2)
+            self.applyDiagnosticMigration(
+                rebuiltDays: work.0,
+                repairedSegments: work.1,
+                repairedPasses: work.2)
         }
     }
 
-    private func applyDiagnosticMigration(rebuiltDays: [RebuiltDaySummary],
-                                          repairedSegments: [RepairedRoute],
-                                          repairedPasses: [RepairedRoute]) {
+    private func applyDiagnosticMigration(
+        rebuiltDays: [RebuiltDaySummary],
+        repairedSegments: [RepairedRoute],
+        repairedPasses: [RepairedRoute]
+    ) {
         defer { migrationTask = nil }
 
         if let segments = try? context.fetch(FetchDescriptor<RideSegment>()) {
-            let segmentsByID = Dictionary(segments.map { ($0.id, $0) },
-                                          uniquingKeysWith: { first, _ in first })
+            let segmentsByID = Dictionary(
+                segments.map { ($0.id, $0) },
+                uniquingKeysWith: { first, _ in first })
             for repair in repairedSegments {
                 guard let segment = segmentsByID[repair.id] else { continue }
                 segment.routeData = repair.routeData
@@ -960,15 +1027,17 @@ final class RideRecorder: ObservableObject {
         // repaired pass without rebuilding that average leaves the old, thinned
         // centerline on every map that reads Trail.points.
         if !repairedTrailIDs.isEmpty,
-           let trails = try? context.fetch(FetchDescriptor<Trail>()) {
+            let trails = try? context.fetch(FetchDescriptor<Trail>())
+        {
             for trail in trails where repairedTrailIDs.contains(trail.id) {
                 trail.recalculateAverage()
             }
         }
 
         if let days = try? context.fetch(FetchDescriptor<RideDay>()) {
-            let daysByID = Dictionary(days.map { ($0.id, $0) },
-                                       uniquingKeysWith: { first, _ in first })
+            let daysByID = Dictionary(
+                days.map { ($0.id, $0) },
+                uniquingKeysWith: { first, _ in first })
             for summary in rebuiltDays {
                 guard let day = daysByID[summary.dayID] else { continue }
                 _ = reconcile(summary, to: day)
@@ -985,8 +1054,9 @@ final class RideRecorder: ObservableObject {
         }
 
         guard saveContext(detail: "diagnostic_summary_migration") else { return }
-        UserDefaults.standard.set(Self.diagnosticSummaryVersion,
-                                  forKey: Self.diagnosticSummaryVersionKey)
+        UserDefaults.standard.set(
+            Self.diagnosticSummaryVersion,
+            forKey: Self.diagnosticSummaryVersionKey)
     }
 
     func resumeIfNeeded(autoResume: Bool = false) {
@@ -1072,11 +1142,13 @@ final class RideRecorder: ObservableObject {
         activePoints = []
         phase = .idle
         diagnosticLogger = RawLogWriter(url: Self.debugLogURL(for: day.id))
-        diagnosticLogger?.append(RawDiagnosticRecord(kind: "session_recovered",
-                                                     detectorVersion: jumpDetector.detectorVersion,
-                                                     detail: day.isPaused
-                                                     ? "Recovered paused day after relaunch"
-                                                     : "Recovered active day after relaunch"))
+        diagnosticLogger?.append(
+            RawDiagnosticRecord(
+                kind: "session_recovered",
+                detectorVersion: jumpDetector.detectorVersion,
+                detail: day.isPaused
+                    ? "Recovered paused day after relaunch"
+                    : "Recovered active day after relaunch"))
         BermsLiveActivityCoordinator.shared.start(
             rideID: day.id,
             startedAt: day.startedAt,
@@ -1088,13 +1160,17 @@ final class RideRecorder: ObservableObject {
             updateLiveActivity(force: true)
             return
         }
-        diagnosticLogger?.append(RawDiagnosticRecord(kind: "jump_detector_config",
-                                                     detectorVersion: jumpDetector.detectorVersion,
-                                                     detail: jumpDetector.configurationSummary))
+        diagnosticLogger?.append(
+            RawDiagnosticRecord(
+                kind: "jump_detector_config",
+                detectorVersion: jumpDetector.detectorVersion,
+                detail: jumpDetector.configurationSummary))
         if let data = day.checkpointData,
-           let kind = day.checkpointKind.flatMap(SegmentKind.init(rawValue:)) {
+            let kind = day.checkpointKind.flatMap(SegmentKind.init(rawValue:))
+        {
             let decoder = JSONDecoder()
-            let checkpoint = (try? decoder.decode(RecorderCheckpoint.self, from: data))
+            let checkpoint =
+                (try? decoder.decode(RecorderCheckpoint.self, from: data))
                 ?? (try? decoder.decode([TrackSample].self, from: data)).map {
                     RecorderCheckpoint(points: $0)
                 }
@@ -1126,56 +1202,61 @@ final class RideRecorder: ObservableObject {
     private func startSensors() {
         locationService.authorizationChangeHandler = { [weak self] status in
             self?.locationAuthorization = status
-            self?.diagnosticLogger?.append(RawDiagnosticRecord(
-                kind: "location_authorization",
-                detail: String(describing: status)
-            ))
+            self?.diagnosticLogger?.append(
+                RawDiagnosticRecord(
+                    kind: "location_authorization",
+                    detail: String(describing: status)
+                ))
         }
         locationService.diagnosticHandler = { [weak self] detail in
             self?.diagnosticLogger?.append(RawDiagnosticRecord(kind: "location_service_error", detail: detail))
         }
         if let logger = diagnosticLogger {
             motionService.rawAltitudeHandler = { sample in
-                logger.append(RawDiagnosticRecord(
-                    kind: "barometer_raw",
-                    timestamp: sample.timestamp,
-                    relativeAltitude: sample.relativeAltitude,
-                    pressureKPa: sample.pressureKPa
-                ))
+                logger.append(
+                    RawDiagnosticRecord(
+                        kind: "barometer_raw",
+                        timestamp: sample.timestamp,
+                        relativeAltitude: sample.relativeAltitude,
+                        pressureKPa: sample.pressureKPa
+                    ))
             }
             motionService.rawActivityHandler = { sample in
-                logger.append(RawDiagnosticRecord(
-                    kind: "motion_activity_raw",
-                    timestamp: sample.recordedAt,
-                    stationary: sample.stationary,
-                    cycling: sample.cycling,
-                    automotive: sample.automotive,
-                    detail: "start=\(sample.activityStart.timeIntervalSince1970),walking=\(sample.walking),running=\(sample.running),unknown=\(sample.unknown),confidence=\(sample.confidence)"
-                ))
+                logger.append(
+                    RawDiagnosticRecord(
+                        kind: "motion_activity_raw",
+                        timestamp: sample.recordedAt,
+                        stationary: sample.stationary,
+                        cycling: sample.cycling,
+                        automotive: sample.automotive,
+                        detail:
+                            "start=\(sample.activityStart.timeIntervalSince1970),walking=\(sample.walking),running=\(sample.running),unknown=\(sample.unknown),confidence=\(sample.confidence)"
+                    ))
             }
         }
         let logger = diagnosticLogger
         let logsRawMotion = rawMotionLoggingEnabled
         motionService.rawDeviceMotionHandler = { [weak self] sample in
             if logsRawMotion {
-                logger?.append(RawDiagnosticRecord(
-                    kind: "device_motion_raw",
-                    timestamp: sample.recordedAt,
-                    monotonicSeconds: sample.monotonicSeconds,
-                    userAccelerationX: sample.userAccelerationX,
-                    userAccelerationY: sample.userAccelerationY,
-                    userAccelerationZ: sample.userAccelerationZ,
-                    rotationRateX: sample.rotationRateX,
-                    rotationRateY: sample.rotationRateY,
-                    rotationRateZ: sample.rotationRateZ,
-                    gravityX: sample.gravityX,
-                    gravityY: sample.gravityY,
-                    gravityZ: sample.gravityZ,
-                    quaternionW: sample.quaternionW,
-                    quaternionX: sample.quaternionX,
-                    quaternionY: sample.quaternionY,
-                    quaternionZ: sample.quaternionZ
-                ))
+                logger?.append(
+                    RawDiagnosticRecord(
+                        kind: "device_motion_raw",
+                        timestamp: sample.recordedAt,
+                        monotonicSeconds: sample.monotonicSeconds,
+                        userAccelerationX: sample.userAccelerationX,
+                        userAccelerationY: sample.userAccelerationY,
+                        userAccelerationZ: sample.userAccelerationZ,
+                        rotationRateX: sample.rotationRateX,
+                        rotationRateY: sample.rotationRateY,
+                        rotationRateZ: sample.rotationRateZ,
+                        gravityX: sample.gravityX,
+                        gravityY: sample.gravityY,
+                        gravityZ: sample.gravityZ,
+                        quaternionW: sample.quaternionW,
+                        quaternionX: sample.quaternionX,
+                        quaternionY: sample.quaternionY,
+                        quaternionZ: sample.quaternionZ
+                    ))
             }
             Task { @MainActor [weak self] in
                 self?.consume(deviceMotion: sample)
@@ -1188,10 +1269,11 @@ final class RideRecorder: ObservableObject {
             self?.consume(location: location, isStationary: stationary)
         }
         locationAuthorization = locationService.authorizationStatus
-        diagnosticLogger?.append(RawDiagnosticRecord(
-            kind: "location_service_started",
-            detail: "authorization=\(String(describing: locationAuthorization))"
-        ))
+        diagnosticLogger?.append(
+            RawDiagnosticRecord(
+                kind: "location_service_started",
+                detail: "authorization=\(String(describing: locationAuthorization))"
+            ))
     }
 
     private func consume(location: CLLocation, isStationary: Bool) {
@@ -1202,53 +1284,63 @@ final class RideRecorder: ObservableObject {
         let trackMonotonicSeconds = arrivalMonotonicSeconds - locationAge
         let cycling = motionService.isCycling
         let automotive = motionService.isAutomotive
-        diagnosticLogger?.append(RawDiagnosticRecord(
-            kind: "gps_raw",
-            timestamp: location.timestamp,
-            latitude: location.coordinate.latitude,
-            longitude: location.coordinate.longitude,
-            gpsAltitude: location.altitude,
-            relativeAltitude: motionService.relativeAltitude,
-            speed: location.speed,
-            course: location.course,
-            horizontalAccuracy: location.horizontalAccuracy,
-            verticalAccuracy: location.verticalAccuracy,
-            stationary: isStationary,
-            cycling: cycling,
-            automotive: automotive
-        ))
+        diagnosticLogger?.append(
+            RawDiagnosticRecord(
+                kind: "gps_raw",
+                timestamp: location.timestamp,
+                latitude: location.coordinate.latitude,
+                longitude: location.coordinate.longitude,
+                gpsAltitude: location.altitude,
+                relativeAltitude: motionService.relativeAltitude,
+                speed: location.speed,
+                course: location.course,
+                horizontalAccuracy: location.horizontalAccuracy,
+                verticalAccuracy: location.verticalAccuracy,
+                stationary: isStationary,
+                cycling: cycling,
+                automotive: automotive
+            ))
 
         guard location.timestamp >= day.startedAt else {
-            diagnosticLogger?.append(RawDiagnosticRecord(kind: "gps_rejected", timestamp: location.timestamp,
-                                                         accepted: false, detail: "before_session_start"))
+            diagnosticLogger?.append(
+                RawDiagnosticRecord(
+                    kind: "gps_rejected", timestamp: location.timestamp,
+                    accepted: false, detail: "before_session_start"))
             return
         }
         if let trackingBoundaryDate, location.timestamp < trackingBoundaryDate {
-            diagnosticLogger?.append(RawDiagnosticRecord(kind: "gps_rejected", timestamp: location.timestamp,
-                                                         accepted: false, detail: "before_tracking_boundary"))
+            diagnosticLogger?.append(
+                RawDiagnosticRecord(
+                    kind: "gps_rejected", timestamp: location.timestamp,
+                    accepted: false, detail: "before_tracking_boundary"))
             return
         }
         guard location.timestamp <= arrivalDate.addingTimeInterval(10) else {
-            diagnosticLogger?.append(RawDiagnosticRecord(kind: "gps_rejected", timestamp: location.timestamp,
-                                                         accepted: false, detail: "future_timestamp"))
+            diagnosticLogger?.append(
+                RawDiagnosticRecord(
+                    kind: "gps_rejected", timestamp: location.timestamp,
+                    accepted: false, detail: "future_timestamp"))
             return
         }
         guard lastSampleTimestamp.map({ location.timestamp > $0 }) ?? true else {
-            diagnosticLogger?.append(RawDiagnosticRecord(kind: "gps_rejected", timestamp: location.timestamp,
-                                                         accepted: false, detail: "duplicate_or_out_of_order"))
+            diagnosticLogger?.append(
+                RawDiagnosticRecord(
+                    kind: "gps_rejected", timestamp: location.timestamp,
+                    accepted: false, detail: "duplicate_or_out_of_order"))
             return
         }
 
         if let lastSampleTimestamp {
             let gap = location.timestamp.timeIntervalSince(lastSampleTimestamp)
             if gap > maximumTrackingGap {
-                diagnosticLogger?.append(RawDiagnosticRecord(
-                    kind: "tracking_gap",
-                    timestamp: location.timestamp,
-                    accepted: false,
-                    phaseBefore: detector.phase.rawValue,
-                    detail: "gap_seconds=\(String(format: "%.1f", gap)); segment boundary inserted"
-                ))
+                diagnosticLogger?.append(
+                    RawDiagnosticRecord(
+                        kind: "tracking_gap",
+                        timestamp: location.timestamp,
+                        accepted: false,
+                        phaseBefore: detector.phase.rawValue,
+                        detail: "gap_seconds=\(String(format: "%.1f", gap)); segment boundary inserted"
+                    ))
                 finishOpenSegment(to: day, reason: "tracking_gap")
                 updateTotals(for: day)
                 saveContext(detail: "tracking_gap")
@@ -1260,23 +1352,27 @@ final class RideRecorder: ObservableObject {
         let speed = location.speed >= 0 ? location.speed : 0
         let course = location.course >= 0 ? location.course : -1
         let gpsAltitude = location.verticalAccuracy >= 0 ? location.altitude : nil
-        let hasFreshBarometer = motionService.relativeAltitudeTimestamp.map {
-            abs(location.timestamp.timeIntervalSince($0)) <= 10
-        } ?? false
-        guard let altitude = altitudeFusion.update(
-            gpsAltitude: gpsAltitude,
-            relativeAltitude: hasFreshBarometer ? motionService.relativeAltitude : nil
-        ) else {
-            diagnosticLogger?.append(RawDiagnosticRecord(
-                kind: "detector_waiting",
-                timestamp: location.timestamp,
-                latitude: location.coordinate.latitude,
-                longitude: location.coordinate.longitude,
+        let hasFreshBarometer =
+            motionService.relativeAltitudeTimestamp.map {
+                abs(location.timestamp.timeIntervalSince($0)) <= 10
+            } ?? false
+        guard
+            let altitude = altitudeFusion.update(
                 gpsAltitude: gpsAltitude,
-                relativeAltitude: motionService.relativeAltitude,
-                accepted: false,
-                detail: "altitude_baseline_pending"
-            ))
+                relativeAltitude: hasFreshBarometer ? motionService.relativeAltitude : nil
+            )
+        else {
+            diagnosticLogger?.append(
+                RawDiagnosticRecord(
+                    kind: "detector_waiting",
+                    timestamp: location.timestamp,
+                    latitude: location.coordinate.latitude,
+                    longitude: location.coordinate.longitude,
+                    gpsAltitude: gpsAltitude,
+                    relativeAltitude: motionService.relativeAltitude,
+                    accepted: false,
+                    detail: "altitude_baseline_pending"
+                ))
             return
         }
 
@@ -1293,19 +1389,20 @@ final class RideRecorder: ObservableObject {
         )
         let phaseBefore = detector.phase
         guard let sample = normalizer.normalize(rawSample) else {
-            diagnosticLogger?.append(RawDiagnosticRecord(
-                kind: "gps_rejected",
-                timestamp: location.timestamp,
-                latitude: location.coordinate.latitude,
-                longitude: location.coordinate.longitude,
-                gpsAltitude: location.altitude,
-                speed: speed,
-                course: course,
-                horizontalAccuracy: location.horizontalAccuracy,
-                accepted: false,
-                phaseBefore: phaseBefore.rawValue,
-                detail: "normalizer_rejected"
-            ))
+            diagnosticLogger?.append(
+                RawDiagnosticRecord(
+                    kind: "gps_rejected",
+                    timestamp: location.timestamp,
+                    latitude: location.coordinate.latitude,
+                    longitude: location.coordinate.longitude,
+                    gpsAltitude: location.altitude,
+                    speed: speed,
+                    course: course,
+                    horizontalAccuracy: location.horizontalAccuracy,
+                    accepted: false,
+                    phaseBefore: phaseBefore.rawValue,
+                    detail: "normalizer_rejected"
+                ))
             return
         }
         lastSampleTimestamp = sample.timestamp
@@ -1327,28 +1424,29 @@ final class RideRecorder: ObservableObject {
             isStationary: sample.isStationary,
             isAutomotive: sample.isAutomotive
         )
-        diagnosticLogger?.append(RawDiagnosticRecord(
-            kind: "detector_input",
-            timestamp: sample.timestamp,
-            monotonicSeconds: trackMonotonicSeconds,
-            latitude: sample.coordinate.latitude,
-            longitude: sample.coordinate.longitude,
-            gpsAltitude: sample.altitude,
-            fusedAltitude: sample.altitude,
-            relativeAltitude: motionService.relativeAltitude,
-            trackMonotonicSeconds: trackMonotonicSeconds,
-            speed: sample.speed,
-            course: sample.course,
-            horizontalAccuracy: sample.horizontalAccuracy,
-            stationary: sample.isStationary,
-            cycling: sample.isCycling,
-            automotive: sample.isAutomotive,
-            runEligible: detector.phase == .run,
-            accepted: true,
-            phaseBefore: phaseBefore.rawValue,
-            phaseAfter: detector.phase.rawValue,
-            detectorVersion: jumpDetector.detectorVersion
-        ))
+        diagnosticLogger?.append(
+            RawDiagnosticRecord(
+                kind: "detector_input",
+                timestamp: sample.timestamp,
+                monotonicSeconds: trackMonotonicSeconds,
+                latitude: sample.coordinate.latitude,
+                longitude: sample.coordinate.longitude,
+                gpsAltitude: sample.altitude,
+                fusedAltitude: sample.altitude,
+                relativeAltitude: motionService.relativeAltitude,
+                trackMonotonicSeconds: trackMonotonicSeconds,
+                speed: sample.speed,
+                course: sample.course,
+                horizontalAccuracy: sample.horizontalAccuracy,
+                stationary: sample.isStationary,
+                cycling: sample.isCycling,
+                automotive: sample.isAutomotive,
+                runEligible: detector.phase == .run,
+                accepted: true,
+                phaseBefore: phaseBefore.rawValue,
+                phaseAfter: detector.phase.rawValue,
+                detectorVersion: jumpDetector.detectorVersion
+            ))
 
         if detector.phase != .idle {
             activePoints = detector.currentPoints
@@ -1368,7 +1466,6 @@ final class RideRecorder: ObservableObject {
             handleJumpEvent(event)
         }
     }
-
 
     @discardableResult
     func togglePauseFromLiveActivity() -> Bool {
@@ -1405,29 +1502,31 @@ final class RideRecorder: ObservableObject {
             objectWillChange.send()
             jumpsForCurrentRun.append(jump)
             updateLiveActivity(force: true)
-            diagnosticLogger?.append(RawDiagnosticRecord(
-                kind: "jump_detected",
-                timestamp: jump.landingTimestamp,
-                monotonicSeconds: jump.landingMonotonicSeconds,
-                runEligible: true,
-                accepted: true,
-                detectorVersion: jumpDetector.detectorVersion,
-                jumpAirtime: jump.airtime,
-                jumpTakeoffMonotonicSeconds: jump.takeoffMonotonicSeconds,
-                jumpLandingMonotonicSeconds: jump.landingMonotonicSeconds,
-                detail: "airborne interval confirmed"
-            ))
+            diagnosticLogger?.append(
+                RawDiagnosticRecord(
+                    kind: "jump_detected",
+                    timestamp: jump.landingTimestamp,
+                    monotonicSeconds: jump.landingMonotonicSeconds,
+                    runEligible: true,
+                    accepted: true,
+                    detectorVersion: jumpDetector.detectorVersion,
+                    jumpAirtime: jump.airtime,
+                    jumpTakeoffMonotonicSeconds: jump.takeoffMonotonicSeconds,
+                    jumpLandingMonotonicSeconds: jump.landingMonotonicSeconds,
+                    detail: "airborne interval confirmed"
+                ))
         case .diagnostic(let kind, let timestamp, let monotonicSeconds, let detail):
-            diagnosticLogger?.append(RawDiagnosticRecord(
-                kind: kind,
-                timestamp: timestamp,
-                monotonicSeconds: monotonicSeconds,
-                runEligible: latestTrackContext?.phase == .run,
-                accepted: kind == "jump_candidate_started",
-                detectorVersion: jumpDetector.detectorVersion,
-                jumpReason: kind == "jump_candidate_rejected" ? detail : nil,
-                detail: detail
-            ))
+            diagnosticLogger?.append(
+                RawDiagnosticRecord(
+                    kind: kind,
+                    timestamp: timestamp,
+                    monotonicSeconds: monotonicSeconds,
+                    runEligible: latestTrackContext?.phase == .run,
+                    accepted: kind == "jump_candidate_started",
+                    detectorVersion: jumpDetector.detectorVersion,
+                    jumpReason: kind == "jump_candidate_rejected" ? detail : nil,
+                    detail: detail
+                ))
         }
     }
 
@@ -1441,11 +1540,13 @@ final class RideRecorder: ObservableObject {
             }
             phase = kind == .lift ? .lift : .run
             activePoints = points
-            diagnosticLogger?.append(RawDiagnosticRecord(kind: "detector_started",
-                                                         timestamp: points.first?.timestamp ?? .now,
-                                                         runNumber: kind == .run ? completedRunCount + 1 : nil,
-                                                         phaseAfter: kind.rawValue,
-                                                         detail: kind.title))
+            diagnosticLogger?.append(
+                RawDiagnosticRecord(
+                    kind: "detector_started",
+                    timestamp: points.first?.timestamp ?? .now,
+                    runNumber: kind == .run ? completedRunCount + 1 : nil,
+                    phaseAfter: kind.rawValue,
+                    detail: kind.title))
             checkpointIfNeeded(at: points.last?.timestamp ?? .now, force: true)
         case .updated:
             activePoints = detector.currentPoints
@@ -1454,10 +1555,12 @@ final class RideRecorder: ObservableObject {
                 handleJumpEvent(jumpEvent)
             }
             let runNumber = draft.kind == .run ? completedRunCount + 1 : nil
-            diagnosticLogger?.append(RawDiagnosticRecord(kind: "detector_finished", timestamp: draft.endedAt,
-                                                         runNumber: runNumber,
-                                                         trailSequence: trailSequence(for: draft),
-                                                         phaseBefore: draft.kind.rawValue, detail: draft.kind.title))
+            diagnosticLogger?.append(
+                RawDiagnosticRecord(
+                    kind: "detector_finished", timestamp: draft.endedAt,
+                    runNumber: runNumber,
+                    trailSequence: trailSequence(for: draft),
+                    phaseBefore: draft.kind.rawValue, detail: draft.kind.title))
             save(draft, to: day)
             updateTotals(for: day)
             saveContext(detail: "totals")
@@ -1468,10 +1571,13 @@ final class RideRecorder: ObservableObject {
     private func checkpointIfNeeded(at date: Date, force: Bool = false) {
         guard let day = activeDay, let kind = activeSegmentKind, !activePoints.isEmpty else { return }
         guard force || lastCheckpointDate.map({ date.timeIntervalSince($0) >= 12 }) ?? true else { return }
-        guard let data = try? JSONEncoder().encode(RecorderCheckpoint(
-            points: activePoints,
-            jumps: activeSegmentKind == .run ? jumpsForCurrentRun : []
-        )) else { return }
+        guard
+            let data = try? JSONEncoder().encode(
+                RecorderCheckpoint(
+                    points: activePoints,
+                    jumps: activeSegmentKind == .run ? jumpsForCurrentRun : []
+                ))
+        else { return }
         day.checkpointKind = kind.rawValue
         day.checkpointStartedAt = activePoints.first?.timestamp
         day.checkpointData = data
@@ -1483,8 +1589,9 @@ final class RideRecorder: ObservableObject {
         let cleanedPoints = RouteCleaner().clean(draft.points).map(\.routePoint)
         guard cleanedPoints.count >= 2, let data = try? RouteCodec.encode(cleanedPoints) else { return }
         let jumps = draft.kind == .run ? (draft.jumps.isEmpty ? jumpsForCurrentRun : draft.jumps) : []
-        let segment = RideSegment(kind: draft.kind, startedAt: draft.startedAt,
-                                  endedAt: draft.endedAt, routeData: data, jumps: jumps)
+        let segment = RideSegment(
+            kind: draft.kind, startedAt: draft.startedAt,
+            endedAt: draft.endedAt, routeData: data, jumps: jumps)
         segment.distanceMeters = RouteMetrics.distance(of: cleanedPoints)
         segment.verticalMeters = RouteMetrics.vertical(of: cleanedPoints, kind: draft.kind)
         segment.maximumSpeedMetersPerSecond = RouteMetrics.maximumSpeed(of: cleanedPoints)
@@ -1505,7 +1612,8 @@ final class RideRecorder: ObservableObject {
     private func learnLiftProfile(from segment: RideSegment) {
         let engine = LiftLearningEngine()
         guard let observation = engine.observations(from: [segment]).first,
-              let storedLifts = try? context.fetch(FetchDescriptor<LearnedLift>()) else { return }
+            let storedLifts = try? context.fetch(FetchDescriptor<LearnedLift>())
+        else { return }
 
         let profiles = engine.merge(observation: observation, into: storedLifts.map(\.profile))
         let storedByID = Dictionary(uniqueKeysWithValues: storedLifts.map { ($0.id, $0) })
@@ -1534,8 +1642,9 @@ final class RideRecorder: ObservableObject {
         lastFootprintLogDate = date
 
         var info = task_vm_info_data_t()
-        var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size
-                                           / MemoryLayout<integer_t>.size)
+        var count = mach_msg_type_number_t(
+            MemoryLayout<task_vm_info_data_t>.size
+                / MemoryLayout<integer_t>.size)
         let result = withUnsafeMutablePointer(to: &info) { pointer in
             pointer.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { rebound in
                 task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), rebound, &count)
@@ -1543,15 +1652,17 @@ final class RideRecorder: ObservableObject {
         }
         guard result == KERN_SUCCESS else { return }
 
-        diagnosticLogger?.append(RawDiagnosticRecord(
-            kind: "memory_footprint",
-            timestamp: date,
-            detail: String(format: "footprint_mb=%.1f,points=%d,segments=%d,phase=%@",
-                           Double(info.phys_footprint) / 1_048_576,
-                           activePoints.count,
-                           activeDay?.segments.count ?? 0,
-                           phase.rawValue)
-        ))
+        diagnosticLogger?.append(
+            RawDiagnosticRecord(
+                kind: "memory_footprint",
+                timestamp: date,
+                detail: String(
+                    format: "footprint_mb=%.1f,points=%d,segments=%d,phase=%@",
+                    Double(info.phys_footprint) / 1_048_576,
+                    activePoints.count,
+                    activeDay?.segments.count ?? 0,
+                    phase.rawValue)
+            ))
     }
 
     @discardableResult
@@ -1560,12 +1671,14 @@ final class RideRecorder: ObservableObject {
             try context.save()
             return true
         } catch {
-            errorMessage = "Could not save your session. Keep Berms open and try Finish again. \(error.localizedDescription)"
-            diagnosticLogger?.append(RawDiagnosticRecord(
-                kind: "persistence_error",
-                accepted: false,
-                detail: "\(detail): \(error.localizedDescription)"
-            ))
+            errorMessage =
+                "Could not save your session. Keep Berms open and try Finish again. \(error.localizedDescription)"
+            diagnosticLogger?.append(
+                RawDiagnosticRecord(
+                    kind: "persistence_error",
+                    accepted: false,
+                    detail: "\(detail): \(error.localizedDescription)"
+                ))
             return false
         }
     }
@@ -1576,8 +1689,9 @@ final class RideRecorder: ObservableObject {
             return nil
         }
         let candidates = trails.map {
-            TrailRouteCandidate(id: $0.id, name: $0.name, difficulty: $0.difficulty,
-                                routes: $0.matcherRoutes)
+            TrailRouteCandidate(
+                id: $0.id, name: $0.name, difficulty: $0.difficulty,
+                routes: $0.matcherRoutes)
         }
         let route = RouteCleaner().clean(draft.points).map(\.routePoint)
         let result = TrailRouteMatcher().matchResult(for: route, candidates: candidates)

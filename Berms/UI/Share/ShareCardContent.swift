@@ -39,14 +39,17 @@ struct ShareCardContent {
 }
 
 enum ShareCardContentBuilder {
-    static func build(day: RideDay,
-                      base: SessionDetailBase?,
-                      trailDetails: SessionDetailTrailDetails?,
-                      manualCatalogID: String?,
-                      configuration: ShareCardConfiguration) -> ShareCardContent {
+    static func build(
+        day: RideDay,
+        base: SessionDetailBase?,
+        trailDetails: SessionDetailTrailDetails?,
+        manualCatalogID: String?,
+        configuration: ShareCardConfiguration
+    ) -> ShareCardContent {
         let resortName = resolveResortName(day: day, base: base, manualCatalogID: manualCatalogID)
         let dateText = day.startedAt.formatted(date: .abbreviated, time: .omitted)
-        let customName = day.hasCustomName
+        let customName =
+            day.hasCustomName
             ? day.name?.trimmingCharacters(in: .whitespacesAndNewlines)
             : nil
         let title = customName.flatMap { $0.isEmpty ? nil : $0 } ?? resortName
@@ -60,14 +63,17 @@ enum ShareCardContentBuilder {
 
         let runs = base?.runs ?? []
         let lifts = (base?.mapSegments ?? []).filter { $0.kind == .lift }
-        let routes = runs.enumerated().map { index, segment in
-            ShareCardMapRoute(id: segment.id,
-                              kind: .run,
-                              points: segment.routePoints,
-                              opacity: RideMapPresentation.summaryRunOpacity(index: index, count: runs.count))
-        } + lifts.map { segment in
-            ShareCardMapRoute(id: segment.id, kind: .lift, points: segment.routePoints, opacity: 0.75)
-        }
+        let routes =
+            runs.enumerated().map { index, segment in
+                ShareCardMapRoute(
+                    id: segment.id,
+                    kind: .run,
+                    points: segment.routePoints,
+                    opacity: RideMapPresentation.summaryRunOpacity(index: index, count: runs.count))
+            }
+            + lifts.map { segment in
+                ShareCardMapRoute(id: segment.id, kind: .lift, points: segment.routePoints, opacity: 0.75)
+            }
 
         return ShareCardContent(
             resortName: resortName,
@@ -80,9 +86,11 @@ enum ShareCardContentBuilder {
         )
     }
 
-    private static func resolveResortName(day: RideDay,
-                                          base: SessionDetailBase?,
-                                          manualCatalogID: String?) -> String {
+    private static func resolveResortName(
+        day: RideDay,
+        base: SessionDetailBase?,
+        manualCatalogID: String?
+    ) -> String {
         if let catalog = day.catalogID.flatMap(TrailCatalogRegistry.catalog(withID:)) {
             return catalog.resortName
         }
@@ -90,7 +98,8 @@ enum ShareCardContentBuilder {
             return active
         }
         if let manualCatalogID,
-           let catalog = TrailCatalogRegistry.catalog(withID: manualCatalogID) {
+            let catalog = TrailCatalogRegistry.catalog(withID: manualCatalogID)
+        {
             return catalog.resortName
         }
         if let catalog = TrailCatalogRegistry.catalog(for: day.activityMode) {
@@ -109,7 +118,7 @@ enum ShareCardContentBuilder {
             .topSpeed: BermsFormat.speed(day.maximumSpeedMetersPerSecond),
             .jumps: base.map { "\($0.jumpCount)" } ?? "—",
             .ridingTime: BermsFormat.duration(day.activeSeconds),
-            .liftTime: BermsFormat.duration(day.liftSeconds)
+            .liftTime: BermsFormat.duration(day.liftSeconds),
         ]
     }
 }

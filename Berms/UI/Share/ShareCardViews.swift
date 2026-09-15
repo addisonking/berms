@@ -10,18 +10,23 @@ struct ShareCardCanvas: View {
         Group {
             switch configuration.preset {
             case .story:
-                ShareCardStoryLayout(content: content, configuration: configuration,
-                                     mapImage: mapImage, palette: palette)
+                ShareCardStoryLayout(
+                    content: content, configuration: configuration,
+                    mapImage: mapImage, palette: palette)
             case .post:
-                ShareCardPostLayout(content: content, configuration: configuration,
-                                    mapImage: mapImage, palette: palette)
+                ShareCardPostLayout(
+                    content: content, configuration: configuration,
+                    mapImage: mapImage, palette: palette)
             case .portrait:
-                ShareCardPortraitLayout(content: content, configuration: configuration,
-                                        mapImage: mapImage, palette: palette)
+                ShareCardPortraitLayout(
+                    content: content, configuration: configuration,
+                    mapImage: mapImage, palette: palette)
             }
         }
-        .frame(width: configuration.preset.canvasSize.width,
-               height: configuration.preset.canvasSize.height)
+        .frame(
+            width: configuration.preset.canvasSize.width,
+            height: configuration.preset.canvasSize.height
+        )
         .clipped()
     }
 }
@@ -58,12 +63,14 @@ private struct ShareCardStoryLayout: View {
     }
 
     private var scrim: some View {
-        LinearGradient(stops: [
-            .init(color: palette.scrim.opacity(0.55), location: 0),
-            .init(color: palette.scrim.opacity(0), location: 0.26),
-            .init(color: palette.scrim.opacity(0), location: 0.46),
-            .init(color: palette.scrim.opacity(0.86), location: 1)
-        ], startPoint: .top, endPoint: .bottom)
+        LinearGradient(
+            stops: [
+                .init(color: palette.scrim.opacity(0.55), location: 0),
+                .init(color: palette.scrim.opacity(0), location: 0.26),
+                .init(color: palette.scrim.opacity(0), location: 0.46),
+                .init(color: palette.scrim.opacity(0.86), location: 1),
+            ], startPoint: .top, endPoint: .bottom
+        )
         .allowsHitTesting(false)
     }
 
@@ -106,11 +113,12 @@ private struct ShareCardStoryLayout: View {
             }
             HStack(alignment: .top, spacing: 22) {
                 ForEach(Array(small)) { stat in
-                    ShareCardStatView(stat: stat,
-                                      valueSize: 19,
-                                      labelSize: 9.5,
-                                      valueColor: palette.primaryText,
-                                      labelColor: palette.secondaryText)
+                    ShareCardStatView(
+                        stat: stat,
+                        valueSize: 19,
+                        labelSize: 9.5,
+                        valueColor: palette.primaryText,
+                        labelColor: palette.secondaryText)
                 }
             }
         }
@@ -141,12 +149,14 @@ private struct ShareCardPostLayout: View {
                     .padding(.bottom, 14)
                 HStack(alignment: .top, spacing: 12) {
                     ForEach(content.stats) { stat in
-                        ShareCardStatView(stat: stat,
-                                          valueSize: 19,
-                                          labelSize: 9,
-                                          valueColor: palette.primaryText,
-                                          labelColor: palette.secondaryText)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                        ShareCardStatView(
+                            stat: stat,
+                            valueSize: 19,
+                            labelSize: 9,
+                            valueColor: palette.primaryText,
+                            labelColor: palette.secondaryText
+                        )
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
                 Spacer(minLength: 0)
@@ -192,8 +202,10 @@ private struct ShareCardPortraitLayout: View {
                 Image(uiImage: mapImage)
                     .resizable()
                     .scaledToFill()
-                    .frame(width: configuration.preset.mapFrameSize.width,
-                           height: configuration.preset.mapFrameSize.height)
+                    .frame(
+                        width: configuration.preset.mapFrameSize.width,
+                        height: configuration.preset.mapFrameSize.height
+                    )
                     .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                     .padding(.bottom, 14)
             }

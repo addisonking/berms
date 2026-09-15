@@ -40,19 +40,26 @@ struct SessionRouteMap: View {
     }
 
     var body: some View {
-        Map(position: $position, bounds: configuration?.bounds,
-            interactionModes: [.pan, .zoom, .rotate], selection: $selectedRunID, scope: mapScope) {
+        Map(
+            position: $position, bounds: configuration?.bounds,
+            interactionModes: [.pan, .zoom, .rotate], selection: $selectedRunID, scope: mapScope
+        ) {
             if preferences.showsRidePath {
                 ForEach(Array(segments.filter { $0.kind == .run }.enumerated()), id: \.element.id) { index, segment in
                     if segment.routePoints.count > 1 {
                         MapPolyline(coordinates: trailCoordinates(for: segment.routePoints))
-                            .stroke(focusedSegmentID == nil
-                                    ? Color.gray.opacity(RideMapPresentation.summaryRunOpacity(index: index, count: base.runs.count))
-                                    : Color.bermsTrail, lineWidth: 4)
+                            .stroke(
+                                focusedSegmentID == nil
+                                    ? Color.gray.opacity(
+                                        RideMapPresentation.summaryRunOpacity(index: index, count: base.runs.count))
+                                    : Color.bermsTrail, lineWidth: 4
+                            )
                             .tag(segment.id)
                     }
                     if let point = segment.routePoints.first {
-                        Annotation("", coordinate: CLLocationCoordinate2D(latitude: point.latitude, longitude: point.longitude)) {
+                        Annotation(
+                            "", coordinate: CLLocationCoordinate2D(latitude: point.latitude, longitude: point.longitude)
+                        ) {
                             if let onRunSelected {
                                 Button {
                                     onRunSelected(segment.id)
@@ -64,8 +71,9 @@ struct SessionRouteMap: View {
                                 .buttonStyle(.plain)
                                 .accessibilityHint("Opens this run")
                             } else {
-                                RunNumberMarker(number: focusedRunNumber ?? index + 1,
-                                                isSelected: focusedSegmentID == segment.id)
+                                RunNumberMarker(
+                                    number: focusedRunNumber ?? index + 1,
+                                    isSelected: focusedSegmentID == segment.id)
                             }
                         }
                     }
@@ -74,17 +82,24 @@ struct SessionRouteMap: View {
             if preferences.showsLiftPaths {
                 ForEach(segments.filter { $0.kind == .lift }) { segment in
                     MapPolyline(coordinates: trailCoordinates(for: segment.routePoints))
-                        .stroke(Color.bermsLift, style: StrokeStyle(
-                            lineWidth: 2.25, lineCap: .round, lineJoin: .round, dash: [5, 4]
-                        ))
+                        .stroke(
+                            Color.bermsLift,
+                            style: StrokeStyle(
+                                lineWidth: 2.25, lineCap: .round, lineJoin: .round, dash: [5, 4]
+                            ))
                 }
             }
             if preferences.showsJumps {
                 ForEach(jumps) { jump in
-                    Annotation("", coordinate: CLLocationCoordinate2D(latitude: jump.coordinate.latitude,
-                                                                      longitude: jump.coordinate.longitude)) {
-                        JumpMapMarker(number: jump.number, airtime: jump.airtime,
-                                      showsAirtime: focusedSegmentID != nil)
+                    Annotation(
+                        "",
+                        coordinate: CLLocationCoordinate2D(
+                            latitude: jump.coordinate.latitude,
+                            longitude: jump.coordinate.longitude)
+                    ) {
+                        JumpMapMarker(
+                            number: jump.number, airtime: jump.airtime,
+                            showsAirtime: focusedSegmentID != nil)
                     }
                 }
             }
@@ -104,15 +119,17 @@ struct SessionRouteMap: View {
         .ignoresSafeArea(.container, edges: extendsUnderBars ? .all : [])
         .overlay(alignment: .topTrailing) {
             MapControlStack {
-                MapLayersMenu(preferences: preferences,
-                              actualTrailsAvailable: !trails.isEmpty,
-                              showsJumpsControl: !jumps.isEmpty,
-                              showsLiftPathsControl: focusedSegmentID == nil,
-                              liftPathsAvailable: base.mapSegments.contains { $0.kind == .lift })
+                MapLayersMenu(
+                    preferences: preferences,
+                    actualTrailsAvailable: !trails.isEmpty,
+                    showsJumpsControl: !jumps.isEmpty,
+                    showsLiftPathsControl: focusedSegmentID == nil,
+                    liftPathsAvailable: base.mapSegments.contains { $0.kind == .lift })
                 MapRecenterButton { recenter() }
                 if let onExpand {
-                    MapActionButton(title: "Open full-screen map", systemImage: "arrow.up.left.and.arrow.down.right",
-                                    action: onExpand)
+                    MapActionButton(
+                        title: "Open full-screen map", systemImage: "arrow.up.left.and.arrow.down.right",
+                        action: onExpand)
                 }
             }
             .padding(BermsSpacing.control)

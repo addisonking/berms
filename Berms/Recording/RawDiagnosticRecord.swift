@@ -44,22 +44,24 @@ struct RawDiagnosticRecord: Codable, Sendable {
     let jumpReason: String?
     let detail: String?
 
-    init(kind: String, timestamp: Date = .now, monotonicSeconds: Double = ProcessInfo.processInfo.systemUptime,
-         runNumber: Int? = nil,
-         trailSequence: [String]? = nil,
-         latitude: Double? = nil, longitude: Double? = nil, gpsAltitude: Double? = nil,
-         fusedAltitude: Double? = nil, relativeAltitude: Double? = nil, pressureKPa: Double? = nil,
-         trackMonotonicSeconds: Double? = nil, speed: Double? = nil,
-         course: Double? = nil, horizontalAccuracy: Double? = nil, verticalAccuracy: Double? = nil,
-         userAccelerationX: Double? = nil, userAccelerationY: Double? = nil, userAccelerationZ: Double? = nil,
-         rotationRateX: Double? = nil, rotationRateY: Double? = nil, rotationRateZ: Double? = nil,
-         gravityX: Double? = nil, gravityY: Double? = nil, gravityZ: Double? = nil,
-         quaternionW: Double? = nil, quaternionX: Double? = nil, quaternionY: Double? = nil,
-         quaternionZ: Double? = nil, stationary: Bool? = nil, cycling: Bool? = nil, automotive: Bool? = nil,
-         runEligible: Bool? = nil, accepted: Bool? = nil, phaseBefore: String? = nil, phaseAfter: String? = nil,
-         detectorVersion: String? = nil, jumpAirtime: Double? = nil,
-         jumpTakeoffMonotonicSeconds: Double? = nil, jumpLandingMonotonicSeconds: Double? = nil,
-         jumpReason: String? = nil, detail: String? = nil) {
+    init(
+        kind: String, timestamp: Date = .now, monotonicSeconds: Double = ProcessInfo.processInfo.systemUptime,
+        runNumber: Int? = nil,
+        trailSequence: [String]? = nil,
+        latitude: Double? = nil, longitude: Double? = nil, gpsAltitude: Double? = nil,
+        fusedAltitude: Double? = nil, relativeAltitude: Double? = nil, pressureKPa: Double? = nil,
+        trackMonotonicSeconds: Double? = nil, speed: Double? = nil,
+        course: Double? = nil, horizontalAccuracy: Double? = nil, verticalAccuracy: Double? = nil,
+        userAccelerationX: Double? = nil, userAccelerationY: Double? = nil, userAccelerationZ: Double? = nil,
+        rotationRateX: Double? = nil, rotationRateY: Double? = nil, rotationRateZ: Double? = nil,
+        gravityX: Double? = nil, gravityY: Double? = nil, gravityZ: Double? = nil,
+        quaternionW: Double? = nil, quaternionX: Double? = nil, quaternionY: Double? = nil,
+        quaternionZ: Double? = nil, stationary: Bool? = nil, cycling: Bool? = nil, automotive: Bool? = nil,
+        runEligible: Bool? = nil, accepted: Bool? = nil, phaseBefore: String? = nil, phaseAfter: String? = nil,
+        detectorVersion: String? = nil, jumpAirtime: Double? = nil,
+        jumpTakeoffMonotonicSeconds: Double? = nil, jumpLandingMonotonicSeconds: Double? = nil,
+        jumpReason: String? = nil, detail: String? = nil
+    ) {
         self.kind = kind
         self.runNumber = runNumber
         self.trailSequence = trailSequence

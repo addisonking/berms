@@ -18,8 +18,9 @@ struct MonthCalendarView: UIViewRepresentable {
 
         init?(components: DateComponents) {
             guard let year = components.year,
-                  let month = components.month,
-                  let day = components.day else { return nil }
+                let month = components.month,
+                let day = components.day
+            else { return nil }
             self.year = year
             self.month = month
             self.day = day
@@ -58,10 +59,11 @@ struct MonthCalendarView: UIViewRepresentable {
     func updateUIView(_ calendarView: UICalendarView, context: Context) {
         context.coordinator.onVisibleMonthChange = onVisibleMonthChange
         context.coordinator.onSelectDate = onSelectDate
-        context.coordinator.update(calendarView,
-                                   selection: calendarView.selectionBehavior as? UICalendarSelectionSingleDate,
-                                   recordedDays: recordedDays,
-                                   selectedDate: selectedDate)
+        context.coordinator.update(
+            calendarView,
+            selection: calendarView.selectionBehavior as? UICalendarSelectionSingleDate,
+            recordedDays: recordedDays,
+            selectedDate: selectedDate)
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: UICalendarView, context: Context) -> CGSize? {
@@ -96,8 +98,10 @@ struct MonthCalendarView: UIViewRepresentable {
             lastSelectedComponents = selectedComponents
         }
 
-        func update(_ calendarView: UICalendarView, selection: UICalendarSelectionSingleDate?,
-                    recordedDays: Set<DayKey>, selectedDate: Date) {
+        func update(
+            _ calendarView: UICalendarView, selection: UICalendarSelectionSingleDate?,
+            recordedDays: Set<DayKey>, selectedDate: Date
+        ) {
             if self.recordedDays != recordedDays {
                 let changed = self.recordedDays.symmetricDifference(recordedDays)
                 self.recordedDays = recordedDays
@@ -111,14 +115,18 @@ struct MonthCalendarView: UIViewRepresentable {
             selection?.setSelected(components, animated: false)
         }
 
-        func calendarView(_ calendarView: UICalendarView,
-                          decorationFor dateComponents: DateComponents) -> UICalendarView.Decoration? {
+        func calendarView(
+            _ calendarView: UICalendarView,
+            decorationFor dateComponents: DateComponents
+        ) -> UICalendarView.Decoration? {
             guard let key = DayKey(components: dateComponents), recordedDays.contains(key) else { return nil }
             return .default(color: .secondaryLabel, size: .small)
         }
 
-        func calendarView(_ calendarView: UICalendarView,
-                          didChangeVisibleDateComponentsFrom previousDateComponents: DateComponents) {
+        func calendarView(
+            _ calendarView: UICalendarView,
+            didChangeVisibleDateComponentsFrom previousDateComponents: DateComponents
+        ) {
             let components = calendarView.visibleDateComponents
             let notify = onVisibleMonthChange
             // Hop out of the current update pass before touching SwiftUI state.
@@ -127,10 +135,13 @@ struct MonthCalendarView: UIViewRepresentable {
             }
         }
 
-        func dateSelection(_ selection: UICalendarSelectionSingleDate,
-                           didSelectDate dateComponents: DateComponents?) {
+        func dateSelection(
+            _ selection: UICalendarSelectionSingleDate,
+            didSelectDate dateComponents: DateComponents?
+        ) {
             guard let dateComponents,
-                  let date = Calendar.current.date(from: dateComponents) else { return }
+                let date = Calendar.current.date(from: dateComponents)
+            else { return }
             lastSelectedComponents = Self.components(for: date)
             selectedDate.wrappedValue = date
             onSelectDate(date)

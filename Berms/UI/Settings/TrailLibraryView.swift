@@ -21,7 +21,8 @@ struct TrailLibraryView: View {
     private var visibleTrails: [Trail] {
         let catalogTrails = trailCatalogSelection.trails(trails)
         return catalogTrails.filter { trail in
-            let matchesSearch = searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            let matchesSearch =
+                searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 || trail.name.localizedCaseInsensitiveContains(searchText)
                 || trail.style.title.localizedCaseInsensitiveContains(searchText)
             let matchesDifficulty = selectedDifficulty == nil || trail.difficulty == selectedDifficulty
@@ -53,8 +54,9 @@ struct TrailLibraryView: View {
                 }
                 Section {
                     if visibleTrails.isEmpty {
-                        ContentUnavailableView("No matching trails", systemImage: "map",
-                                               description: Text("Try a different search or difficulty filter."))
+                        ContentUnavailableView(
+                            "No matching trails", systemImage: "map",
+                            description: Text("Try a different search or difficulty filter."))
                     } else {
                         ForEach(visibleTrails) { trail in
                             Button {
@@ -63,8 +65,9 @@ struct TrailLibraryView: View {
                                     proxy.scrollTo("libraryMap", anchor: .top)
                                 }
                             } label: {
-                                ProductionTrailLibraryRow(trail: trail,
-                                                          isSelected: selectedTrailID == trail.id)
+                                ProductionTrailLibraryRow(
+                                    trail: trail,
+                                    isSelected: selectedTrailID == trail.id)
                             }
                             .buttonStyle(.plain)
                             .accessibilityHint("Shows this trail on the map")
@@ -86,7 +89,8 @@ struct TrailLibraryView: View {
         }
         .onChange(of: selectedTrailID) { _, id in
             guard let trail = visibleTrails.first(where: { $0.id == id }),
-                  let configuration = RouteMapConfiguration(points: trail.points) else { return }
+                let configuration = RouteMapConfiguration(points: trail.points)
+            else { return }
             mapLayerPreferences.showsActualTrails = true
             withAnimation(reduceMotion ? nil : BermsMotion.recenter) {
                 mapPosition = configuration.initialPosition
@@ -97,29 +101,34 @@ struct TrailLibraryView: View {
     @ViewBuilder
     private var libraryMap: some View {
         if visibleTrails.flatMap(\.points).isEmpty {
-            ContentUnavailableView("No trail geometry", systemImage: "map",
-                                   description: Text("Trail routes will appear here when the catalog is available."))
+            ContentUnavailableView(
+                "No trail geometry", systemImage: "map",
+                description: Text("Trail routes will appear here when the catalog is available."))
         } else {
             ZStack(alignment: .topTrailing) {
                 ZStack {
-                    Map(position: $mapPosition, bounds: mapConfiguration?.bounds,
-                        interactionModes: [.pan, .zoom, .rotate], selection: $selectedTrailID, scope: mapScope) {
+                    Map(
+                        position: $mapPosition, bounds: mapConfiguration?.bounds,
+                        interactionModes: [.pan, .zoom, .rotate], selection: $selectedTrailID, scope: mapScope
+                    ) {
                         if mapLayerPreferences.showsActualTrails {
                             ForEach(visibleTrails) { trail in
                                 if trail.points.count > 1 {
-                                    trailMapContent(coordinates: trailCoordinates(for: trail),
-                                                    difficulty: trail.difficulty,
-                                                    lineWidth: selectedTrailID == trail.id ? 5 : TrailMapRendering.lineWidth,
-                                                    tag: trail.id)
+                                    trailMapContent(
+                                        coordinates: trailCoordinates(for: trail),
+                                        difficulty: trail.difficulty,
+                                        lineWidth: selectedTrailID == trail.id ? 5 : TrailMapRendering.lineWidth,
+                                        tag: trail.id)
                                 }
                             }
 
                             ForEach(Array(libraryLabelTrails)) { trail in
                                 if let coordinate = trailLabelCoordinate(for: trail.points) {
                                     Annotation("", coordinate: coordinate) {
-                                        TrailMapLabel(name: trail.name,
-                                                      difficulty: trail.difficulty,
-                                                      color: .bermsDifficulty(trail.difficulty))
+                                        TrailMapLabel(
+                                            name: trail.name,
+                                            difficulty: trail.difficulty,
+                                            color: .bermsDifficulty(trail.difficulty))
                                     }
                                 }
                             }
@@ -131,10 +140,11 @@ struct TrailLibraryView: View {
                 }
 
                 MapControlStack {
-                    MapLayersMenu(preferences: mapLayerPreferences,
-                                  showsRidePathControl: false,
-                                  actualTrailsAvailable: !visibleTrails.isEmpty,
-                                  showsJumpsControl: false)
+                    MapLayersMenu(
+                        preferences: mapLayerPreferences,
+                        showsRidePathControl: false,
+                        actualTrailsAvailable: !visibleTrails.isEmpty,
+                        showsJumpsControl: false)
                     MapRecenterButton { recenterMap() }
                 }
                 .padding(BermsSpacing.control)

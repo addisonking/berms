@@ -1,15 +1,19 @@
 import Foundation
 import SwiftData
-import XCTest
 import SwiftUI
 import UIKit
+import XCTest
+
 @testable import Berms
 
 final class BermsTests: XCTestCase {
     func testThemeContrastInLightAndDarkAppearance() {
         func luminance(_ color: Color, style: UIUserInterfaceStyle) -> Double {
             let resolved = UIColor(color).resolvedColor(with: UITraitCollection(userInterfaceStyle: style))
-            var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+            var red: CGFloat = 0
+            var green: CGFloat = 0
+            var blue: CGFloat = 0
+            var alpha: CGFloat = 0
             resolved.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
             func linear(_ value: CGFloat) -> Double {
                 let value = Double(value)
@@ -21,7 +25,7 @@ final class BermsTests: XCTestCase {
             for (foreground, background) in [
                 (Color.bermsTrail, Color.bermsInk),
                 (.bermsTrail, .bermsCard),
-                (.bermsOnAccent, .bermsTrail)
+                (.bermsOnAccent, .bermsTrail),
             ] {
                 let a = luminance(foreground, style: style)
                 let b = luminance(background, style: style)
@@ -71,25 +75,27 @@ final class BermsTests: XCTestCase {
     func testTrailMapLabelsCollapseRepeatedTrailNames() {
         func overlay(id: String, name: String, pointCount: Int) -> TrailMapOverlay {
             let points = (0..<pointCount).map {
-                RoutePoint(latitude: 40 + Double($0) * 0.001,
-                           longitude: -111,
-                           altitude: 0,
-                           speed: 0,
-                           timestamp: Date(timeIntervalSince1970: Double($0)))
+                RoutePoint(
+                    latitude: 40 + Double($0) * 0.001,
+                    longitude: -111,
+                    altitude: 0,
+                    speed: 0,
+                    timestamp: Date(timeIntervalSince1970: Double($0)))
             }
-            return TrailMapOverlay(id: id,
-                                   trailID: UUID(),
-                                   name: name,
-                                   difficulty: .blue,
-                                   points: points,
-                                   score: 1)
+            return TrailMapOverlay(
+                id: id,
+                trailID: UUID(),
+                name: name,
+                difficulty: .blue,
+                points: points,
+                score: 1)
         }
 
         let overlays = [
             overlay(id: "a", name: "Salvation", pointCount: 4),
             overlay(id: "b", name: "Salvation", pointCount: 10),
             overlay(id: "c", name: "Deviant", pointCount: 6),
-            overlay(id: "d", name: " salvation ", pointCount: 8)
+            overlay(id: "d", name: " salvation ", pointCount: 8),
         ]
 
         let labels = trailMapLabelItems(for: overlays)
@@ -105,8 +111,9 @@ final class BermsTests: XCTestCase {
     @MainActor
     func testTrailCatalogImportIsIdempotentAndNamespacesIDs() throws {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
-        let container = try ModelContainer(for: Trail.self, TrailPass.self,
-                                            configurations: configuration)
+        let container = try ModelContainer(
+            for: Trail.self, TrailPass.self,
+            configurations: configuration)
         let context = container.mainContext
         let suiteName = "BermsTests.catalogImport.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
@@ -122,14 +129,17 @@ final class BermsTests: XCTestCase {
             resortName: "Resort B", bundledResourceName: "b",
             importVersion: "b-v1", locationAnchor: Coordinate(latitude: 41, longitude: -106),
             stableIDNamespace: "berms:catalog-b", legacyImportVersionKeys: [])
-        let data = Data("""
-        {"type":"FeatureCollection","features":[{"type":"Feature","properties":{"name":"Shared name","slug":"shared","difficulty":"green"},"geometry":{"type":"LineString","coordinates":[[-105,40],[-105,40.001]]}}]}
-        """.utf8)
+        let data = Data(
+            """
+            {"type":"FeatureCollection","features":[{"type":"Feature","properties":{"name":"Shared name","slug":"shared","difficulty":"green"},"geometry":{"type":"LineString","coordinates":[[-105,40],[-105,40.001]]}}]}
+            """.utf8)
 
-        let first = try TrailCatalogImporter.import(data: data, into: context,
-                                                     defaults: defaults, catalog: firstCatalog)
-        let second = try TrailCatalogImporter.import(data: data, into: context,
-                                                      defaults: defaults, catalog: firstCatalog)
+        let first = try TrailCatalogImporter.import(
+            data: data, into: context,
+            defaults: defaults, catalog: firstCatalog)
+        let second = try TrailCatalogImporter.import(
+            data: data, into: context,
+            defaults: defaults, catalog: firstCatalog)
         XCTAssertEqual(first.trailsCreated, 1)
         XCTAssertEqual(first.passesCreated, 1)
         XCTAssertEqual(second.trailsCreated, 0)
@@ -144,23 +154,26 @@ final class BermsTests: XCTestCase {
     @MainActor
     func testTrailCatalogImportSkipsMalformedFeatures() throws {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
-        let container = try ModelContainer(for: Trail.self, TrailPass.self,
-                                            configurations: configuration)
+        let container = try ModelContainer(
+            for: Trail.self, TrailPass.self,
+            configurations: configuration)
         let context = container.mainContext
         let suiteName = "BermsTests.lossyImport.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
-        let data = Data("""
-        {"type":"FeatureCollection","features":[
-        {"type":"Feature","properties":{"name":"Broken","slug":"broken","difficulty":"green"},"geometry":null},
-        {"type":"Feature","properties":null,"geometry":{"type":"LineString","coordinates":[[-105,40],[-105,40.001]]}},
-        {"type":"Feature","properties":{"name":"Good","slug":"good","difficulty":"blue"},"geometry":{"type":"LineString","coordinates":[[-105,40],[-105,40.002]]}}
-        ]}
-        """.utf8)
+        let data = Data(
+            """
+            {"type":"FeatureCollection","features":[
+            {"type":"Feature","properties":{"name":"Broken","slug":"broken","difficulty":"green"},"geometry":null},
+            {"type":"Feature","properties":null,"geometry":{"type":"LineString","coordinates":[[-105,40],[-105,40.001]]}},
+            {"type":"Feature","properties":{"name":"Good","slug":"good","difficulty":"blue"},"geometry":{"type":"LineString","coordinates":[[-105,40],[-105,40.002]]}}
+            ]}
+            """.utf8)
 
-        let summary = try TrailCatalogImporter.import(data: data, into: context,
-                                                       defaults: defaults)
+        let summary = try TrailCatalogImporter.import(
+            data: data, into: context,
+            defaults: defaults)
         XCTAssertEqual(summary.trailsCreated, 1)
         XCTAssertEqual(summary.passesCreated, 1)
         let trails = try context.fetch(FetchDescriptor<Trail>())
@@ -171,8 +184,9 @@ final class BermsTests: XCTestCase {
     @MainActor
     func testMountainCreekCatalogAppliesOfficialDifficultyCorrectionsAndMergesDuplicates() throws {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
-        let container = try ModelContainer(for: Trail.self, TrailPass.self,
-                                            configurations: configuration)
+        let container = try ModelContainer(
+            for: Trail.self, TrailPass.self,
+            configurations: configuration)
         let context = container.mainContext
         let suiteName = "BermsTests.mountainCreekCorrections.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
@@ -180,15 +194,19 @@ final class BermsTests: XCTestCase {
 
         let canonicalSlug = "lower-asylum-1f4u6s"
         let retiredSlug = "lower-asylum-196712"
-        let duplicate = Trail(name: "Lower Asylum", difficulty: .black,
-                              resort: TrailCatalogRegistry.mountainCreek.resortName)
-        duplicate.id = TrailCatalogImporter.stableID(for: retiredSlug,
-                                                      catalog: TrailCatalogRegistry.mountainCreek)
+        let duplicate = Trail(
+            name: "Lower Asylum", difficulty: .black,
+            resort: TrailCatalogRegistry.mountainCreek.resortName)
+        duplicate.id = TrailCatalogImporter.stableID(
+            for: retiredSlug,
+            catalog: TrailCatalogRegistry.mountainCreek)
         let duplicatePass = TrailPass(routePoints: [
-            RoutePoint(latitude: 41.1854, longitude: -74.5022, altitude: 0, speed: 0,
-                       timestamp: .now),
-            RoutePoint(latitude: 41.1867, longitude: -74.5027,
-                       altitude: 0, speed: 0, timestamp: .now.addingTimeInterval(1))
+            RoutePoint(
+                latitude: 41.1854, longitude: -74.5022, altitude: 0, speed: 0,
+                timestamp: .now),
+            RoutePoint(
+                latitude: 41.1867, longitude: -74.5027,
+                altitude: 0, speed: 0, timestamp: .now.addingTimeInterval(1)),
         ])
         duplicatePass.trail = duplicate
         duplicate.passes.append(duplicatePass)
@@ -196,27 +214,33 @@ final class BermsTests: XCTestCase {
         context.insert(duplicatePass)
         try context.save()
 
-        let data = Data("""
-        {"type":"FeatureCollection","features":[
-          {"type":"Feature","properties":{"name":"Lower Asylum","slug":"\(canonicalSlug)","difficulty":"black"},"geometry":{"type":"LineString","coordinates":[[-74.5022,41.1854],[-74.5027,41.1867]]}},
-          {"type":"Feature","properties":{"name":"Lower Asylum","slug":"\(retiredSlug)","difficulty":"black"},"geometry":{"type":"LineString","coordinates":[[-74.5022,41.1854],[-74.5027,41.1867]]}},
-          {"type":"Feature","properties":{"name":"Progression Drops","slug":"progression-drops","difficulty":"blue"},"geometry":{"type":"LineString","coordinates":[[-74.50,41.18],[-74.501,41.181]]}},
-          {"type":"Feature","properties":{"name":"Deviant","slug":"deviant-kg9399","difficulty":"blue"},"geometry":{"type":"LineString","coordinates":[[-74.50,41.18],[-74.501,41.181]]}},
-          {"type":"Feature","properties":{"name":"Pipeline","slug":"pipeline-5y2v8p","difficulty":"doubleBlack"},"geometry":{"type":"LineString","coordinates":[[-74.50,41.18],[-74.501,41.181]]}},
-          {"type":"Feature","properties":{"name":"Ripper","slug":"ripper-5ashmy","difficulty":"black"},"geometry":{"type":"LineString","coordinates":[[-74.50,41.18],[-74.501,41.181]]}},
-          {"type":"Feature","properties":{"name":"The Pit","slug":"the-pit","difficulty":"black"},"geometry":{"type":"LineString","coordinates":[[-74.50,41.18],[-74.501,41.181]]}}
-        ]}
-        """.utf8)
+        let data = Data(
+            """
+            {"type":"FeatureCollection","features":[
+              {"type":"Feature","properties":{"name":"Lower Asylum","slug":"\(canonicalSlug)","difficulty":"black"},"geometry":{"type":"LineString","coordinates":[[-74.5022,41.1854],[-74.5027,41.1867]]}},
+              {"type":"Feature","properties":{"name":"Lower Asylum","slug":"\(retiredSlug)","difficulty":"black"},"geometry":{"type":"LineString","coordinates":[[-74.5022,41.1854],[-74.5027,41.1867]]}},
+              {"type":"Feature","properties":{"name":"Progression Drops","slug":"progression-drops","difficulty":"blue"},"geometry":{"type":"LineString","coordinates":[[-74.50,41.18],[-74.501,41.181]]}},
+              {"type":"Feature","properties":{"name":"Deviant","slug":"deviant-kg9399","difficulty":"blue"},"geometry":{"type":"LineString","coordinates":[[-74.50,41.18],[-74.501,41.181]]}},
+              {"type":"Feature","properties":{"name":"Pipeline","slug":"pipeline-5y2v8p","difficulty":"doubleBlack"},"geometry":{"type":"LineString","coordinates":[[-74.50,41.18],[-74.501,41.181]]}},
+              {"type":"Feature","properties":{"name":"Ripper","slug":"ripper-5ashmy","difficulty":"black"},"geometry":{"type":"LineString","coordinates":[[-74.50,41.18],[-74.501,41.181]]}},
+              {"type":"Feature","properties":{"name":"The Pit","slug":"the-pit","difficulty":"black"},"geometry":{"type":"LineString","coordinates":[[-74.50,41.18],[-74.501,41.181]]}}
+            ]}
+            """.utf8)
 
-        _ = try TrailCatalogImporter.import(data: data, into: context,
-                                            defaults: defaults,
-                                            catalog: TrailCatalogRegistry.mountainCreek,
-                                            version: "mountain-creek-ridepal-v3")
+        _ = try TrailCatalogImporter.import(
+            data: data, into: context,
+            defaults: defaults,
+            catalog: TrailCatalogRegistry.mountainCreek,
+            version: "mountain-creek-ridepal-v3")
 
         let trails = try context.fetch(FetchDescriptor<Trail>())
         XCTAssertEqual(trails.count, 6)
-        XCTAssertNil(trails.first { $0.id == TrailCatalogImporter.stableID(
-            for: retiredSlug, catalog: TrailCatalogRegistry.mountainCreek) })
+        XCTAssertNil(
+            trails.first {
+                $0.id
+                    == TrailCatalogImporter.stableID(
+                        for: retiredSlug, catalog: TrailCatalogRegistry.mountainCreek)
+            })
         XCTAssertEqual(trails.first { $0.name == "Progression Drops" }?.difficulty, .green)
         XCTAssertEqual(trails.first { $0.name == "Deviant" }?.difficulty, .green)
         XCTAssertEqual(trails.first { $0.name == "Pipeline" }?.difficulty, .black)
@@ -234,8 +258,9 @@ final class BermsTests: XCTestCase {
         let selection = TrailCatalogSelection(defaults: defaults)
         selection.setSelectionID(TrailCatalogRegistry.mountainCreek.id)
 
-        let creekTrail = Trail(name: "Creek trail", difficulty: .green,
-                               resort: TrailCatalogRegistry.mountainCreek.resortName)
+        let creekTrail = Trail(
+            name: "Creek trail", difficulty: .green,
+            resort: TrailCatalogRegistry.mountainCreek.resortName)
         let otherTrail = Trail(name: "Other trail", difficulty: .blue, resort: "Other Resort")
         let visible = selection.trails(
             [creekTrail, otherTrail],
@@ -248,22 +273,27 @@ final class BermsTests: XCTestCase {
     func testActivityModeResolvesSeasonalMountainCreekCatalogs() {
         XCTAssertEqual(ActivityMode.bikePark.season, .summer)
         XCTAssertEqual(ActivityMode.ski.season, .winter)
-        XCTAssertEqual(TrailCatalogRegistry.catalog(for: .bikePark)?.id,
-                       TrailCatalogRegistry.mountainCreek.id)
-        XCTAssertEqual(TrailCatalogRegistry.catalog(for: .ski)?.id,
-                       TrailCatalogRegistry.mountainCreekWinter.id)
+        XCTAssertEqual(
+            TrailCatalogRegistry.catalog(for: .bikePark)?.id,
+            TrailCatalogRegistry.mountainCreek.id)
+        XCTAssertEqual(
+            TrailCatalogRegistry.catalog(for: .ski)?.id,
+            TrailCatalogRegistry.mountainCreekWinter.id)
         XCTAssertNil(TrailCatalogRegistry.mountainCreekWinter.bundledResourceName)
     }
 
     func testSeasonalTrailSelectionDoesNotLeakSummerTrailsIntoWinter() {
-        let summerTrail = Trail(name: "Summer trail", difficulty: .green,
-                                resort: TrailCatalogRegistry.mountainCreek.resortName,
-                                catalogID: TrailCatalogRegistry.mountainCreek.id)
-        let legacyTrail = Trail(name: "Legacy trail", difficulty: .blue,
-                                resort: TrailCatalogRegistry.mountainCreek.resortName)
-        let winterTrail = Trail(name: "Winter trail", difficulty: .blue,
-                                resort: TrailCatalogRegistry.mountainCreekWinter.resortName,
-                                catalogID: TrailCatalogRegistry.mountainCreekWinter.id)
+        let summerTrail = Trail(
+            name: "Summer trail", difficulty: .green,
+            resort: TrailCatalogRegistry.mountainCreek.resortName,
+            catalogID: TrailCatalogRegistry.mountainCreek.id)
+        let legacyTrail = Trail(
+            name: "Legacy trail", difficulty: .blue,
+            resort: TrailCatalogRegistry.mountainCreek.resortName)
+        let winterTrail = Trail(
+            name: "Winter trail", difficulty: .blue,
+            resort: TrailCatalogRegistry.mountainCreekWinter.resortName,
+            catalogID: TrailCatalogRegistry.mountainCreekWinter.id)
 
         XCTAssertEqual(
             TrailCatalogRegistry.trails(
@@ -297,9 +327,10 @@ final class BermsTests: XCTestCase {
     func testTrailSequenceResolverPreservesRideOrderAndFallsBack() throws {
         let base = Date(timeIntervalSince1970: 10_000)
         let route = (0...20).map { index in
-            RoutePoint(latitude: 40 + Double(index) * 0.0001, longitude: -105,
-                       altitude: 100 - Double(index), speed: 8,
-                       timestamp: base.addingTimeInterval(Double(index)))
+            RoutePoint(
+                latitude: 40 + Double(index) * 0.0001, longitude: -105,
+                altitude: 100 - Double(index), speed: 8,
+                timestamp: base.addingTimeInterval(Double(index)))
         }
         let firstTrail = Trail(name: "First", difficulty: .green, resort: "Test")
         let firstPass = TrailPass(routePoints: Array(route[0...10]))
@@ -309,16 +340,21 @@ final class BermsTests: XCTestCase {
         let secondPass = TrailPass(routePoints: Array(route[10...20]))
         secondPass.trail = secondTrail
         secondTrail.passes.append(secondPass)
-        let segment = RideSegment(kind: .run, startedAt: base, endedAt: base.addingTimeInterval(20),
-                                  routeData: try RouteCodec.encode(route))
+        let segment = RideSegment(
+            kind: .run, startedAt: base, endedAt: base.addingTimeInterval(20),
+            routeData: try RouteCodec.encode(route))
 
         TrailRouteMatchCache.shared.invalidate()
-        XCTAssertEqual(TrailSequenceResolver.names(for: segment,
-                                                   trails: [firstTrail, secondTrail]),
-                       ["First", "Second"])
-        XCTAssertEqual(TrailSequenceResolver.title(for: segment,
-                                                    trails: [firstTrail, secondTrail]),
-                       "First → Second")
+        XCTAssertEqual(
+            TrailSequenceResolver.names(
+                for: segment,
+                trails: [firstTrail, secondTrail]),
+            ["First", "Second"])
+        XCTAssertEqual(
+            TrailSequenceResolver.title(
+                for: segment,
+                trails: [firstTrail, secondTrail]),
+            "First → Second")
         XCTAssertNil(TrailSequenceResolver.title(for: segment, trails: []))
         TrailRouteMatchCache.shared.invalidate()
     }
@@ -327,28 +363,32 @@ final class BermsTests: XCTestCase {
         let id = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
         let base = Date(timeIntervalSince1970: 10_000)
         let route = (0...10).map { index in
-            RoutePoint(latitude: 41.2505 + Double(index) * 0.0001,
-                       longitude: -74.5012,
-                       altitude: 100 - Double(index),
-                       speed: 8,
-                       timestamp: base.addingTimeInterval(Double(index)))
+            RoutePoint(
+                latitude: 41.2505 + Double(index) * 0.0001,
+                longitude: -74.5012,
+                altitude: 100 - Double(index),
+                speed: 8,
+                timestamp: base.addingTimeInterval(Double(index)))
         }
-        let jump = JumpEvent(takeoffTimestamp: base.addingTimeInterval(5),
-                             landingTimestamp: base.addingTimeInterval(5.2),
-                             takeoffMonotonicSeconds: 5,
-                             landingMonotonicSeconds: 5.2)
+        let jump = JumpEvent(
+            takeoffTimestamp: base.addingTimeInterval(5),
+            landingTimestamp: base.addingTimeInterval(5.2),
+            takeoffMonotonicSeconds: 5,
+            landingMonotonicSeconds: 5.2)
         let input = SessionDetailPreparationInput(
-            segments: [SessionDetailSegmentInput(
-                id: id,
-                kind: .run,
-                startedAt: route[0].timestamp,
-                endedAt: route[10].timestamp,
-                distanceMeters: 1_000,
-                verticalMeters: 100,
-                maximumSpeedMetersPerSecond: 8,
-                routeData: try RouteCodec.encode(route),
-                jumpData: try JSONEncoder().encode([jump])
-            )],
+            segments: [
+                SessionDetailSegmentInput(
+                    id: id,
+                    kind: .run,
+                    startedAt: route[0].timestamp,
+                    endedAt: route[10].timestamp,
+                    distanceMeters: 1_000,
+                    verticalMeters: 100,
+                    maximumSpeedMetersPerSecond: 8,
+                    routeData: try RouteCodec.encode(route),
+                    jumpData: try JSONEncoder().encode([jump])
+                )
+            ],
             trails: [],
             manualCatalogID: nil
         )
@@ -368,40 +408,46 @@ final class BermsTests: XCTestCase {
         let trailID = UUID(uuidString: "33333333-3333-3333-3333-333333333333")!
         let base = Date(timeIntervalSince1970: 20_000)
         let route = (0...10).map { index in
-            RoutePoint(latitude: 41.2505 + Double(index) * 0.0001,
-                       longitude: -74.5012,
-                       altitude: 100 - Double(index),
-                       speed: 8,
-                       timestamp: base.addingTimeInterval(Double(index)))
+            RoutePoint(
+                latitude: 41.2505 + Double(index) * 0.0001,
+                longitude: -74.5012,
+                altitude: 100 - Double(index),
+                speed: 8,
+                timestamp: base.addingTimeInterval(Double(index)))
         }
         let routeData = try RouteCodec.encode(route)
         let offsetRoute = route.map { point in
-            RoutePoint(latitude: point.latitude + 0.002,
-                       longitude: point.longitude,
-                       altitude: point.altitude,
-                       speed: point.speed,
-                       timestamp: point.timestamp)
+            RoutePoint(
+                latitude: point.latitude + 0.002,
+                longitude: point.longitude,
+                altitude: point.altitude,
+                speed: point.speed,
+                timestamp: point.timestamp)
         }
         let input = SessionDetailPreparationInput(
-            segments: [SessionDetailSegmentInput(
-                id: segmentID,
-                kind: .run,
-                startedAt: route[0].timestamp,
-                endedAt: route[10].timestamp,
-                distanceMeters: 1_000,
-                verticalMeters: 100,
-                maximumSpeedMetersPerSecond: 8,
-                routeData: routeData,
-                jumpData: nil
-            )],
-            trails: [SessionDetailTrailInput(
-                id: trailID,
-                name: "Test Trail",
-                difficulty: .blue,
-                resort: TrailCatalogRegistry.defaultCatalog.resortName,
-                averagedRouteData: try RouteCodec.encode(offsetRoute),
-                passRouteData: [routeData]
-            )],
+            segments: [
+                SessionDetailSegmentInput(
+                    id: segmentID,
+                    kind: .run,
+                    startedAt: route[0].timestamp,
+                    endedAt: route[10].timestamp,
+                    distanceMeters: 1_000,
+                    verticalMeters: 100,
+                    maximumSpeedMetersPerSecond: 8,
+                    routeData: routeData,
+                    jumpData: nil
+                )
+            ],
+            trails: [
+                SessionDetailTrailInput(
+                    id: trailID,
+                    name: "Test Trail",
+                    difficulty: .blue,
+                    resort: TrailCatalogRegistry.defaultCatalog.resortName,
+                    averagedRouteData: try RouteCodec.encode(offsetRoute),
+                    passRouteData: [routeData]
+                )
+            ],
             manualCatalogID: nil
         )
         let baseResult = try SessionDetailPresentationBuilder.buildBase(input)
@@ -416,9 +462,10 @@ final class BermsTests: XCTestCase {
         XCTAssertEqual(details.overlays.first?.trailID, trailID)
         XCTAssertEqual(details.overlays.first?.name, "Test Trail")
         XCTAssertGreaterThan(details.overlays.first?.points.count ?? 0, 1)
-        XCTAssertEqual(details.overlays.first?.points.first?.latitude ?? .nan,
-                       route.first?.latitude ?? .nan,
-                       accuracy: 0.0001)
+        XCTAssertEqual(
+            details.overlays.first?.points.first?.latitude ?? .nan,
+            route.first?.latitude ?? .nan,
+            accuracy: 0.0001)
     }
 
     func testSessionDetailBaseLimitsOverviewJumpMarkersDeterministically() {
@@ -427,8 +474,9 @@ final class BermsTests: XCTestCase {
                 id: "jump-\(index)",
                 segmentID: UUID(uuidString: "44444444-4444-4444-4444-444444444444")!,
                 number: index + 1,
-                coordinate: Coordinate(latitude: 41.25 + Double(index) * 0.0001,
-                                        longitude: -74.50),
+                coordinate: Coordinate(
+                    latitude: 41.25 + Double(index) * 0.0001,
+                    longitude: -74.50),
                 airtime: 0.2
             )
         }
@@ -452,12 +500,14 @@ final class BermsTests: XCTestCase {
             day.endedAt = day.startedAt.addingTimeInterval(60)
         }
         for day in [olderDay, newerDay, liftOnlyDay, unfinishedDay] {
-            day.segments = [RideSegment(
-                kind: day === liftOnlyDay ? .lift : .run,
-                startedAt: day.startedAt,
-                endedAt: day.startedAt.addingTimeInterval(30),
-                routeData: Data()
-            )]
+            day.segments = [
+                RideSegment(
+                    kind: day === liftOnlyDay ? .lift : .run,
+                    startedAt: day.startedAt,
+                    endedAt: day.startedAt.addingTimeInterval(30),
+                    routeData: Data()
+                )
+            ]
         }
         let days = [unfinishedDay, emptyDay, olderDay, liftOnlyDay, newerDay]
 
@@ -465,20 +515,24 @@ final class BermsTests: XCTestCase {
 
         XCTAssertEqual(target.day.id, newerDay.id)
         XCTAssertEqual(target.run.id, newerDay.segments[0].id)
-        XCTAssertNil(SessionDetailPresentationPreheater.latestCompletedRun(
-            in: [emptyDay, liftOnlyDay, unfinishedDay]
-        ))
+        XCTAssertNil(
+            SessionDetailPresentationPreheater.latestCompletedRun(
+                in: [emptyDay, liftOnlyDay, unfinishedDay]
+            ))
     }
 
     @MainActor
     func testRunPreheatSnapshotsOnlyTheActiveResort() throws {
         let start = Date(timeIntervalSince1970: 31_000)
-        let point = RoutePoint(latitude: 41.2505, longitude: -74.5012,
-                               altitude: 100, speed: 8, timestamp: start)
-        let segment = RideSegment(kind: .run, startedAt: start, endedAt: start,
-                                  routeData: try RouteCodec.encode([point]))
-        let local = Trail(name: "Local", difficulty: .blue,
-                          resort: TrailCatalogRegistry.defaultCatalog.resortName)
+        let point = RoutePoint(
+            latitude: 41.2505, longitude: -74.5012,
+            altitude: 100, speed: 8, timestamp: start)
+        let segment = RideSegment(
+            kind: .run, startedAt: start, endedAt: start,
+            routeData: try RouteCodec.encode([point]))
+        let local = Trail(
+            name: "Local", difficulty: .blue,
+            resort: TrailCatalogRegistry.defaultCatalog.resortName)
         let unrelated = Trail(name: "Unrelated", difficulty: .black, resort: "Other resort")
         local.averagedRouteData = segment.routeData
         unrelated.averagedRouteData = Data([0xFF])
@@ -497,11 +551,13 @@ final class BermsTests: XCTestCase {
     @MainActor
     func testRunPreheatCacheRejectsEditedAndRemovedTrails() async throws {
         let start = Date(timeIntervalSince1970: 32_000)
-        let segment = RideSegment(kind: .run, startedAt: start, endedAt: start,
-                                  routeData: try RouteCodec.encode([]))
-        let trail = Trail(name: "Original", difficulty: .blue,
-                          resort: TrailCatalogRegistry.defaultCatalog.resortName,
-                          createdAt: start)
+        let segment = RideSegment(
+            kind: .run, startedAt: start, endedAt: start,
+            routeData: try RouteCodec.encode([]))
+        let trail = Trail(
+            name: "Original", difficulty: .blue,
+            resort: TrailCatalogRegistry.defaultCatalog.resortName,
+            createdAt: start)
         let dayID = UUID()
         let selectionID = TrailCatalogRegistry.automaticSelectionID
         let key = SessionDetailPresentationPreheater.runCacheKey(
@@ -513,8 +569,9 @@ final class BermsTests: XCTestCase {
         let entry = try await SessionDetailPresentationPreheater.build(input)
         let cache = SessionDetailPresentationCache()
         let detail = try XCTUnwrap(entry.base.segmentsByID[segment.id])
-        cache.storeRun(.init(base: entry.base, detail: detail, trailDetails: entry.trailDetails),
-                       for: key)
+        cache.storeRun(
+            .init(base: entry.base, detail: detail, trailDetails: entry.trailDetails),
+            for: key)
         XCTAssertNotNil(cache.runEntry(for: key))
 
         trail.name = "Renamed"
@@ -548,23 +605,27 @@ final class BermsTests: XCTestCase {
 
     @MainActor
     func testRunPreparationReadsItsOwnModelContext() async throws {
-        let container = try ModelContainer(for: RideDay.self, RideSegment.self,
-                                           Trail.self, TrailPass.self, LearnedLift.self,
-                                           configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let container = try ModelContainer(
+            for: RideDay.self, RideSegment.self,
+            Trail.self, TrailPass.self, LearnedLift.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true))
         let context = ModelContext(container)
         let base = Date(timeIntervalSince1970: 33_000)
         let route = (0...4).map { index in
-            RoutePoint(latitude: 41.2505 + Double(index) * 0.0001, longitude: -74.5012,
-                       altitude: 100 - Double(index), speed: 8,
-                       timestamp: base.addingTimeInterval(Double(index)))
+            RoutePoint(
+                latitude: 41.2505 + Double(index) * 0.0001, longitude: -74.5012,
+                altitude: 100 - Double(index), speed: 8,
+                timestamp: base.addingTimeInterval(Double(index)))
         }
         let day = RideDay(startedAt: base)
         day.endedAt = base.addingTimeInterval(60)
-        let segment = RideSegment(kind: .run, startedAt: base,
-                                  endedAt: base.addingTimeInterval(5),
-                                  routeData: try RouteCodec.encode(route))
-        let trail = Trail(name: "Stored trail", difficulty: .blue,
-                          resort: TrailCatalogRegistry.defaultCatalog.resortName)
+        let segment = RideSegment(
+            kind: .run, startedAt: base,
+            endedAt: base.addingTimeInterval(5),
+            routeData: try RouteCodec.encode(route))
+        let trail = Trail(
+            name: "Stored trail", difficulty: .blue,
+            resort: TrailCatalogRegistry.defaultCatalog.resortName)
         let pass = TrailPass(routePoints: route, recordedAt: base)
         segment.day = day
         day.segments = [segment]
@@ -587,31 +648,56 @@ final class BermsTests: XCTestCase {
     }
 
     func testLiveMapPresentationSelectsOnlyTheRelevantPath() {
-        let point = RoutePoint(latitude: 40, longitude: -105, altitude: 100, speed: 8,
-                               timestamp: Date(timeIntervalSince1970: 1))
-        let current = [point, RoutePoint(latitude: 40.001, longitude: -105, altitude: 90,
-                                         speed: 8, timestamp: Date(timeIntervalSince1970: 2))]
-        let older = [point, RoutePoint(latitude: 40.002, longitude: -105, altitude: 80,
-                                       speed: 8, timestamp: Date(timeIntervalSince1970: 3))]
-        let latest = [point, RoutePoint(latitude: 40.003, longitude: -105, altitude: 70,
-                                        speed: 8, timestamp: Date(timeIntervalSince1970: 4))]
+        let point = RoutePoint(
+            latitude: 40, longitude: -105, altitude: 100, speed: 8,
+            timestamp: Date(timeIntervalSince1970: 1))
+        let current = [
+            point,
+            RoutePoint(
+                latitude: 40.001, longitude: -105, altitude: 90,
+                speed: 8, timestamp: Date(timeIntervalSince1970: 2)),
+        ]
+        let older = [
+            point,
+            RoutePoint(
+                latitude: 40.002, longitude: -105, altitude: 80,
+                speed: 8, timestamp: Date(timeIntervalSince1970: 3)),
+        ]
+        let latest = [
+            point,
+            RoutePoint(
+                latitude: 40.003, longitude: -105, altitude: 70,
+                speed: 8, timestamp: Date(timeIntervalSince1970: 4)),
+        ]
 
-        XCTAssertEqual(RideMapPresentation.livePaths(activeKind: .run, currentPath: current,
-                                                     completedRunPaths: [older, latest],
-                                                     showsPreviousRuns: false).map(\.role),
-                       [.activeSegment])
-        XCTAssertEqual(RideMapPresentation.livePaths(activeKind: .lift, currentPath: current,
-                                                     completedRunPaths: [older, latest],
-                                                     showsPreviousRuns: false).map(\.role),
-                       [.latestCompletedRun])
-        XCTAssertEqual(RideMapPresentation.livePaths(activeKind: .lift, currentPath: current,
-                                                     completedRunPaths: [],
-                                                     showsPreviousRuns: false).map(\.role),
-                       [.activeSegment])
-        XCTAssertEqual(RideMapPresentation.livePaths(activeKind: .run, currentPath: current,
-                                                     completedRunPaths: [older, latest],
-                                                     showsPreviousRuns: true).map(\.role),
-                       [.previousRun, .previousRun, .activeSegment])
+        XCTAssertEqual(
+            RideMapPresentation.livePaths(
+                activeKind: .run, currentPath: current,
+                completedRunPaths: [older, latest],
+                showsPreviousRuns: false
+            ).map(\.role),
+            [.activeSegment])
+        XCTAssertEqual(
+            RideMapPresentation.livePaths(
+                activeKind: .lift, currentPath: current,
+                completedRunPaths: [older, latest],
+                showsPreviousRuns: false
+            ).map(\.role),
+            [.latestCompletedRun])
+        XCTAssertEqual(
+            RideMapPresentation.livePaths(
+                activeKind: .lift, currentPath: current,
+                completedRunPaths: [],
+                showsPreviousRuns: false
+            ).map(\.role),
+            [.activeSegment])
+        XCTAssertEqual(
+            RideMapPresentation.livePaths(
+                activeKind: .run, currentPath: current,
+                completedRunPaths: [older, latest],
+                showsPreviousRuns: true
+            ).map(\.role),
+            [.previousRun, .previousRun, .activeSegment])
     }
 
     func testSummaryRunOpacityGetsDarkerChronologically() {
@@ -628,31 +714,37 @@ final class BermsTests: XCTestCase {
         var events: [DetectorEvent] = []
 
         for index in 0..<4 {
-            events += detector.process(sample(at: base, index: index, altitude: Double(index * 5), speed: 4, cycling: false))
+            events += detector.process(
+                sample(at: base, index: index, altitude: Double(index * 5), speed: 4, cycling: false))
         }
 
         XCTAssertEqual(detector.phase, .lift)
-        XCTAssertTrue(events.contains { event in
-            if case .started(kind: .lift, points: _) = event { return true }
-            return false
-        })
+        XCTAssertTrue(
+            events.contains { event in
+                if case .started(kind: .lift, points: _) = event { return true }
+                return false
+            })
 
         for index in 0..<4 {
-            events += detector.process(sample(at: base, index: index + 4, altitude: Double(15 - index * 5), speed: 7, cycling: true))
+            events += detector.process(
+                sample(at: base, index: index + 4, altitude: Double(15 - index * 5), speed: 7, cycling: true))
         }
 
         XCTAssertEqual(detector.phase, .run)
-        XCTAssertTrue(events.contains { event in
-            if case .finished(let draft) = event { return draft.kind == .lift }
-            return false
-        })
-        XCTAssertTrue(events.contains { event in
-            if case .started(kind: .run, points: _) = event { return true }
-            return false
-        })
+        XCTAssertTrue(
+            events.contains { event in
+                if case .finished(let draft) = event { return draft.kind == .lift }
+                return false
+            })
+        XCTAssertTrue(
+            events.contains { event in
+                if case .started(kind: .run, points: _) = event { return true }
+                return false
+            })
 
         for index in 0..<3 {
-            events += detector.process(sample(at: base, index: index + 8, altitude: 0, speed: 0, cycling: false, stationary: true))
+            events += detector.process(
+                sample(at: base, index: index + 8, altitude: 0, speed: 0, cycling: false, stationary: true))
         }
         let finished = detector.finish()
         guard case .finished(let draft) = finished else {
@@ -675,15 +767,17 @@ final class BermsTests: XCTestCase {
         let base = Date(timeIntervalSince1970: 1_250)
         let route = [
             RoutePoint(latitude: 40, longitude: -105, altitude: 100, speed: 8, timestamp: base),
-            RoutePoint(latitude: 40.001, longitude: -105, altitude: 80, speed: 8, timestamp: base.addingTimeInterval(10))
+            RoutePoint(
+                latitude: 40.001, longitude: -105, altitude: 80, speed: 8, timestamp: base.addingTimeInterval(10)),
         ]
         let trail = Trail(name: "Cached", difficulty: .blue, resort: "Test")
         let pass = TrailPass(routePoints: route)
         pass.trail = trail
         trail.passes.append(pass)
         trail.recalculateAverage()
-        let segment = RideSegment(kind: .run, startedAt: base, endedAt: base.addingTimeInterval(10),
-                                  routeData: try RouteCodec.encode(route))
+        let segment = RideSegment(
+            kind: .run, startedAt: base, endedAt: base.addingTimeInterval(10),
+            routeData: try RouteCodec.encode(route))
 
         TrailRouteMatchCache.shared.invalidate()
         XCTAssertEqual(TrailRouteMatchCache.shared.match(for: segment, trails: [trail])?.trailID, trail.id)
@@ -695,9 +789,10 @@ final class BermsTests: XCTestCase {
     func testTrailMatcherMatchesAPartialRideAgainstTheTrail() {
         let base = Date(timeIntervalSince1970: 1_250)
         let fullRoute = (0...10).map { index in
-            RoutePoint(latitude: 40 + Double(index) * 0.0001, longitude: -105,
-                       altitude: 100 - Double(index), speed: 8,
-                       timestamp: base.addingTimeInterval(Double(index)))
+            RoutePoint(
+                latitude: 40 + Double(index) * 0.0001, longitude: -105,
+                altitude: 100 - Double(index), speed: 8,
+                timestamp: base.addingTimeInterval(Double(index)))
         }
         let trail = Trail(name: "Partial", difficulty: .blue, resort: "Test")
         let pass = TrailPass(routePoints: fullRoute)
@@ -713,9 +808,10 @@ final class BermsTests: XCTestCase {
     func testTrailMatcherAcceptsATrailRecordedInTheOppositeDirection() {
         let base = Date(timeIntervalSince1970: 1_260)
         let route = (0...10).map { index in
-            RoutePoint(latitude: 40 + Double(index) * 0.0001, longitude: -105,
-                       altitude: 100 - Double(index), speed: 8,
-                       timestamp: base.addingTimeInterval(Double(index)))
+            RoutePoint(
+                latitude: 40 + Double(index) * 0.0001, longitude: -105,
+                altitude: 100 - Double(index), speed: 8,
+                timestamp: base.addingTimeInterval(Double(index)))
         }
         let trail = Trail(name: "Reverse pass", difficulty: .blue, resort: "Test")
         let pass = TrailPass(routePoints: Array(route.reversed()))
@@ -733,18 +829,20 @@ final class BermsTests: XCTestCase {
     func testTrailMatcherDoesNotCountAPerpendicularPassByAsRidingTheTrail() {
         let base = Date(timeIntervalSince1970: 1_265)
         let passBy = (0...20).map { index in
-            RoutePoint(latitude: 40.0005,
-                       longitude: -105 + Double(index - 10) * 0.0001,
-                       altitude: 100,
-                       speed: 8,
-                       timestamp: base.addingTimeInterval(Double(index)))
+            RoutePoint(
+                latitude: 40.0005,
+                longitude: -105 + Double(index - 10) * 0.0001,
+                altitude: 100,
+                speed: 8,
+                timestamp: base.addingTimeInterval(Double(index)))
         }
         let trailPoints = (0...10).map { index in
-            RoutePoint(latitude: 40 + Double(index) * 0.0001,
-                       longitude: -105,
-                       altitude: 100,
-                       speed: 8,
-                       timestamp: base.addingTimeInterval(Double(index)))
+            RoutePoint(
+                latitude: 40 + Double(index) * 0.0001,
+                longitude: -105,
+                altitude: 100,
+                speed: 8,
+                timestamp: base.addingTimeInterval(Double(index)))
         }
         let trail = Trail(name: "Crossing trail", difficulty: .black, resort: "Test")
         let pass = TrailPass(routePoints: trailPoints)
@@ -760,9 +858,10 @@ final class BermsTests: XCTestCase {
     func testTrailMatcherReturnsTrailProgressForPartialRide() {
         let base = Date(timeIntervalSince1970: 1_275)
         let fullRoute = (0...10).map { index in
-            RoutePoint(latitude: 40 + Double(index) * 0.0001, longitude: -105,
-                       altitude: 100 - Double(index), speed: 8,
-                       timestamp: base.addingTimeInterval(Double(index)))
+            RoutePoint(
+                latitude: 40 + Double(index) * 0.0001, longitude: -105,
+                altitude: 100 - Double(index), speed: 8,
+                timestamp: base.addingTimeInterval(Double(index)))
         }
         let trail = Trail(name: "Partial progress", difficulty: .blue, resort: "Test")
         let pass = TrailPass(routePoints: fullRoute)
@@ -784,9 +883,10 @@ final class BermsTests: XCTestCase {
     func testTrailRouteSliceUsesOnlyTheRequestedCenterlineProgress() {
         let base = Date(timeIntervalSince1970: 1_290)
         let points = (0...4).map { index in
-            RoutePoint(latitude: 40 + Double(index) * 0.001, longitude: -105,
-                       altitude: 100 - Double(index), speed: 8,
-                       timestamp: base.addingTimeInterval(Double(index)))
+            RoutePoint(
+                latitude: 40 + Double(index) * 0.001, longitude: -105,
+                altitude: 100 - Double(index), speed: 8,
+                timestamp: base.addingTimeInterval(Double(index)))
         }
 
         let slice = TrailRouteSlice.slice(points, progress: 0.25...0.75)
@@ -802,10 +902,12 @@ final class BermsTests: XCTestCase {
         let base = Date(timeIntervalSince1970: 1_295)
         let points = [
             RoutePoint(latitude: 40, longitude: -105, altitude: 100, speed: 8, timestamp: base),
-            RoutePoint(latitude: 40.001, longitude: -105, altitude: 90, speed: 8,
-                       timestamp: base.addingTimeInterval(1)),
-            RoutePoint(latitude: 40.002, longitude: -105, altitude: 80, speed: 8,
-                       timestamp: base.addingTimeInterval(2))
+            RoutePoint(
+                latitude: 40.001, longitude: -105, altitude: 90, speed: 8,
+                timestamp: base.addingTimeInterval(1)),
+            RoutePoint(
+                latitude: 40.002, longitude: -105, altitude: 80, speed: 8,
+                timestamp: base.addingTimeInterval(2)),
         ]
 
         let slice = TrailRouteSlice.slice(points, progress: -0.5...1.5)
@@ -816,13 +918,15 @@ final class BermsTests: XCTestCase {
     func testTrailMatcherUsesARealPassWhenAverageIsOffset() {
         let base = Date(timeIntervalSince1970: 1_300)
         let route = (0...4).map { index in
-            RoutePoint(latitude: 40 + Double(index) * 0.0001, longitude: -105,
-                       altitude: 100 - Double(index), speed: 8,
-                       timestamp: base.addingTimeInterval(Double(index)))
+            RoutePoint(
+                latitude: 40 + Double(index) * 0.0001, longitude: -105,
+                altitude: 100 - Double(index), speed: 8,
+                timestamp: base.addingTimeInterval(Double(index)))
         }
         let offsetRoute = route.map { point in
-            RoutePoint(latitude: point.latitude + 0.002, longitude: point.longitude,
-                       altitude: point.altitude, speed: point.speed, timestamp: point.timestamp)
+            RoutePoint(
+                latitude: point.latitude + 0.002, longitude: point.longitude,
+                altitude: point.altitude, speed: point.speed, timestamp: point.timestamp)
         }
         let trail = Trail(name: "Offset", difficulty: .black, resort: "Test")
         let pass = TrailPass(routePoints: route, recordedAt: base)
@@ -842,13 +946,15 @@ final class BermsTests: XCTestCase {
     func testTrailMatcherRouteIndexFollowsRecordedPassOrder() {
         let base = Date(timeIntervalSince1970: 1_320)
         let route = (0...4).map { index in
-            RoutePoint(latitude: 40 + Double(index) * 0.0001, longitude: -105,
-                       altitude: 100 - Double(index), speed: 8,
-                       timestamp: base.addingTimeInterval(Double(index)))
+            RoutePoint(
+                latitude: 40 + Double(index) * 0.0001, longitude: -105,
+                altitude: 100 - Double(index), speed: 8,
+                timestamp: base.addingTimeInterval(Double(index)))
         }
         let offsetRoute = route.map { point in
-            RoutePoint(latitude: point.latitude + 0.002, longitude: point.longitude,
-                       altitude: point.altitude, speed: point.speed, timestamp: point.timestamp)
+            RoutePoint(
+                latitude: point.latitude + 0.002, longitude: point.longitude,
+                altitude: point.altitude, speed: point.speed, timestamp: point.timestamp)
         }
         let trail = Trail(name: "Out of order", difficulty: .black, resort: "Test")
         let olderPass = TrailPass(routePoints: route, recordedAt: base)
@@ -870,15 +976,17 @@ final class BermsTests: XCTestCase {
         let base = Date(timeIntervalSince1970: 1_350)
         let route = (0...10).map { index in
             if index <= 5 {
-                return RoutePoint(latitude: 40 + Double(index) * 0.0004,
-                                  longitude: -105,
-                                  altitude: 100 - Double(index), speed: 8,
-                                  timestamp: base.addingTimeInterval(Double(index)))
+                return RoutePoint(
+                    latitude: 40 + Double(index) * 0.0004,
+                    longitude: -105,
+                    altitude: 100 - Double(index), speed: 8,
+                    timestamp: base.addingTimeInterval(Double(index)))
             }
-            return RoutePoint(latitude: 40.002,
-                              longitude: -105 + Double(index - 5) * 0.001,
-                              altitude: 95 - Double(index), speed: 8,
-                              timestamp: base.addingTimeInterval(Double(index)))
+            return RoutePoint(
+                latitude: 40.002,
+                longitude: -105 + Double(index - 5) * 0.001,
+                altitude: 95 - Double(index), speed: 8,
+                timestamp: base.addingTimeInterval(Double(index)))
         }
 
         let firstTrail = Trail(name: "First", difficulty: .green, resort: "Test")
@@ -891,8 +999,9 @@ final class BermsTests: XCTestCase {
         secondPass.trail = secondTrail
         secondTrail.passes.append(secondPass)
 
-        let sections = TrailRouteMatcher().matchingSections(for: route,
-                                                              trails: [firstTrail, secondTrail])
+        let sections = TrailRouteMatcher().matchingSections(
+            for: route,
+            trails: [firstTrail, secondTrail])
 
         XCTAssertEqual(sections.map(\.trailID), [firstTrail.id, secondTrail.id])
         guard sections.count == 2 else { return }
@@ -903,10 +1012,11 @@ final class BermsTests: XCTestCase {
         let base = Date(timeIntervalSince1970: 1_400)
         func points(startLatitude: Double, longitude: Double, count: Int) -> [RoutePoint] {
             (0..<count).map { index in
-                RoutePoint(latitude: startLatitude + Double(index) * 0.0001,
-                           longitude: longitude,
-                           altitude: 100 - Double(index), speed: 8,
-                           timestamp: base.addingTimeInterval(Double(index)))
+                RoutePoint(
+                    latitude: startLatitude + Double(index) * 0.0001,
+                    longitude: longitude,
+                    altitude: 100 - Double(index), speed: 8,
+                    timestamp: base.addingTimeInterval(Double(index)))
             }
         }
 
@@ -921,13 +1031,16 @@ final class BermsTests: XCTestCase {
         // scores higher because the ride covers its whole length, but the
         // rider was never on it.
         let neighborTrail = Trail(name: "Neighbor", difficulty: .blue, resort: "Test")
-        let neighborPass = TrailPass(routePoints: points(startLatitude: 40.0005,
-                                                         longitude: -105.0003, count: 11))
+        let neighborPass = TrailPass(
+            routePoints: points(
+                startLatitude: 40.0005,
+                longitude: -105.0003, count: 11))
         neighborPass.trail = neighborTrail
         neighborTrail.passes.append(neighborPass)
 
-        let sections = TrailRouteMatcher().matchingSections(for: route,
-                                                             trails: [riddenTrail, neighborTrail])
+        let sections = TrailRouteMatcher().matchingSections(
+            for: route,
+            trails: [riddenTrail, neighborTrail])
 
         XCTAssertEqual(sections.map(\.trailID), [riddenTrail.id])
     }
@@ -936,10 +1049,11 @@ final class BermsTests: XCTestCase {
         let base = Date(timeIntervalSince1970: 1_420)
         func points(startLatitude: Double, longitude: Double, count: Int) -> [RoutePoint] {
             (0..<count).map { index in
-                RoutePoint(latitude: startLatitude + Double(index) * 0.0001,
-                           longitude: longitude,
-                           altitude: 100 - Double(index), speed: 8,
-                           timestamp: base.addingTimeInterval(Double(index)))
+                RoutePoint(
+                    latitude: startLatitude + Double(index) * 0.0001,
+                    longitude: longitude,
+                    altitude: 100 - Double(index), speed: 8,
+                    timestamp: base.addingTimeInterval(Double(index)))
             }
         }
 
@@ -952,13 +1066,16 @@ final class BermsTests: XCTestCase {
         riddenTrail.passes.append(riddenPass)
 
         let neighborTrail = Trail(name: "Neighbor", difficulty: .green, resort: "Test")
-        let neighborPass = TrailPass(routePoints: points(startLatitude: 40.0000,
-                                                         longitude: -105.0003, count: 21))
+        let neighborPass = TrailPass(
+            routePoints: points(
+                startLatitude: 40.0000,
+                longitude: -105.0003, count: 21))
         neighborPass.trail = neighborTrail
         neighborTrail.passes.append(neighborPass)
 
-        let sections = TrailRouteMatcher().matchingSections(for: route,
-                                                             trails: [riddenTrail, neighborTrail])
+        let sections = TrailRouteMatcher().matchingSections(
+            for: route,
+            trails: [riddenTrail, neighborTrail])
 
         XCTAssertEqual(sections.map(\.trailID), [riddenTrail.id])
     }
@@ -966,9 +1083,10 @@ final class BermsTests: XCTestCase {
     func testTrailMatcherIgnoresAShortTrailTheRiderOnlyPassedNear() {
         let base = Date(timeIntervalSince1970: 1_440)
         let route = (0...20).map { index in
-            RoutePoint(latitude: 40 + Double(index) * 0.0001, longitude: -105,
-                       altitude: 100 - Double(index), speed: 8,
-                       timestamp: base.addingTimeInterval(Double(index)))
+            RoutePoint(
+                latitude: 40 + Double(index) * 0.0001, longitude: -105,
+                altitude: 100 - Double(index), speed: 8,
+                timestamp: base.addingTimeInterval(Double(index)))
         }
         let riddenTrail = Trail(name: "Ridden", difficulty: .blue, resort: "Test")
         let riddenPass = TrailPass(routePoints: route)
@@ -978,16 +1096,18 @@ final class BermsTests: XCTestCase {
         // A 60 m connector runs parallel 25 m away. It covers ride-length
         // progress, so it scores well without ever being ridden.
         let connectorRoute = (0...6).map { index in
-            RoutePoint(latitude: 40.0006 + Double(index) * 0.0001, longitude: -105.0003,
-                       altitude: 100, speed: 0, timestamp: base.addingTimeInterval(Double(index)))
+            RoutePoint(
+                latitude: 40.0006 + Double(index) * 0.0001, longitude: -105.0003,
+                altitude: 100, speed: 0, timestamp: base.addingTimeInterval(Double(index)))
         }
         let connectorTrail = Trail(name: "Connector", difficulty: .doubleBlack, resort: "Test")
         let connectorPass = TrailPass(routePoints: connectorRoute)
         connectorPass.trail = connectorTrail
         connectorTrail.passes.append(connectorPass)
 
-        let sections = TrailRouteMatcher().matchingSections(for: route,
-                                                             trails: [riddenTrail, connectorTrail])
+        let sections = TrailRouteMatcher().matchingSections(
+            for: route,
+            trails: [riddenTrail, connectorTrail])
 
         XCTAssertEqual(sections.map(\.trailID), [riddenTrail.id])
     }
@@ -996,10 +1116,11 @@ final class BermsTests: XCTestCase {
         let base = Date(timeIntervalSince1970: 1_460)
         func points(startLatitude: Double) -> [RoutePoint] {
             (0...15).map { index in
-                RoutePoint(latitude: startLatitude,
-                           longitude: -105 + Double(index) * 0.0001,
-                           altitude: 100 - Double(index), speed: 8,
-                           timestamp: base.addingTimeInterval(Double(index)))
+                RoutePoint(
+                    latitude: startLatitude,
+                    longitude: -105 + Double(index) * 0.0001,
+                    altitude: 100 - Double(index), speed: 8,
+                    timestamp: base.addingTimeInterval(Double(index)))
             }
         }
 
@@ -1033,9 +1154,12 @@ final class BermsTests: XCTestCase {
         XCTAssertLessThan(thinned.count, geometry.count)
 
         let repairs = CatalogPassRepair.repairs(
-            inputs: [CatalogPassRepairInput(id: UUID(), trailID: salvationID,
-                                            trailCreatedAt: createdAt,
-                                            recordedAt: createdAt.addingTimeInterval(5))],
+            inputs: [
+                CatalogPassRepairInput(
+                    id: UUID(), trailID: salvationID,
+                    trailCreatedAt: createdAt,
+                    recordedAt: createdAt.addingTimeInterval(5))
+            ],
             catalogRoutes: routes
         )
         let repaired = try XCTUnwrap(repairs.first)
@@ -1046,32 +1170,40 @@ final class BermsTests: XCTestCase {
         let trailID = UUID()
         let createdAt = Date(timeIntervalSince1970: 2_000)
         let catalogRoute = (0...20).map { index in
-            RoutePoint(latitude: 40 + Double(index) * 0.0001, longitude: -105,
-                       altitude: 100, speed: 0,
-                       timestamp: createdAt.addingTimeInterval(Double(index)))
+            RoutePoint(
+                latitude: 40 + Double(index) * 0.0001, longitude: -105,
+                altitude: 100, speed: 0,
+                timestamp: createdAt.addingTimeInterval(Double(index)))
         }
         // What the ride cleaner leaves behind: only the far endpoints.
         let thinned = [catalogRoute[0], catalogRoute[20]]
         let passID = UUID()
 
         let repairs = CatalogPassRepair.repairs(
-            inputs: [CatalogPassRepairInput(id: passID, trailID: trailID,
-                                            trailCreatedAt: createdAt,
-                                            recordedAt: createdAt.addingTimeInterval(5))],
+            inputs: [
+                CatalogPassRepairInput(
+                    id: passID, trailID: trailID,
+                    trailCreatedAt: createdAt,
+                    recordedAt: createdAt.addingTimeInterval(5))
+            ],
             catalogRoutes: [trailID: catalogRoute]
         )
 
         XCTAssertEqual(repairs.count, 1)
         let repaired = try XCTUnwrap(repairs.first)
         XCTAssertEqual(try RouteCodec.decode(repaired.routeData), catalogRoute)
-        XCTAssertEqual(repaired.distanceMeters,
-                       RouteMetrics.distance(of: catalogRoute), accuracy: 0.001)
+        XCTAssertEqual(
+            repaired.distanceMeters,
+            RouteMetrics.distance(of: catalogRoute), accuracy: 0.001)
 
         // A pass recorded long after the trail was created is a rider pass.
         let riderPass = CatalogPassRepair.repairs(
-            inputs: [CatalogPassRepairInput(id: UUID(), trailID: trailID,
-                                            trailCreatedAt: createdAt,
-                                            recordedAt: createdAt.addingTimeInterval(86_400))],
+            inputs: [
+                CatalogPassRepairInput(
+                    id: UUID(), trailID: trailID,
+                    trailCreatedAt: createdAt,
+                    recordedAt: createdAt.addingTimeInterval(86_400))
+            ],
             catalogRoutes: [trailID: catalogRoute]
         )
         XCTAssertTrue(riderPass.isEmpty)
@@ -1087,16 +1219,19 @@ final class BermsTests: XCTestCase {
         XCTAssertLessThan(damaged.count, geometry.count)
 
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
-        let container = try ModelContainer(for: RideDay.self, RideSegment.self,
-                                           Trail.self, TrailPass.self, LearnedLift.self,
-                                           configurations: configuration)
+        let container = try ModelContainer(
+            for: RideDay.self, RideSegment.self,
+            Trail.self, TrailPass.self, LearnedLift.self,
+            configurations: configuration)
         let context = ModelContext(container)
         let createdAt = Date(timeIntervalSince1970: 8_000)
-        let trail = Trail(name: "Salvation", difficulty: .blue,
-                          resort: catalog.resortName, createdAt: createdAt)
+        let trail = Trail(
+            name: "Salvation", difficulty: .blue,
+            resort: catalog.resortName, createdAt: createdAt)
         trail.id = trailID
-        let pass = TrailPass(routePoints: damaged,
-                             recordedAt: createdAt.addingTimeInterval(5))
+        let pass = TrailPass(
+            routePoints: damaged,
+            recordedAt: createdAt.addingTimeInterval(5))
         pass.trail = trail
         trail.passes.append(pass)
         trail.averagedRouteData = try RouteCodec.encode(damaged)
@@ -1136,8 +1271,12 @@ final class BermsTests: XCTestCase {
 
     func testRouteCodecRoundTripsPoints() throws {
         let points = [
-            RoutePoint(latitude: 40.0, longitude: -105.0, altitude: 2_000, speed: 5, timestamp: Date(timeIntervalSince1970: 1_000)),
-            RoutePoint(latitude: 40.001, longitude: -105.002, altitude: 1_900, speed: 8, timestamp: Date(timeIntervalSince1970: 1_005))
+            RoutePoint(
+                latitude: 40.0, longitude: -105.0, altitude: 2_000, speed: 5,
+                timestamp: Date(timeIntervalSince1970: 1_000)),
+            RoutePoint(
+                latitude: 40.001, longitude: -105.002, altitude: 1_900, speed: 8,
+                timestamp: Date(timeIntervalSince1970: 1_005)),
         ]
         let data = try RouteCodec.encode(points)
         let decoded = try RouteCodec.decode(data)
@@ -1154,18 +1293,23 @@ final class BermsTests: XCTestCase {
 
     func testSegmentDurationCapsUnobservedGPSGap() throws {
         let points = [
-            RoutePoint(latitude: 40, longitude: -105, altitude: 100, speed: 7,
-                       timestamp: Date(timeIntervalSince1970: 1_000)),
-            RoutePoint(latitude: 40.001, longitude: -105, altitude: 90, speed: 7,
-                       timestamp: Date(timeIntervalSince1970: 1_005)),
-            RoutePoint(latitude: 40.002, longitude: -105, altitude: 80, speed: 7,
-                       timestamp: Date(timeIntervalSince1970: 1_305)),
-            RoutePoint(latitude: 40.003, longitude: -105, altitude: 70, speed: 7,
-                       timestamp: Date(timeIntervalSince1970: 1_310))
+            RoutePoint(
+                latitude: 40, longitude: -105, altitude: 100, speed: 7,
+                timestamp: Date(timeIntervalSince1970: 1_000)),
+            RoutePoint(
+                latitude: 40.001, longitude: -105, altitude: 90, speed: 7,
+                timestamp: Date(timeIntervalSince1970: 1_005)),
+            RoutePoint(
+                latitude: 40.002, longitude: -105, altitude: 80, speed: 7,
+                timestamp: Date(timeIntervalSince1970: 1_305)),
+            RoutePoint(
+                latitude: 40.003, longitude: -105, altitude: 70, speed: 7,
+                timestamp: Date(timeIntervalSince1970: 1_310)),
         ]
-        let segment = RideSegment(kind: .run, startedAt: points[0].timestamp,
-                                  endedAt: points[3].timestamp,
-                                  routeData: try RouteCodec.encode(points))
+        let segment = RideSegment(
+            kind: .run, startedAt: points[0].timestamp,
+            endedAt: points[3].timestamp,
+            routeData: try RouteCodec.encode(points))
         XCTAssertEqual(segment.duration, 20, accuracy: 0.001)
     }
 
@@ -1176,20 +1320,26 @@ final class BermsTests: XCTestCase {
         let context = ModelContext(container)
         let base = Date(timeIntervalSince1970: 1_000)
         let firstPass = [
-            RoutePoint(latitude: 40, longitude: -105, altitude: 100, speed: 7,
-                       timestamp: base),
-            RoutePoint(latitude: 40.001, longitude: -105, altitude: 80, speed: 7,
-                       timestamp: base.addingTimeInterval(10)),
-            RoutePoint(latitude: 40.002, longitude: -105, altitude: 60, speed: 7,
-                       timestamp: base.addingTimeInterval(20))
+            RoutePoint(
+                latitude: 40, longitude: -105, altitude: 100, speed: 7,
+                timestamp: base),
+            RoutePoint(
+                latitude: 40.001, longitude: -105, altitude: 80, speed: 7,
+                timestamp: base.addingTimeInterval(10)),
+            RoutePoint(
+                latitude: 40.002, longitude: -105, altitude: 60, speed: 7,
+                timestamp: base.addingTimeInterval(20)),
         ]
         let secondPass = [
-            RoutePoint(latitude: 40, longitude: -105.0001, altitude: 100, speed: 7,
-                       timestamp: base.addingTimeInterval(30)),
-            RoutePoint(latitude: 40.0008, longitude: -105, altitude: 80, speed: 7,
-                       timestamp: base.addingTimeInterval(38)),
-            RoutePoint(latitude: 40.0021, longitude: -105.0001, altitude: 60, speed: 7,
-                       timestamp: base.addingTimeInterval(48))
+            RoutePoint(
+                latitude: 40, longitude: -105.0001, altitude: 100, speed: 7,
+                timestamp: base.addingTimeInterval(30)),
+            RoutePoint(
+                latitude: 40.0008, longitude: -105, altitude: 80, speed: 7,
+                timestamp: base.addingTimeInterval(38)),
+            RoutePoint(
+                latitude: 40.0021, longitude: -105.0001, altitude: 60, speed: 7,
+                timestamp: base.addingTimeInterval(48)),
         ]
         let trail = Trail(name: "Test Trail", difficulty: .black, resort: "Mountain Creek Bike Park")
         let passOne = TrailPass(routePoints: firstPass, recordedAt: base)
@@ -1217,11 +1367,12 @@ final class BermsTests: XCTestCase {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
         let container = try ModelContainer(for: LearnedLift.self, configurations: configuration)
         let context = ModelContext(container)
-        let profile = LearnedLiftProfile(id: UUID(),
-                                         bottom: Coordinate(latitude: 40, longitude: -105),
-                                         top: Coordinate(latitude: 40.01, longitude: -105.01),
-                                         bottomRadius: 60, topRadius: 70,
-                                         observationCount: 3, confidence: 1)
+        let profile = LearnedLiftProfile(
+            id: UUID(),
+            bottom: Coordinate(latitude: 40, longitude: -105),
+            top: Coordinate(latitude: 40.01, longitude: -105.01),
+            bottomRadius: 60, topRadius: 70,
+            observationCount: 3, confidence: 1)
         context.insert(LearnedLift(profile: profile))
         try context.save()
         let saved = try XCTUnwrap(context.fetch(FetchDescriptor<LearnedLift>()).first)
@@ -1234,16 +1385,20 @@ final class BermsTests: XCTestCase {
         var profiles: [LearnedLiftProfile] = []
         for index in 0..<3 {
             let points = [
-                RoutePoint(latitude: 40 + Double(index) * 0.00001, longitude: -105,
-                           altitude: 100, speed: 4, timestamp: base),
-                RoutePoint(latitude: 40.01 + Double(index) * 0.00001, longitude: -105,
-                           altitude: 300, speed: 4, timestamp: base.addingTimeInterval(60))
+                RoutePoint(
+                    latitude: 40 + Double(index) * 0.00001, longitude: -105,
+                    altitude: 100, speed: 4, timestamp: base),
+                RoutePoint(
+                    latitude: 40.01 + Double(index) * 0.00001, longitude: -105,
+                    altitude: 300, speed: 4, timestamp: base.addingTimeInterval(60)),
             ]
-            let segment = RideSegment(kind: .lift, startedAt: points[0].timestamp,
-                                      endedAt: points[1].timestamp,
-                                      routeData: try RouteCodec.encode(points))
-            profiles = engine.merge(observation: try XCTUnwrap(engine.observations(from: [segment]).first),
-                                    into: profiles)
+            let segment = RideSegment(
+                kind: .lift, startedAt: points[0].timestamp,
+                endedAt: points[1].timestamp,
+                routeData: try RouteCodec.encode(points))
+            profiles = engine.merge(
+                observation: try XCTUnwrap(engine.observations(from: [segment]).first),
+                into: profiles)
         }
 
         let profile = try XCTUnwrap(profiles.first)
@@ -1253,14 +1408,16 @@ final class BermsTests: XCTestCase {
 
     func testLiftLearningKeepsDistinctLiftsSeparate() {
         let engine = LiftLearningEngine()
-        let first = engine.merge(observation: (
-            bottom: Coordinate(latitude: 40, longitude: -105),
-            top: Coordinate(latitude: 40.01, longitude: -105)
-        ), into: [])
-        let second = engine.merge(observation: (
-            bottom: Coordinate(latitude: 40.01, longitude: -105.01),
-            top: Coordinate(latitude: 40.02, longitude: -105.01)
-        ), into: first)
+        let first = engine.merge(
+            observation: (
+                bottom: Coordinate(latitude: 40, longitude: -105),
+                top: Coordinate(latitude: 40.01, longitude: -105)
+            ), into: [])
+        let second = engine.merge(
+            observation: (
+                bottom: Coordinate(latitude: 40.01, longitude: -105.01),
+                top: Coordinate(latitude: 40.02, longitude: -105.01)
+            ), into: first)
 
         XCTAssertEqual(second.count, 2)
         XCTAssertTrue(second.allSatisfy { $0.observationCount == 1 })
@@ -1293,18 +1450,26 @@ final class BermsTests: XCTestCase {
             distanceMeters: 1_250,
             descentMeters: 210,
             speedMetersPerSecond: 12,
-            run: .init(number: 2, distanceMeters: 450, descentMeters: 90, topSpeedMetersPerSecond: 18, longestJumpAirtime: 0.84, jumpCount: 2),
+            run: .init(
+                number: 2, distanceMeters: 450, descentMeters: 90, topSpeedMetersPerSecond: 18,
+                longestJumpAirtime: 0.84, jumpCount: 2),
             updatedAt: Date(timeIntervalSince1970: 142),
             activityModeRawValue: ActivityMode.ski.rawValue
         )
 
-        XCTAssertEqual(try WatchRideCodec.decode(WatchRideState.self,
-                                                 from: WatchRideCodec.encode(state)), state)
+        XCTAssertEqual(
+            try WatchRideCodec.decode(
+                WatchRideState.self,
+                from: WatchRideCodec.encode(state)), state)
         XCTAssertTrue(state.isSkiDay)
-        XCTAssertEqual(try WatchRideCodec.decode(WatchRideCommand.self,
-                                                 from: WatchRideCodec.encode(WatchRideCommand.pause)), .pause)
-        XCTAssertEqual(try WatchRideCodec.decode(WatchRideCommand.self,
-                                                 from: WatchRideCodec.encode(WatchRideCommand.finish)), .finish)
+        XCTAssertEqual(
+            try WatchRideCodec.decode(
+                WatchRideCommand.self,
+                from: WatchRideCodec.encode(WatchRideCommand.pause)), .pause)
+        XCTAssertEqual(
+            try WatchRideCodec.decode(
+                WatchRideCommand.self,
+                from: WatchRideCodec.encode(WatchRideCommand.finish)), .finish)
         XCTAssertTrue(state.isStale(at: Date(timeIntervalSince1970: 148)))
         XCTAssertFalse(state.isStale(at: Date(timeIntervalSince1970: 146)))
     }
@@ -1312,20 +1477,23 @@ final class BermsTests: XCTestCase {
     @MainActor
     func testWatchRestoresCurrentRunWithoutUsingDayTopSpeed() throws {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
-        let container = try ModelContainer(for: RideDay.self, RideSegment.self,
-                                           Trail.self, TrailPass.self, LearnedLift.self,
-                                           configurations: configuration)
+        let container = try ModelContainer(
+            for: RideDay.self, RideSegment.self,
+            Trail.self, TrailPass.self, LearnedLift.self,
+            configurations: configuration)
         let context = ModelContext(container)
         let day = RideDay(startedAt: .now.addingTimeInterval(-60))
         let samples = (0..<4).map { index in
-            sample(at: day.startedAt, index: index, altitude: 100 - Double(index) * 3,
-                   speed: index == 1 ? 12 : 5, cycling: true)
+            sample(
+                at: day.startedAt, index: index, altitude: 100 - Double(index) * 3,
+                speed: index == 1 ? 12 : 5, cycling: true)
         }
         day.checkpointKind = "run"
         let jumps = [0.72, 0.4].enumerated().map { index, airtime in
             let takeoff = day.startedAt.addingTimeInterval(Double(index + 1) * 5)
-            return JumpEvent(takeoffTimestamp: takeoff, landingTimestamp: takeoff.addingTimeInterval(airtime),
-                             takeoffMonotonicSeconds: 0, landingMonotonicSeconds: airtime)
+            return JumpEvent(
+                takeoffTimestamp: takeoff, landingTimestamp: takeoff.addingTimeInterval(airtime),
+                takeoffMonotonicSeconds: 0, landingMonotonicSeconds: airtime)
         }
         day.checkpointData = try JSONEncoder().encode(RecorderCheckpoint(points: samples, jumps: jumps))
         day.maximumSpeedMetersPerSecond = 30
@@ -1335,8 +1503,9 @@ final class BermsTests: XCTestCase {
         let wasRecording = UserDefaults.standard.bool(forKey: "berms.recordingActive")
         defer { UserDefaults.standard.set(wasRecording, forKey: "berms.recordingActive") }
         UserDefaults.standard.set(true, forKey: "berms.recordingActive")
-        let recorder = RideRecorder(context: context, watchStateSink: nil,
-                                    authorizationOverride: .authorizedAlways)
+        let recorder = RideRecorder(
+            context: context, watchStateSink: nil,
+            authorizationOverride: .authorizedAlways)
         recorder.resumeIfNeeded()
         recorder.resumePendingSession()
         let run = try XCTUnwrap(recorder.currentWatchRideState.run)
@@ -1353,10 +1522,11 @@ final class BermsTests: XCTestCase {
     }
 
     func testWatchRideStateDecodesLegacyPayloadWithoutVersion() throws {
-        let payload = Data("""
-        {"status":"recording","rideID":"ride-1","phase":"run","elapsedSeconds":42,
-         "distanceMeters":1250,"descentMeters":210,"speedMetersPerSecond":12}
-        """.utf8)
+        let payload = Data(
+            """
+            {"status":"recording","rideID":"ride-1","phase":"run","elapsedSeconds":42,
+             "distanceMeters":1250,"descentMeters":210,"speedMetersPerSecond":12}
+            """.utf8)
         let state = try WatchRideCodec.decode(WatchRideState.self, from: payload)
         XCTAssertNil(state.run, "Legacy ride totals must not be presented as run metrics")
         XCTAssertEqual(state.version, 1)
@@ -1384,9 +1554,10 @@ final class BermsTests: XCTestCase {
     @MainActor
     func testManualLaunchPromptsForUnfinishedSession() throws {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
-        let container = try ModelContainer(for: RideDay.self, RideSegment.self,
-                                           Trail.self, TrailPass.self, LearnedLift.self,
-                                           configurations: configuration)
+        let container = try ModelContainer(
+            for: RideDay.self, RideSegment.self,
+            Trail.self, TrailPass.self, LearnedLift.self,
+            configurations: configuration)
         let context = ModelContext(container)
         let day = RideDay(startedAt: Date(timeIntervalSince1970: 10_000))
         context.insert(day)
@@ -1446,8 +1617,9 @@ final class BermsTests: XCTestCase {
         var normalizer = TrackSampleNormalizer()
         let first = sample(at: Date(timeIntervalSince1970: 1_000), index: 0, altitude: 100, speed: 2, cycling: true)
         let second = sample(at: Date(timeIntervalSince1970: 1_000), index: 1, altitude: 110, speed: 10, cycling: true)
-        let impossible = TrackSample(coordinate: Coordinate(latitude: 50, longitude: -110), altitude: 120,
-                                     speed: 4, timestamp: Date(timeIntervalSince1970: 1_010), isCycling: true)
+        let impossible = TrackSample(
+            coordinate: Coordinate(latitude: 50, longitude: -110), altitude: 120,
+            speed: 4, timestamp: Date(timeIntervalSince1970: 1_010), isCycling: true)
 
         XCTAssertNotNil(normalizer.normalize(first))
         let normalized = normalizer.normalize(second)
@@ -1459,12 +1631,15 @@ final class BermsTests: XCTestCase {
     func testNormalizerRejectsLowSpeedGPSDrift() {
         var normalizer = TrackSampleNormalizer()
         let base = Date(timeIntervalSince1970: 1_200)
-        let first = TrackSample(coordinate: Coordinate(latitude: 40, longitude: -105), altitude: 100,
-                                speed: 0.2, timestamp: base)
-        let drift = TrackSample(coordinate: Coordinate(latitude: 40.0015, longitude: -105), altitude: 100,
-                                speed: 0.1, timestamp: base.addingTimeInterval(1))
-        let recovered = TrackSample(coordinate: Coordinate(latitude: 40.00001, longitude: -105), altitude: 100,
-                                    speed: 0.3, timestamp: base.addingTimeInterval(2))
+        let first = TrackSample(
+            coordinate: Coordinate(latitude: 40, longitude: -105), altitude: 100,
+            speed: 0.2, timestamp: base)
+        let drift = TrackSample(
+            coordinate: Coordinate(latitude: 40.0015, longitude: -105), altitude: 100,
+            speed: 0.1, timestamp: base.addingTimeInterval(1))
+        let recovered = TrackSample(
+            coordinate: Coordinate(latitude: 40.00001, longitude: -105), altitude: 100,
+            speed: 0.3, timestamp: base.addingTimeInterval(2))
 
         XCTAssertNotNil(normalizer.normalize(first))
         XCTAssertNil(normalizer.normalize(drift))
@@ -1474,12 +1649,15 @@ final class BermsTests: XCTestCase {
     func testNormalizerHoldsStablePointThroughStationaryBreak() {
         var normalizer = TrackSampleNormalizer()
         let base = Date(timeIntervalSince1970: 1_250)
-        let moving = TrackSample(coordinate: Coordinate(latitude: 40, longitude: -105), altitude: 100,
-                                 speed: 8, timestamp: base, isCycling: true)
-        let firstStopped = TrackSample(coordinate: Coordinate(latitude: 40.0002, longitude: -105.0001), altitude: 99,
-                                       speed: 0, timestamp: base.addingTimeInterval(5), isStationary: true)
-        let wanderingStopped = TrackSample(coordinate: Coordinate(latitude: 40.0007, longitude: -104.9995), altitude: 95,
-                                            speed: 0, timestamp: base.addingTimeInterval(10), isStationary: true)
+        let moving = TrackSample(
+            coordinate: Coordinate(latitude: 40, longitude: -105), altitude: 100,
+            speed: 8, timestamp: base, isCycling: true)
+        let firstStopped = TrackSample(
+            coordinate: Coordinate(latitude: 40.0002, longitude: -105.0001), altitude: 99,
+            speed: 0, timestamp: base.addingTimeInterval(5), isStationary: true)
+        let wanderingStopped = TrackSample(
+            coordinate: Coordinate(latitude: 40.0007, longitude: -104.9995), altitude: 95,
+            speed: 0, timestamp: base.addingTimeInterval(10), isStationary: true)
 
         let normalizedMoving = normalizer.normalize(moving)
         let normalizedFirstStopped = normalizer.normalize(firstStopped)
@@ -1496,10 +1674,17 @@ final class BermsTests: XCTestCase {
         let base = Date(timeIntervalSince1970: 1_300)
         let points = [
             RoutePoint(latitude: 40, longitude: -105, altitude: 100, speed: 8, timestamp: base),
-            RoutePoint(latitude: 40.0002, longitude: -105.0001, altitude: 99, speed: 0.2, timestamp: base.addingTimeInterval(5)),
-            RoutePoint(latitude: 40.0001, longitude: -104.9998, altitude: 99, speed: 0.1, timestamp: base.addingTimeInterval(10)),
-            RoutePoint(latitude: 39.9999, longitude: -105.0001, altitude: 99, speed: 0.1, timestamp: base.addingTimeInterval(15)),
-            RoutePoint(latitude: 40.0005, longitude: -105, altitude: 95, speed: 8, timestamp: base.addingTimeInterval(20))
+            RoutePoint(
+                latitude: 40.0002, longitude: -105.0001, altitude: 99, speed: 0.2, timestamp: base.addingTimeInterval(5)
+            ),
+            RoutePoint(
+                latitude: 40.0001, longitude: -104.9998, altitude: 99, speed: 0.1,
+                timestamp: base.addingTimeInterval(10)),
+            RoutePoint(
+                latitude: 39.9999, longitude: -105.0001, altitude: 99, speed: 0.1,
+                timestamp: base.addingTimeInterval(15)),
+            RoutePoint(
+                latitude: 40.0005, longitude: -105, altitude: 95, speed: 8, timestamp: base.addingTimeInterval(20)),
         ]
 
         let cleaned = RouteCleaner().clean(points)
@@ -1511,12 +1696,15 @@ final class BermsTests: XCTestCase {
     func testRouteCleanerFiltersInaccurateTrackSamples() {
         let base = Date(timeIntervalSince1970: 1_350)
         let samples = [
-            TrackSample(coordinate: Coordinate(latitude: 40, longitude: -105), altitude: 100,
-                        speed: 7, horizontalAccuracy: 10, timestamp: base),
-            TrackSample(coordinate: Coordinate(latitude: 40.0001, longitude: -105), altitude: 99,
-                        speed: 7, horizontalAccuracy: 120, timestamp: base.addingTimeInterval(5)),
-            TrackSample(coordinate: Coordinate(latitude: 40.0002, longitude: -105), altitude: 98,
-                        speed: 7, horizontalAccuracy: 10, timestamp: base.addingTimeInterval(10))
+            TrackSample(
+                coordinate: Coordinate(latitude: 40, longitude: -105), altitude: 100,
+                speed: 7, horizontalAccuracy: 10, timestamp: base),
+            TrackSample(
+                coordinate: Coordinate(latitude: 40.0001, longitude: -105), altitude: 99,
+                speed: 7, horizontalAccuracy: 120, timestamp: base.addingTimeInterval(5)),
+            TrackSample(
+                coordinate: Coordinate(latitude: 40.0002, longitude: -105), altitude: 98,
+                speed: 7, horizontalAccuracy: 10, timestamp: base.addingTimeInterval(10)),
         ]
 
         let cleaned = RouteCleaner().clean(samples)
@@ -1529,8 +1717,9 @@ final class BermsTests: XCTestCase {
         let detector = ParkLapDetector()
         let base = Date(timeIntervalSince1970: 1_000)
         for index in 0..<5 {
-            let point = sample(at: base, index: index, altitude: Double(index * 8), speed: 12,
-                               cycling: false, automotive: true)
+            let point = sample(
+                at: base, index: index, altitude: Double(index * 8), speed: 12,
+                cycling: false, automotive: true)
             XCTAssertTrue(detector.process(point).isEmpty)
         }
         XCTAssertEqual(detector.phase, .idle)
@@ -1540,8 +1729,10 @@ final class BermsTests: XCTestCase {
         let detector = ParkLapDetector()
         let base = Date(timeIntervalSince1970: 1_000)
         for index in 0..<5 {
-            _ = detector.process(sample(at: base, index: index, altitude: 100 - Double(index * 4),
-                                         speed: 2, cycling: false))
+            _ = detector.process(
+                sample(
+                    at: base, index: index, altitude: 100 - Double(index * 4),
+                    speed: 2, cycling: false))
         }
         XCTAssertEqual(detector.phase, .run)
     }
@@ -1560,11 +1751,17 @@ final class BermsTests: XCTestCase {
 
         var events: [DetectorEvent] = []
         for index in 0..<5 {
-            events += detector.process(sample(at: base, index: index + 10,
-                                              altitude: Double(100 - index * 5), speed: 7, cycling: true))
+            events += detector.process(
+                sample(
+                    at: base, index: index + 10,
+                    altitude: Double(100 - index * 5), speed: 7, cycling: true))
         }
         XCTAssertEqual(detector.phase, .run)
-        XCTAssertTrue(events.contains { if case .started(kind: .run, points: _) = $0 { return true }; return false })
+        XCTAssertTrue(
+            events.contains {
+                if case .started(kind: .run, points: _) = $0 { return true }
+                return false
+            })
     }
 
     func testDetectorTransitionsAtOneSecondGPSCadence() {
@@ -1573,25 +1770,31 @@ final class BermsTests: XCTestCase {
         var events: [DetectorEvent] = []
 
         for index in 0...15 {
-            events += detector.process(sample(at: base, index: index, altitude: Double(index), speed: 4,
-                                              cycling: false, interval: 1))
+            events += detector.process(
+                sample(
+                    at: base, index: index, altitude: Double(index), speed: 4,
+                    cycling: false, interval: 1))
         }
         XCTAssertEqual(detector.phase, .lift)
 
         for index in 16...34 {
-            events += detector.process(sample(at: base, index: index,
-                                              altitude: 16 - Double(index - 16), speed: 8,
-                                              cycling: true, interval: 1))
+            events += detector.process(
+                sample(
+                    at: base, index: index,
+                    altitude: 16 - Double(index - 16), speed: 8,
+                    cycling: true, interval: 1))
         }
         XCTAssertEqual(detector.phase, .run)
-        XCTAssertTrue(events.contains { event in
-            if case .finished(let draft) = event { return draft.kind == .lift }
-            return false
-        })
-        XCTAssertTrue(events.contains { event in
-            if case .started(kind: .run, points: _) = event { return true }
-            return false
-        })
+        XCTAssertTrue(
+            events.contains { event in
+                if case .finished(let draft) = event { return draft.kind == .lift }
+                return false
+            })
+        XCTAssertTrue(
+            events.contains { event in
+                if case .started(kind: .run, points: _) = event { return true }
+                return false
+            })
     }
 
     func testRideDayPauseDurationExcludesOneAndMultiplePauses() {
@@ -1637,34 +1840,45 @@ final class BermsTests: XCTestCase {
         var detected: [JumpEvent] = []
 
         for index in 0..<10 {
-            detected += detector.process(motion(at: Double(index) * 0.04, forceG: 1),
-                                         context: runContext(at: Double(index) * 0.04, base: base))
-                .compactMap { event in
-                    if case .detected(let jump) = event { return jump }
-                    return nil
-                }
-        }
-        for index in 10..<15 {
-            detected += detector.process(motion(at: Double(index) * 0.04, forceG: 0.2),
-                                         context: runContext(at: Double(index) * 0.04, base: base))
-                .compactMap { event in
-                    if case .detected(let jump) = event { return jump }
-                    return nil
-                }
-        }
-        detected += detector.process(motion(at: 0.60, forceG: 1.8),
-                                     context: runContext(at: 0.60, base: base))
+            detected += detector.process(
+                motion(at: Double(index) * 0.04, forceG: 1),
+                context: runContext(at: Double(index) * 0.04, base: base)
+            )
             .compactMap { event in
                 if case .detected(let jump) = event { return jump }
                 return nil
             }
+        }
+        for index in 10..<15 {
+            detected += detector.process(
+                motion(at: Double(index) * 0.04, forceG: 0.2),
+                context: runContext(at: Double(index) * 0.04, base: base)
+            )
+            .compactMap { event in
+                if case .detected(let jump) = event { return jump }
+                return nil
+            }
+        }
+        detected += detector.process(
+            motion(at: 0.60, forceG: 1.8),
+            context: runContext(at: 0.60, base: base)
+        )
+        .compactMap { event in
+            if case .detected(let jump) = event { return jump }
+            return nil
+        }
         XCTAssertEqual(detected.count, 1)
         XCTAssertEqual(detected[0].airtime, 0.20, accuracy: 0.001)
 
         for index in 16..<25 {
-            let events = detector.process(motion(at: Double(index) * 0.04, forceG: 0.2),
-                                          context: runContext(at: Double(index) * 0.04, base: base))
-            XCTAssertFalse(events.contains { if case .detected = $0 { return true }; return false })
+            let events = detector.process(
+                motion(at: Double(index) * 0.04, forceG: 0.2),
+                context: runContext(at: Double(index) * 0.04, base: base))
+            XCTAssertFalse(
+                events.contains {
+                    if case .detected = $0 { return true }
+                    return false
+                })
         }
     }
 
@@ -1676,14 +1890,27 @@ final class BermsTests: XCTestCase {
         _ = detector.process(motion(at: 0, forceG: 1), context: runContext(at: 0, base: base))
         _ = detector.process(motion(at: 0.04, forceG: 0.2), context: runContext(at: 0.04, base: base))
         let shortEvents = detector.process(motion(at: 0.08, forceG: 1.8), context: runContext(at: 0.08, base: base))
-        XCTAssertTrue(shortEvents.contains { if case .diagnostic(kind: "jump_candidate_rejected", _, _, let detail) = $0 { return detail == "airtime_too_short" }; return false })
+        XCTAssertTrue(
+            shortEvents.contains {
+                if case .diagnostic(kind: "jump_candidate_rejected", _, _, let detail) = $0 {
+                    return detail == "airtime_too_short"
+                }
+                return false
+            })
 
         _ = detector.process(motion(at: 2, forceG: 1), context: runContext(at: 2, base: base))
         _ = detector.process(motion(at: 2.04, forceG: 1), context: runContext(at: 2.04, base: base))
         _ = detector.process(motion(at: 2.08, forceG: 0.2, rotation: 9), context: runContext(at: 2.08, base: base))
         _ = detector.process(motion(at: 2.20, forceG: 0.2, rotation: 9), context: runContext(at: 2.20, base: base))
-        let rotationEvents = detector.process(motion(at: 2.24, forceG: 1.8, rotation: 9), context: runContext(at: 2.24, base: base))
-        XCTAssertTrue(rotationEvents.contains { if case .diagnostic(kind: "jump_candidate_rejected", _, _, let detail) = $0 { return detail == "airborne_rotation_too_high" }; return false })
+        let rotationEvents = detector.process(
+            motion(at: 2.24, forceG: 1.8, rotation: 9), context: runContext(at: 2.24, base: base))
+        XCTAssertTrue(
+            rotationEvents.contains {
+                if case .diagnostic(kind: "jump_candidate_rejected", _, _, let detail) = $0 {
+                    return detail == "airborne_rotation_too_high"
+                }
+                return false
+            })
     }
 
     func testJumpDetectorRequiresRunAndRejectsMotionGap() {
@@ -1691,8 +1918,9 @@ final class BermsTests: XCTestCase {
         configuration.minimumRunContextSeconds = 0
         let detector = JumpDetector(configuration: configuration)
         let base = Date(timeIntervalSince1970: 4_000)
-        let notRun = JumpTrackContext(timestamp: base, monotonicSeconds: 0, speed: 8, altitude: 100,
-                                      phase: .lift, isStationary: false, isAutomotive: false)
+        let notRun = JumpTrackContext(
+            timestamp: base, monotonicSeconds: 0, speed: 8, altitude: 100,
+            phase: .lift, isStationary: false, isAutomotive: false)
         XCTAssertTrue(detector.process(motion(at: 0, forceG: 0.2), context: notRun).isEmpty)
 
         _ = detector.process(motion(at: 1, forceG: 1), context: runContext(at: 1, base: base))
@@ -1700,7 +1928,13 @@ final class BermsTests: XCTestCase {
         _ = detector.process(motion(at: 1.08, forceG: 1), context: runContext(at: 1.08, base: base))
         _ = detector.process(motion(at: 1.12, forceG: 0.2), context: runContext(at: 1.12, base: base))
         let events = detector.process(motion(at: 1.48, forceG: 0.2), context: runContext(at: 1.48, base: base))
-        XCTAssertTrue(events.contains { if case .diagnostic(kind: "jump_candidate_rejected", _, _, let detail) = $0 { return detail.hasPrefix("motion_gap_") }; return false })
+        XCTAssertTrue(
+            events.contains {
+                if case .diagnostic(kind: "jump_candidate_rejected", _, _, let detail) = $0 {
+                    return detail.hasPrefix("motion_gap_")
+                }
+                return false
+            })
     }
 
     func testJumpDetectorRejectsImpactWithoutAirborneAndStaleOrSlowContext() {
@@ -1711,20 +1945,34 @@ final class BermsTests: XCTestCase {
 
         _ = detector.process(motion(at: 0, forceG: 1), context: runContext(at: 0, base: base))
         let impact = detector.process(motion(at: 0.04, forceG: 1.8), context: runContext(at: 0.04, base: base))
-        XCTAssertFalse(impact.contains { if case .detected = $0 { return true }; return false })
+        XCTAssertFalse(
+            impact.contains {
+                if case .detected = $0 { return true }
+                return false
+            })
 
         _ = detector.process(motion(at: 0.08, forceG: 0.2), context: runContext(at: 0.08, base: base, speed: 1))
-        let slowLanding = detector.process(motion(at: 0.24, forceG: 1.8), context: runContext(at: 0.24, base: base, speed: 1))
-        XCTAssertFalse(slowLanding.contains { if case .detected = $0 { return true }; return false })
+        let slowLanding = detector.process(
+            motion(at: 0.24, forceG: 1.8), context: runContext(at: 0.24, base: base, speed: 1))
+        XCTAssertFalse(
+            slowLanding.contains {
+                if case .detected = $0 { return true }
+                return false
+            })
 
         _ = detector.process(motion(at: 1, forceG: 1), context: runContext(at: 1, base: base))
         _ = detector.process(motion(at: 1.04, forceG: 0.2), context: runContext(at: 1.04, base: base))
         let stale = detector.process(motion(at: 4, forceG: 1.8), context: runContext(at: 1, base: base))
-        XCTAssertFalse(stale.contains { if case .detected = $0 { return true }; return false })
+        XCTAssertFalse(
+            stale.contains {
+                if case .detected = $0 { return true }
+                return false
+            })
     }
 
     func testRawDiagnosticRecordDecodesLegacyLine() throws {
-        let legacy = "{\"kind\":\"detector_input\",\"timestamp\":\"1970-01-01T00:16:40Z\",\"monotonicSeconds\":1,\"accepted\":true,\"phaseAfter\":\"run\"}"
+        let legacy =
+            "{\"kind\":\"detector_input\",\"timestamp\":\"1970-01-01T00:16:40Z\",\"monotonicSeconds\":1,\"accepted\":true,\"phaseAfter\":\"run\"}"
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         let record = try decoder.decode(RawDiagnosticRecord.self, from: Data(legacy.utf8))
@@ -1735,12 +1983,15 @@ final class BermsTests: XCTestCase {
 
     func testJumpLogReplayUsesRecordedMotionAndTrackContext() throws {
         let base = Date(timeIntervalSince1970: 5_000)
-        var records = [RawDiagnosticRecord(kind: "detector_input", timestamp: base,
-                                            monotonicSeconds: 0, fusedAltitude: 100,
-                                            trackMonotonicSeconds: 0, speed: 8,
-                                            stationary: false, automotive: false,
-                                            runEligible: true, accepted: true,
-                                            phaseAfter: "run")]
+        var records = [
+            RawDiagnosticRecord(
+                kind: "detector_input", timestamp: base,
+                monotonicSeconds: 0, fusedAltitude: 100,
+                trackMonotonicSeconds: 0, speed: 8,
+                stationary: false, automotive: false,
+                runEligible: true, accepted: true,
+                phaseAfter: "run")
+        ]
         for index in 0..<10 {
             records.append(rawMotionRecord(at: Double(index) * 0.04, base: base, forceG: 1))
         }
@@ -1764,20 +2015,25 @@ final class BermsTests: XCTestCase {
 
     func testJumpLogReplayResetsAcrossPauseBoundary() throws {
         let base = Date(timeIntervalSince1970: 5_500)
-        var records = [RawDiagnosticRecord(kind: "detector_input", timestamp: base,
-                                            monotonicSeconds: 0, fusedAltitude: 100,
-                                            trackMonotonicSeconds: 0, speed: 8,
-                                            stationary: false, automotive: false,
-                                            runEligible: true, accepted: true,
-                                            phaseAfter: "run")]
+        var records = [
+            RawDiagnosticRecord(
+                kind: "detector_input", timestamp: base,
+                monotonicSeconds: 0, fusedAltitude: 100,
+                trackMonotonicSeconds: 0, speed: 8,
+                stationary: false, automotive: false,
+                runEligible: true, accepted: true,
+                phaseAfter: "run")
+        ]
         for index in 0..<10 {
             records.append(rawMotionRecord(at: Double(index) * 0.04, base: base, forceG: 1))
         }
         for index in 10..<15 {
             records.append(rawMotionRecord(at: Double(index) * 0.04, base: base, forceG: 0.2))
         }
-        records.append(RawDiagnosticRecord(kind: "session_paused", timestamp: base.addingTimeInterval(0.58),
-                                            monotonicSeconds: 0.58))
+        records.append(
+            RawDiagnosticRecord(
+                kind: "session_paused", timestamp: base.addingTimeInterval(0.58),
+                monotonicSeconds: 0.58))
         records.append(rawMotionRecord(at: 0.60, base: base, forceG: 1.8))
 
         let encoder = JSONEncoder()
@@ -1794,10 +2050,12 @@ final class BermsTests: XCTestCase {
 
     func testCheckpointDecodesNewAndLegacyFormats() throws {
         let point = sample(at: Date(timeIntervalSince1970: 6_000), index: 0, altitude: 100, speed: 8, cycling: true)
-        let jump = JumpEvent(takeoffTimestamp: point.timestamp, landingTimestamp: point.timestamp.addingTimeInterval(0.2),
-                             takeoffMonotonicSeconds: 1, landingMonotonicSeconds: 1.2)
-        let checkpoint = try JSONDecoder().decode(RecorderCheckpoint.self,
-                                                   from: JSONEncoder().encode(RecorderCheckpoint(points: [point], jumps: [jump])))
+        let jump = JumpEvent(
+            takeoffTimestamp: point.timestamp, landingTimestamp: point.timestamp.addingTimeInterval(0.2),
+            takeoffMonotonicSeconds: 1, landingMonotonicSeconds: 1.2)
+        let checkpoint = try JSONDecoder().decode(
+            RecorderCheckpoint.self,
+            from: JSONEncoder().encode(RecorderCheckpoint(points: [point], jumps: [jump])))
         XCTAssertEqual(checkpoint.jumps.count, 1)
         let legacy = try JSONDecoder().decode([TrackSample].self, from: JSONEncoder().encode([point]))
         XCTAssertEqual(legacy, [point])
@@ -1806,22 +2064,31 @@ final class BermsTests: XCTestCase {
     @MainActor
     func testSavedRoutesAndTrailPassesRepairDuringMigration() async throws {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
-        let container = try ModelContainer(for: RideDay.self, RideSegment.self,
-                                           Trail.self, TrailPass.self, LearnedLift.self,
-                                           configurations: configuration)
+        let container = try ModelContainer(
+            for: RideDay.self, RideSegment.self,
+            Trail.self, TrailPass.self, LearnedLift.self,
+            configurations: configuration)
         let context = ModelContext(container)
         let base = Date(timeIntervalSince1970: 7_500)
         let route = [
             RoutePoint(latitude: 40, longitude: -105, altitude: 100, speed: 8, timestamp: base),
-            RoutePoint(latitude: 40.0002, longitude: -105.0001, altitude: 99, speed: 0.2, timestamp: base.addingTimeInterval(5)),
-            RoutePoint(latitude: 40.0001, longitude: -104.9998, altitude: 99, speed: 0.1, timestamp: base.addingTimeInterval(10)),
-            RoutePoint(latitude: 39.9999, longitude: -105.0001, altitude: 99, speed: 0.1, timestamp: base.addingTimeInterval(15)),
-            RoutePoint(latitude: 40.0005, longitude: -105, altitude: 95, speed: 8, timestamp: base.addingTimeInterval(20))
+            RoutePoint(
+                latitude: 40.0002, longitude: -105.0001, altitude: 99, speed: 0.2, timestamp: base.addingTimeInterval(5)
+            ),
+            RoutePoint(
+                latitude: 40.0001, longitude: -104.9998, altitude: 99, speed: 0.1,
+                timestamp: base.addingTimeInterval(10)),
+            RoutePoint(
+                latitude: 39.9999, longitude: -105.0001, altitude: 99, speed: 0.1,
+                timestamp: base.addingTimeInterval(15)),
+            RoutePoint(
+                latitude: 40.0005, longitude: -105, altitude: 95, speed: 8, timestamp: base.addingTimeInterval(20)),
         ]
         let day = RideDay(startedAt: base)
         day.endedAt = base.addingTimeInterval(30)
-        let segment = RideSegment(kind: .run, startedAt: base, endedAt: base.addingTimeInterval(20),
-                                  routeData: try RouteCodec.encode(route))
+        let segment = RideSegment(
+            kind: .run, startedAt: base, endedAt: base.addingTimeInterval(20),
+            routeData: try RouteCodec.encode(route))
         segment.distanceMeters = -1
         segment.day = day
         day.segments.append(segment)
@@ -1868,10 +2135,12 @@ final class BermsTests: XCTestCase {
         let container = try ModelContainer(for: RideDay.self, RideSegment.self, configurations: configuration)
         let context = ModelContext(container)
         let day = RideDay(startedAt: Date(timeIntervalSince1970: 1_000))
-        let jump = JumpEvent(takeoffTimestamp: day.startedAt, landingTimestamp: day.startedAt.addingTimeInterval(0.2),
-                             takeoffMonotonicSeconds: 1, landingMonotonicSeconds: 1.2)
-        let segment = RideSegment(kind: .run, startedAt: day.startedAt, endedAt: day.startedAt.addingTimeInterval(20),
-                                  routeData: Data([1, 2, 3]), jumps: [jump])
+        let jump = JumpEvent(
+            takeoffTimestamp: day.startedAt, landingTimestamp: day.startedAt.addingTimeInterval(0.2),
+            takeoffMonotonicSeconds: 1, landingMonotonicSeconds: 1.2)
+        let segment = RideSegment(
+            kind: .run, startedAt: day.startedAt, endedAt: day.startedAt.addingTimeInterval(20),
+            routeData: Data([1, 2, 3]), jumps: [jump])
         day.segments.append(segment)
         segment.day = day
         context.insert(day)
@@ -1940,18 +2209,21 @@ final class BermsTests: XCTestCase {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
         let container = try ModelContainer(for: RideDay.self, RideSegment.self, configurations: configuration)
         let context = ModelContext(container)
-        let recorder = RideRecorder(context: context,
-                                    watchStateSink: nil,
-                                    authorizationOverride: .authorizedAlways)
+        let recorder = RideRecorder(
+            context: context,
+            watchStateSink: nil,
+            authorizationOverride: .authorizedAlways)
         let wasRecording = UserDefaults.standard.bool(forKey: "berms.recordingActive")
         defer { UserDefaults.standard.set(wasRecording, forKey: "berms.recordingActive") }
         XCTAssertTrue(recorder.start())
         let day = try XCTUnwrap(recorder.activeDay)
-        let run = RideSegment(kind: .run, startedAt: day.startedAt,
-                              endedAt: day.startedAt.addingTimeInterval(180), routeData: Data())
+        let run = RideSegment(
+            kind: .run, startedAt: day.startedAt,
+            endedAt: day.startedAt.addingTimeInterval(180), routeData: Data())
         run.jumpData = try JSONEncoder().encode([
-            JumpEvent(takeoffTimestamp: day.startedAt, landingTimestamp: day.startedAt.addingTimeInterval(0.8),
-                      takeoffMonotonicSeconds: 0, landingMonotonicSeconds: 0.8)
+            JumpEvent(
+                takeoffTimestamp: day.startedAt, landingTimestamp: day.startedAt.addingTimeInterval(0.8),
+                takeoffMonotonicSeconds: 0, landingMonotonicSeconds: 0.8)
         ])
         run.distanceMeters = 1_200
         run.verticalMeters = 250
@@ -1959,8 +2231,9 @@ final class BermsTests: XCTestCase {
         run.day = day
         day.segments.append(run)
         context.insert(run)
-        let lift = RideSegment(kind: .lift, startedAt: day.startedAt,
-                               endedAt: day.startedAt.addingTimeInterval(300), routeData: Data())
+        let lift = RideSegment(
+            kind: .lift, startedAt: day.startedAt,
+            endedAt: day.startedAt.addingTimeInterval(300), routeData: Data())
         lift.maximumSpeedMetersPerSecond = 15
         lift.day = day
         day.segments.append(lift)
@@ -1970,8 +2243,9 @@ final class BermsTests: XCTestCase {
         XCTAssertEqual(recorder.currentWatchRideState.run?.distanceMeters, 1_200)
         XCTAssertEqual(recorder.currentRunMetrics?.jumpCount, 1)
         XCTAssertEqual(try XCTUnwrap(recorder.currentWatchRideState.run?.longestJumpAirtime), 0.8, accuracy: 0.001)
-        let newerRun = RideSegment(kind: .run, startedAt: day.startedAt.addingTimeInterval(400),
-                                   endedAt: day.startedAt.addingTimeInterval(500), routeData: Data())
+        let newerRun = RideSegment(
+            kind: .run, startedAt: day.startedAt.addingTimeInterval(400),
+            endedAt: day.startedAt.addingTimeInterval(500), routeData: Data())
         newerRun.maximumSpeedMetersPerSecond = 8
         newerRun.distanceMeters = 400
         newerRun.verticalMeters = 80
@@ -1979,12 +2253,14 @@ final class BermsTests: XCTestCase {
         day.segments.insert(newerRun, at: 0)
         context.insert(newerRun)
         XCTAssertEqual(recorder.currentWatchRideState.run?.number, 2)
-        XCTAssertEqual(recorder.currentWatchRideState.run?.topSpeedMetersPerSecond, 8,
-                       "Watch must show the latest run, not the fastest run or lift")
+        XCTAssertEqual(
+            recorder.currentWatchRideState.run?.topSpeedMetersPerSecond, 8,
+            "Watch must show the latest run, not the fastest run or lift")
         XCTAssertEqual(recorder.currentWatchRideState.run?.distanceMeters, 400)
         XCTAssertEqual(recorder.currentRunMetrics?.jumpCount, 0)
-        XCTAssertEqual(recorder.currentWatchRideState.run?.longestJumpAirtime, 0,
-                       "A run without jumps must not inherit an earlier run’s best jump")
+        XCTAssertEqual(
+            recorder.currentWatchRideState.run?.longestJumpAirtime, 0,
+            "A run without jumps must not inherit an earlier run’s best jump")
         day.segments.removeAll { $0.id == newerRun.id }
         context.delete(newerRun)
 
@@ -2028,9 +2304,10 @@ final class BermsTests: XCTestCase {
         defer { UserDefaults.standard.set(previousRecordingState, forKey: "berms.recordingActive") }
         UserDefaults.standard.set(true, forKey: "berms.recordingActive")
 
-        let recorder = RideRecorder(context: context,
-                                    watchStateSink: nil,
-                                    authorizationOverride: .authorizedAlways)
+        let recorder = RideRecorder(
+            context: context,
+            watchStateSink: nil,
+            authorizationOverride: .authorizedAlways)
         recorder.resumeIfNeeded(autoResume: true)
         XCTAssertTrue(recorder.isRecording)
 
@@ -2044,12 +2321,14 @@ final class BermsTests: XCTestCase {
     @MainActor
     func testRecorderStartAndStopSurvivesMotionCallbacks() throws {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
-        let container = try ModelContainer(for: RideDay.self, RideSegment.self,
-                                           Trail.self, TrailPass.self,
-                                           configurations: configuration)
-        let recorder = RideRecorder(context: ModelContext(container),
-                                    watchStateSink: nil,
-                                    authorizationOverride: .authorizedAlways)
+        let container = try ModelContainer(
+            for: RideDay.self, RideSegment.self,
+            Trail.self, TrailPass.self,
+            configurations: configuration)
+        let recorder = RideRecorder(
+            context: ModelContext(container),
+            watchStateSink: nil,
+            authorizationOverride: .authorizedAlways)
         let previousRecordingState = UserDefaults.standard.bool(forKey: "berms.recordingActive")
         defer { UserDefaults.standard.set(previousRecordingState, forKey: "berms.recordingActive") }
 
@@ -2066,10 +2345,12 @@ final class BermsTests: XCTestCase {
         let base = Date(timeIntervalSince1970: 7_000)
         let day = RideDay(startedAt: base)
         day.endedAt = base.addingTimeInterval(60)
-        let oldSegment = RideSegment(kind: .lift, startedAt: base, endedAt: base.addingTimeInterval(20),
-                                     routeData: Data([1, 2, 3]))
-        let oldRun = RideSegment(kind: .run, startedAt: base.addingTimeInterval(20),
-                                 endedAt: base.addingTimeInterval(60), routeData: Data([1, 2, 3]))
+        let oldSegment = RideSegment(
+            kind: .lift, startedAt: base, endedAt: base.addingTimeInterval(20),
+            routeData: Data([1, 2, 3]))
+        let oldRun = RideSegment(
+            kind: .run, startedAt: base.addingTimeInterval(20),
+            endedAt: base.addingTimeInterval(60), routeData: Data([1, 2, 3]))
         oldSegment.day = day
         oldRun.day = day
         day.segments.append(oldSegment)
@@ -2082,26 +2363,30 @@ final class BermsTests: XCTestCase {
         var records = [RawDiagnosticRecord(kind: "session_started", timestamp: base, monotonicSeconds: 0)]
         for index in 0...4 {
             let seconds = Double(index) * 5
-            records.append(RawDiagnosticRecord(
-                kind: "detector_input", timestamp: base.addingTimeInterval(seconds),
-                monotonicSeconds: seconds, latitude: 40 + Double(index) * 0.0001,
-                longitude: -105, fusedAltitude: Double(index * 5),
-                trackMonotonicSeconds: seconds, speed: 4, horizontalAccuracy: 5,
-                stationary: false, cycling: false, automotive: false, accepted: true
-            ))
+            records.append(
+                RawDiagnosticRecord(
+                    kind: "detector_input", timestamp: base.addingTimeInterval(seconds),
+                    monotonicSeconds: seconds, latitude: 40 + Double(index) * 0.0001,
+                    longitude: -105, fusedAltitude: Double(index * 5),
+                    trackMonotonicSeconds: seconds, speed: 4, horizontalAccuracy: 5,
+                    stationary: false, cycling: false, automotive: false, accepted: true
+                ))
         }
         for index in 1...5 {
             let seconds = 20 + Double(index) * 5
-            records.append(RawDiagnosticRecord(
-                kind: "detector_input", timestamp: base.addingTimeInterval(seconds),
-                monotonicSeconds: seconds, latitude: 40.001 + Double(index) * 0.0001,
-                longitude: -105, fusedAltitude: Double(20 - index * 5),
-                trackMonotonicSeconds: seconds, speed: 7, horizontalAccuracy: 5,
-                stationary: false, cycling: false, automotive: false, accepted: true
-            ))
+            records.append(
+                RawDiagnosticRecord(
+                    kind: "detector_input", timestamp: base.addingTimeInterval(seconds),
+                    monotonicSeconds: seconds, latitude: 40.001 + Double(index) * 0.0001,
+                    longitude: -105, fusedAltitude: Double(20 - index * 5),
+                    trackMonotonicSeconds: seconds, speed: 7, horizontalAccuracy: 5,
+                    stationary: false, cycling: false, automotive: false, accepted: true
+                ))
         }
-        records.append(RawDiagnosticRecord(kind: "session_stopped", timestamp: base.addingTimeInterval(60),
-                                            monotonicSeconds: 60))
+        records.append(
+            RawDiagnosticRecord(
+                kind: "session_stopped", timestamp: base.addingTimeInterval(60),
+                monotonicSeconds: 60))
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         var data = Data()
@@ -2125,11 +2410,11 @@ final class BermsTests: XCTestCase {
 
     func testDiagnosticReplaySkipsMalformedLines() throws {
         let contents = """
-        {"kind":"session_started","timestamp":7000,"monotonicSeconds":0}
-        not json at all
-        {"kind":"detector_input","timestamp":7001,"monotonicSeconds":1,"latitude":40,"longitude":-105,
-         "fusedAltitude":100,"trackMonotonicSeconds":1,"speed":7,"horizontalAccuracy":5,"accepted":true}
-        """
+            {"kind":"session_started","timestamp":7000,"monotonicSeconds":0}
+            not json at all
+            {"kind":"detector_input","timestamp":7001,"monotonicSeconds":1,"latitude":40,"longitude":-105,
+             "fusedAltitude":100,"trackMonotonicSeconds":1,"speed":7,"horizontalAccuracy":5,"accepted":true}
+            """
         let result = try DiagnosticLogReplayer().replay(contents: contents)
         XCTAssertNotNil(result)
     }
@@ -2144,23 +2429,29 @@ final class BermsTests: XCTestCase {
     func testBermsDataExportCarriesParsedRunNumbers() throws {
         let base = Date(timeIntervalSince1970: 10_000)
         let route = [
-            RoutePoint(latitude: 40, longitude: -105, altitude: 100, speed: 5,
-                       timestamp: base),
-            RoutePoint(latitude: 40.001, longitude: -105, altitude: 90, speed: 8,
-                       timestamp: base.addingTimeInterval(10))
+            RoutePoint(
+                latitude: 40, longitude: -105, altitude: 100, speed: 5,
+                timestamp: base),
+            RoutePoint(
+                latitude: 40.001, longitude: -105, altitude: 90, speed: 8,
+                timestamp: base.addingTimeInterval(10)),
         ]
         let routeData = try RouteCodec.encode(route)
         let day = RideDay(startedAt: base)
-        let firstRun = RideSegment(kind: .run, startedAt: base,
-                                   endedAt: base.addingTimeInterval(10), routeData: routeData)
-        let lift = RideSegment(kind: .lift, startedAt: base.addingTimeInterval(20),
-                               endedAt: base.addingTimeInterval(30), routeData: routeData)
-        let secondRun = RideSegment(kind: .run, startedAt: base.addingTimeInterval(40),
-                                    endedAt: base.addingTimeInterval(50), routeData: routeData)
+        let firstRun = RideSegment(
+            kind: .run, startedAt: base,
+            endedAt: base.addingTimeInterval(10), routeData: routeData)
+        let lift = RideSegment(
+            kind: .lift, startedAt: base.addingTimeInterval(20),
+            endedAt: base.addingTimeInterval(30), routeData: routeData)
+        let secondRun = RideSegment(
+            kind: .run, startedAt: base.addingTimeInterval(40),
+            endedAt: base.addingTimeInterval(50), routeData: routeData)
         day.segments = [firstRun, lift, secondRun]
 
-        let export = BermsDataExport(day: day, exportedAt: base,
-                                     rawDiagnosticsFilename: "Berms-day.jsonl")
+        let export = BermsDataExport(
+            day: day, exportedAt: base,
+            rawDiagnosticsFilename: "Berms-day.jsonl")
         XCTAssertEqual(export.version, 4)
         XCTAssertEqual(export.days[0].segments.compactMap(\.runNumber), [1, 2])
         XCTAssertEqual(export.parsed.runCount, 2)
@@ -2185,20 +2476,25 @@ final class BermsTests: XCTestCase {
         func writeLog(start: Date) throws -> URL {
             let records = [
                 RawDiagnosticRecord(kind: "session_started", timestamp: start, monotonicSeconds: 0),
-                RawDiagnosticRecord(kind: "detector_started", timestamp: start.addingTimeInterval(1),
-                                    monotonicSeconds: 1, phaseAfter: "run", detail: "Run"),
-                RawDiagnosticRecord(kind: "detector_input", timestamp: start.addingTimeInterval(1),
-                                    monotonicSeconds: 1, latitude: 40, longitude: -105,
-                                    fusedAltitude: 100, trackMonotonicSeconds: 1, speed: 5,
-                                    horizontalAccuracy: 5, accepted: true),
-                RawDiagnosticRecord(kind: "detector_input", timestamp: start.addingTimeInterval(2),
-                                    monotonicSeconds: 2, latitude: 40.001, longitude: -105,
-                                    fusedAltitude: 90, trackMonotonicSeconds: 2, speed: 5,
-                                    horizontalAccuracy: 5, accepted: true),
-                RawDiagnosticRecord(kind: "detector_finished", timestamp: start.addingTimeInterval(3),
-                                    monotonicSeconds: 3, phaseBefore: "run", detail: "Run"),
-                RawDiagnosticRecord(kind: "session_stopped", timestamp: start.addingTimeInterval(4),
-                                    monotonicSeconds: 4)
+                RawDiagnosticRecord(
+                    kind: "detector_started", timestamp: start.addingTimeInterval(1),
+                    monotonicSeconds: 1, phaseAfter: "run", detail: "Run"),
+                RawDiagnosticRecord(
+                    kind: "detector_input", timestamp: start.addingTimeInterval(1),
+                    monotonicSeconds: 1, latitude: 40, longitude: -105,
+                    fusedAltitude: 100, trackMonotonicSeconds: 1, speed: 5,
+                    horizontalAccuracy: 5, accepted: true),
+                RawDiagnosticRecord(
+                    kind: "detector_input", timestamp: start.addingTimeInterval(2),
+                    monotonicSeconds: 2, latitude: 40.001, longitude: -105,
+                    fusedAltitude: 90, trackMonotonicSeconds: 2, speed: 5,
+                    horizontalAccuracy: 5, accepted: true),
+                RawDiagnosticRecord(
+                    kind: "detector_finished", timestamp: start.addingTimeInterval(3),
+                    monotonicSeconds: 3, phaseBefore: "run", detail: "Run"),
+                RawDiagnosticRecord(
+                    kind: "session_stopped", timestamp: start.addingTimeInterval(4),
+                    monotonicSeconds: 4),
             ]
             var data = Data()
             for record in records {
@@ -2223,8 +2519,12 @@ final class BermsTests: XCTestCase {
         )
         XCTAssertEqual(summary.segments.filter { $0.kind == .run }.count, 2)
         XCTAssertEqual(summary.segments.compactMap(\.runNumber), [1, 2])
-        XCTAssertEqual(summary.segments.map(\.startedAt), [base.addingTimeInterval(1),
-                                                            base.addingTimeInterval(21)])
+        XCTAssertEqual(
+            summary.segments.map(\.startedAt),
+            [
+                base.addingTimeInterval(1),
+                base.addingTimeInterval(21),
+            ])
     }
 
     func testLearnedEndpointBufferedPointsReturnToRoute() {
@@ -2241,58 +2541,75 @@ final class BermsTests: XCTestCase {
         configuration.learnedLifts = [profile]
         let detector = ParkLapDetector(configuration: configuration)
         let base = Date(timeIntervalSince1970: 9_000)
-        detector.restore(kind: .run, points: [
-            TrackSample(coordinate: Coordinate(latitude: 40.0, longitude: -105.0001),
-                        altitude: 100, speed: 7, timestamp: base)
-        ])
+        detector.restore(
+            kind: .run,
+            points: [
+                TrackSample(
+                    coordinate: Coordinate(latitude: 40.0, longitude: -105.0001),
+                    altitude: 100, speed: 7, timestamp: base)
+            ])
 
         var dwellTimestamps: [Date] = []
         for t in 1...3 {
-            let sample = TrackSample(coordinate: Coordinate(latitude: 40.0, longitude: -105.0),
-                                     altitude: 100, speed: 0.5,
-                                     timestamp: base.addingTimeInterval(Double(t)))
+            let sample = TrackSample(
+                coordinate: Coordinate(latitude: 40.0, longitude: -105.0),
+                altitude: 100, speed: 0.5,
+                timestamp: base.addingTimeInterval(Double(t)))
             dwellTimestamps.append(sample.timestamp)
             _ = detector.process(sample)
         }
-        XCTAssertFalse(dwellTimestamps.allSatisfy { timestamp in
-            detector.currentPoints.contains { $0.timestamp == timestamp }
-        })
+        XCTAssertFalse(
+            dwellTimestamps.allSatisfy { timestamp in
+                detector.currentPoints.contains { $0.timestamp == timestamp }
+            })
 
-        _ = detector.process(TrackSample(coordinate: Coordinate(latitude: 40.02, longitude: -105.0),
-                                         altitude: 95, speed: 7,
-                                         timestamp: base.addingTimeInterval(4)))
+        _ = detector.process(
+            TrackSample(
+                coordinate: Coordinate(latitude: 40.02, longitude: -105.0),
+                altitude: 95, speed: 7,
+                timestamp: base.addingTimeInterval(4)))
 
-        XCTAssertTrue(dwellTimestamps.allSatisfy { timestamp in
-            detector.currentPoints.contains { $0.timestamp == timestamp }
-        })
+        XCTAssertTrue(
+            dwellTimestamps.allSatisfy { timestamp in
+                detector.currentPoints.contains { $0.timestamp == timestamp }
+            })
     }
 
-    private func runContext(at seconds: Double, base: Date, speed: Double = 8,
-                             phase: DetectorPhase = .run) -> JumpTrackContext {
-        JumpTrackContext(timestamp: base.addingTimeInterval(seconds), monotonicSeconds: seconds,
-                         speed: speed, altitude: 100, phase: phase, isStationary: false, isAutomotive: false)
+    private func runContext(
+        at seconds: Double, base: Date, speed: Double = 8,
+        phase: DetectorPhase = .run
+    ) -> JumpTrackContext {
+        JumpTrackContext(
+            timestamp: base.addingTimeInterval(seconds), monotonicSeconds: seconds,
+            speed: speed, altitude: 100, phase: phase, isStationary: false, isAutomotive: false)
     }
 
-    private func motion(at seconds: Double, forceG: Double, rotation: Double = 0,
-                        base: Date = Date(timeIntervalSince1970: 2_000)) -> DeviceMotionSample {
-        DeviceMotionSample(recordedAt: base.addingTimeInterval(seconds), monotonicSeconds: seconds,
-                           userAccelerationX: 0, userAccelerationY: 0, userAccelerationZ: 1 - forceG,
-                           rotationRateX: rotation, rotationRateY: 0, rotationRateZ: 0,
-                           gravityX: 0, gravityY: 0, gravityZ: -1,
-                           quaternionW: 1, quaternionX: 0, quaternionY: 0, quaternionZ: 0)
+    private func motion(
+        at seconds: Double, forceG: Double, rotation: Double = 0,
+        base: Date = Date(timeIntervalSince1970: 2_000)
+    ) -> DeviceMotionSample {
+        DeviceMotionSample(
+            recordedAt: base.addingTimeInterval(seconds), monotonicSeconds: seconds,
+            userAccelerationX: 0, userAccelerationY: 0, userAccelerationZ: 1 - forceG,
+            rotationRateX: rotation, rotationRateY: 0, rotationRateZ: 0,
+            gravityX: 0, gravityY: 0, gravityZ: -1,
+            quaternionW: 1, quaternionX: 0, quaternionY: 0, quaternionZ: 0)
     }
 
     private func rawMotionRecord(at seconds: Double, base: Date, forceG: Double) -> RawDiagnosticRecord {
         let sample = motion(at: seconds, forceG: forceG, base: base)
-        return RawDiagnosticRecord(kind: "device_motion_raw", timestamp: sample.recordedAt,
-                                   monotonicSeconds: sample.monotonicSeconds,
-                                   userAccelerationZ: sample.userAccelerationZ,
-                                   gravityZ: sample.gravityZ, quaternionW: 1)
+        return RawDiagnosticRecord(
+            kind: "device_motion_raw", timestamp: sample.recordedAt,
+            monotonicSeconds: sample.monotonicSeconds,
+            userAccelerationZ: sample.userAccelerationZ,
+            gravityZ: sample.gravityZ, quaternionW: 1)
     }
 
-    private func sample(at base: Date, index: Int, altitude: Double, speed: Double,
-                        cycling: Bool, stationary: Bool = false, automotive: Bool = false,
-                        accuracy: Double = 8, interval: Double = 5) -> TrackSample {
+    private func sample(
+        at base: Date, index: Int, altitude: Double, speed: Double,
+        cycling: Bool, stationary: Bool = false, automotive: Bool = false,
+        accuracy: Double = 8, interval: Double = 5
+    ) -> TrackSample {
         TrackSample(
             coordinate: Coordinate(latitude: 40 + Double(index) * 0.0001, longitude: -105),
             altitude: altitude,

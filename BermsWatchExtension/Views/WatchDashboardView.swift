@@ -49,12 +49,15 @@ struct WatchDashboardView: View {
                     .foregroundStyle(.secondary)
                 Spacer(minLength: 0)
                 Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 4) {
-                    metricRow("Top speed", symbol: "speedometer",
-                              value: speedText, unit: speedUnit)
-                    metricRow("Best jump airtime", symbol: "arrow.up.forward",
-                              value: airtimeText, unit: "s air")
-                    metricRow("Heart rate", symbol: "heart.fill",
-                              value: heartRateText, unit: "bpm")
+                    metricRow(
+                        "Top speed", symbol: "speedometer",
+                        value: speedText, unit: speedUnit)
+                    metricRow(
+                        "Best jump airtime", symbol: "arrow.up.forward",
+                        value: airtimeText, unit: "s air")
+                    metricRow(
+                        "Heart rate", symbol: "heart.fill",
+                        value: heartRateText, unit: "bpm")
                 }
                 if model.isStale || model.state.status == .paused {
                     Text(model.isStale ? "Phone disconnected" : "Paused")
@@ -75,9 +78,12 @@ struct WatchDashboardView: View {
         VStack(alignment: .leading, spacing: 12) {
             if model.state.isActive {
                 HStack(alignment: .firstTextBaseline) {
-                    Text(model.isStale ? "Disconnected" : model.state.status == .paused ? "Paused" : model.state.activityTitle)
-                        .font(.footnote)
-                        .contentTransition(.interpolate)
+                    Text(
+                        model.isStale
+                            ? "Disconnected" : model.state.status == .paused ? "Paused" : model.state.activityTitle
+                    )
+                    .font(.footnote)
+                    .contentTransition(.interpolate)
                     Spacer(minLength: 8)
                     Image(systemName: "iphone")
                         .font(.caption2)

@@ -45,12 +45,15 @@ enum ShareCardPhotos {
 
 @MainActor
 enum ShareCardRenderer {
-    static func render(content: ShareCardContent,
-                       configuration: ShareCardConfiguration,
-                       mapImage: UIImage?) -> UIImage? {
+    static func render(
+        content: ShareCardContent,
+        configuration: ShareCardConfiguration,
+        mapImage: UIImage?
+    ) -> UIImage? {
         let canvas = ShareCardCanvas(content: content, configuration: configuration, mapImage: mapImage)
-            .frame(width: configuration.preset.canvasSize.width,
-                   height: configuration.preset.canvasSize.height)
+            .frame(
+                width: configuration.preset.canvasSize.width,
+                height: configuration.preset.canvasSize.height)
         let renderer = ImageRenderer(content: canvas)
         renderer.scale = ShareCardPreset.renderScale
         renderer.isOpaque = true

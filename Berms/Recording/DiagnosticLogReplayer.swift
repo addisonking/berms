@@ -53,23 +53,26 @@ struct DiagnosticLogReplayer {
             _ = jumpDetector.finish()
             guard let event = detector.finish(), case .finished(let draft) = event else { return }
             let jumps = draft.kind == .run ? jumpsForCurrentRun : []
-            segments.append(SegmentDraft(kind: draft.kind, points: draft.points,
-                                         startedAt: draft.startedAt, endedAt: draft.endedAt,
-                                         jumps: jumps))
+            segments.append(
+                SegmentDraft(
+                    kind: draft.kind, points: draft.points,
+                    startedAt: draft.startedAt, endedAt: draft.endedAt,
+                    jumps: jumps))
             jumpsForCurrentRun.removeAll(keepingCapacity: true)
         }
 
         func closeLoggedSegment(at endedAt: Date) {
             guard let current = openLoggedSegment else { return }
-            loggedSegments.append(LoggedSegment(
-                kind: current.kind,
-                startedAt: current.startedAt,
-                endedAt: max(current.startedAt, endedAt),
-                runNumber: current.runNumber,
-                trailSequence: current.trailSequence,
-                points: current.points,
-                jumps: current.jumps
-            ))
+            loggedSegments.append(
+                LoggedSegment(
+                    kind: current.kind,
+                    startedAt: current.startedAt,
+                    endedAt: max(current.startedAt, endedAt),
+                    runNumber: current.runNumber,
+                    trailSequence: current.trailSequence,
+                    points: current.points,
+                    jumps: current.jumps
+                ))
             openLoggedSegment = nil
         }
 
@@ -83,9 +86,10 @@ struct DiagnosticLogReplayer {
             } else {
                 runNumber = nil
             }
-            openLoggedSegment = OpenLoggedSegment(kind: kind, startedAt: record.timestamp,
-                                                  runNumber: runNumber,
-                                                  trailSequence: record.trailSequence)
+            openLoggedSegment = OpenLoggedSegment(
+                kind: kind, startedAt: record.timestamp,
+                runNumber: runNumber,
+                trailSequence: record.trailSequence)
             let pending = recentAcceptedSamples.filter { $0.timestamp >= record.timestamp }
             openLoggedSegment?.points.append(contentsOf: pending)
         }
@@ -137,9 +141,10 @@ struct DiagnosticLogReplayer {
                 }
             case "detector_input":
                 guard record.accepted == true,
-                      let latitude = record.latitude,
-                      let longitude = record.longitude,
-                      let speed = record.speed else { continue }
+                    let latitude = record.latitude,
+                    let longitude = record.longitude,
+                    let speed = record.speed
+                else { continue }
                 let sample = TrackSample(
                     coordinate: Coordinate(latitude: latitude, longitude: longitude),
                     altitude: record.fusedAltitude ?? record.gpsAltitude ?? previousTrackSample?.altitude,
@@ -156,12 +161,15 @@ struct DiagnosticLogReplayer {
                     recentAcceptedSamples.removeFirst(recentAcceptedSamples.count - 120)
                 }
                 if openLoggedSegment?.points.isEmpty == true
-                    || sample.timestamp > (openLoggedSegment?.points.last?.timestamp ?? .distantPast) {
+                    || sample.timestamp > (openLoggedSegment?.points.last?.timestamp ?? .distantPast)
+                {
                     openLoggedSegment?.points.append(sample)
                 }
                 guard previousTrackSample.map({ sample.timestamp > $0.timestamp }) ?? true,
-                      !TrackSampleNormalizer.isLowSpeedDrift(previous: previousTrackSample,
-                                                             current: sample) else { continue }
+                    !TrackSampleNormalizer.isLowSpeedDrift(
+                        previous: previousTrackSample,
+                        current: sample)
+                else { continue }
                 previousTrackSample = sample
                 for event in detector.process(sample) {
                     guard case .finished(let draft) = event else {
@@ -171,9 +179,11 @@ struct DiagnosticLogReplayer {
                         continue
                     }
                     let jumps = draft.kind == .run ? jumpsForCurrentRun : []
-                    segments.append(SegmentDraft(kind: draft.kind, points: draft.points,
-                                                 startedAt: draft.startedAt, endedAt: draft.endedAt,
-                                                 jumps: jumps))
+                    segments.append(
+                        SegmentDraft(
+                            kind: draft.kind, points: draft.points,
+                            startedAt: draft.startedAt, endedAt: draft.endedAt,
+                            jumps: jumps))
                     jumpsForCurrentRun.removeAll(keepingCapacity: true)
                     jumpDetector.reset()
                 }
@@ -193,18 +203,22 @@ struct DiagnosticLogReplayer {
                 }
             case "jump_detected":
                 guard record.accepted == true,
-                      openLoggedSegment?.kind == .run else { continue }
+                    openLoggedSegment?.kind == .run
+                else { continue }
                 let airtime = max(0, record.jumpAirtime ?? 0)
-                let landingMonotonic = record.jumpLandingMonotonicSeconds
+                let landingMonotonic =
+                    record.jumpLandingMonotonicSeconds
                     ?? record.monotonicSeconds
-                let takeoffMonotonic = record.jumpTakeoffMonotonicSeconds
+                let takeoffMonotonic =
+                    record.jumpTakeoffMonotonicSeconds
                     ?? landingMonotonic - airtime
-                openLoggedSegment?.jumps.append(JumpEvent(
-                    takeoffTimestamp: record.timestamp.addingTimeInterval(-airtime),
-                    landingTimestamp: record.timestamp,
-                    takeoffMonotonicSeconds: takeoffMonotonic,
-                    landingMonotonicSeconds: landingMonotonic
-                ))
+                openLoggedSegment?.jumps.append(
+                    JumpEvent(
+                        takeoffTimestamp: record.timestamp.addingTimeInterval(-airtime),
+                        landingTimestamp: record.timestamp,
+                        takeoffMonotonicSeconds: takeoffMonotonic,
+                        landingMonotonicSeconds: landingMonotonic
+                    ))
             case "device_motion_raw":
                 guard let context, context.phase == .run else { continue }
                 let sample = DeviceMotionSample(
@@ -234,25 +248,28 @@ struct DiagnosticLogReplayer {
             }
         }
 
-        if openLoggedSegment != nil {
-            closeLoggedSegment(at: lastRecordTimestamp ?? openLoggedSegment!.startedAt)
+        if let openLoggedSegment {
+            closeLoggedSegment(at: lastRecordTimestamp ?? openLoggedSegment.startedAt)
         }
         appendFinishedSegment()
         if loggedSegments.isEmpty {
             return DiagnosticReplayResult(segments: Self.numberReplayedSegments(segments))
         }
-        return DiagnosticReplayResult(segments: loggedSegments.map {
-            SegmentDraft(kind: $0.kind, points: $0.points,
-                         startedAt: $0.startedAt, endedAt: $0.endedAt,
-                         runNumber: $0.runNumber,
-                         trailSequence: $0.trailSequence,
-                         jumps: $0.jumps)
-        })
+        return DiagnosticReplayResult(
+            segments: loggedSegments.map {
+                SegmentDraft(
+                    kind: $0.kind, points: $0.points,
+                    startedAt: $0.startedAt, endedAt: $0.endedAt,
+                    runNumber: $0.runNumber,
+                    trailSequence: $0.trailSequence,
+                    jumps: $0.jumps)
+            })
     }
 
     static func sensitivity(from detail: String?) -> JumpSensitivity? {
         guard let detail,
-              let range = detail.range(of: "sensitivity=") else { return nil }
+            let range = detail.range(of: "sensitivity=")
+        else { return nil }
         let value = detail[range.upperBound...].prefix { $0 != "," }
         return JumpSensitivity(rawValue: String(value))
     }
@@ -265,8 +282,10 @@ struct DiagnosticLogReplayer {
 
     private static func runNumber(from detail: String?) -> Int? {
         guard let detail,
-              let range = detail.range(of: #"(?i)run(?:_number|number)?\s*(?:=|#|:)?\s*([0-9]+)"#,
-                                       options: .regularExpression) else {
+            let range = detail.range(
+                of: #"(?i)run(?:_number|number)?\s*(?:=|#|:)?\s*([0-9]+)"#,
+                options: .regularExpression)
+        else {
             return nil
         }
         return Int(detail[range].filter(\.isNumber))

@@ -53,9 +53,11 @@ struct MapKitShareSnapshotter: ShareMapSnapshotting {
         }
     }
 
-    private static func draw(snapshot: MKMapSnapshotter.Snapshot,
-                             request: ShareMapSnapshotRequest,
-                             framing: ShareMapFraming) -> UIImage {
+    private static func draw(
+        snapshot: MKMapSnapshotter.Snapshot,
+        request: ShareMapSnapshotRequest,
+        framing: ShareMapFraming
+    ) -> UIImage {
         let format = UIGraphicsImageRendererFormat()
         format.scale = request.scale
         format.opaque = true
@@ -66,35 +68,40 @@ struct MapKitShareSnapshotter: ShareMapSnapshotting {
             let cg = context.cgContext
 
             for trail in request.trails {
-                stroke(cg,
-                       coordinates: decimatedCoordinates(trail.points, tolerance: tolerance),
-                       snapshot: snapshot,
-                       color: Self.trailColor(trail.difficulty, style: request.mapStyle),
-                       width: 1.8,
-                       dash: trail.difficulty == .doubleBlack ? [5, 3] : [])
+                stroke(
+                    cg,
+                    coordinates: decimatedCoordinates(trail.points, tolerance: tolerance),
+                    snapshot: snapshot,
+                    color: Self.trailColor(trail.difficulty, style: request.mapStyle),
+                    width: 1.8,
+                    dash: trail.difficulty == .doubleBlack ? [5, 3] : [])
             }
 
             for route in request.routes where route.kind == .lift {
-                stroke(cg,
-                       coordinates: decimatedCoordinates(route.points, tolerance: tolerance),
-                       snapshot: snapshot,
-                       color: Self.liftColor(request.mapStyle),
-                       width: 1.6,
-                       dash: [4, 3])
+                stroke(
+                    cg,
+                    coordinates: decimatedCoordinates(route.points, tolerance: tolerance),
+                    snapshot: snapshot,
+                    color: Self.liftColor(request.mapStyle),
+                    width: 1.6,
+                    dash: [4, 3])
             }
 
             for route in request.routes where route.kind == .run {
-                stroke(cg,
-                       coordinates: decimatedCoordinates(route.points, tolerance: tolerance),
-                       snapshot: snapshot,
-                       color: Self.runColor(request.mapStyle).withAlphaComponent(route.opacity),
-                       width: 2.4,
-                       dash: [])
+                stroke(
+                    cg,
+                    coordinates: decimatedCoordinates(route.points, tolerance: tolerance),
+                    snapshot: snapshot,
+                    color: Self.runColor(request.mapStyle).withAlphaComponent(route.opacity),
+                    width: 2.4,
+                    dash: [])
             }
 
             for jump in request.jumps {
-                let point = snapshot.point(for: CLLocationCoordinate2D(latitude: jump.coordinate.latitude,
-                                                                       longitude: jump.coordinate.longitude))
+                let point = snapshot.point(
+                    for: CLLocationCoordinate2D(
+                        latitude: jump.coordinate.latitude,
+                        longitude: jump.coordinate.longitude))
                 let rect = CGRect(x: point.x - 3.2, y: point.y - 3.2, width: 6.4, height: 6.4)
                 cg.setFillColor(UIColor.white.cgColor)
                 cg.fillEllipse(in: rect)
@@ -105,12 +112,14 @@ struct MapKitShareSnapshotter: ShareMapSnapshotting {
         }
     }
 
-    private static func stroke(_ cg: CGContext,
-                               coordinates: [CLLocationCoordinate2D],
-                               snapshot: MKMapSnapshotter.Snapshot,
-                               color: UIColor,
-                               width: CGFloat,
-                               dash: [CGFloat]) {
+    private static func stroke(
+        _ cg: CGContext,
+        coordinates: [CLLocationCoordinate2D],
+        snapshot: MKMapSnapshotter.Snapshot,
+        color: UIColor,
+        width: CGFloat,
+        dash: [CGFloat]
+    ) {
         guard coordinates.count > 1 else { return }
         let path = CGMutablePath()
         path.move(to: snapshot.point(for: coordinates[0]))
@@ -188,8 +197,9 @@ struct ShareMapFraming {
         var hasPoint = false
         for point in points {
             guard point.latitude.isFinite, point.longitude.isFinite,
-                  (-90...90).contains(point.latitude),
-                  (-180...180).contains(point.longitude) else { continue }
+                (-90...90).contains(point.latitude),
+                (-180...180).contains(point.longitude)
+            else { continue }
             if !hasPoint {
                 minLatitude = point.latitude
                 maxLatitude = point.latitude
@@ -212,10 +222,12 @@ struct ShareMapFraming {
         let longitudeMeters = max(250, (maxLongitude - minLongitude) * 111_000 * longitudeScale * 1.18)
 
         let aspect = size.width / size.height
-        let adjustedLatitude = longitudeMeters / latitudeMeters < aspect
+        let adjustedLatitude =
+            longitudeMeters / latitudeMeters < aspect
             ? latitudeMeters
             : longitudeMeters / aspect
-        let adjustedLongitude = longitudeMeters / latitudeMeters < aspect
+        let adjustedLongitude =
+            longitudeMeters / latitudeMeters < aspect
             ? latitudeMeters * aspect
             : longitudeMeters
 

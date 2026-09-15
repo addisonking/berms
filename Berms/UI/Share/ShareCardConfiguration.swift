@@ -93,7 +93,8 @@ enum ShareCardConfigurationStore {
 
     static func load(from defaults: UserDefaults = .standard) -> ShareCardConfiguration {
         guard let data = defaults.data(forKey: key),
-              let configuration = try? JSONDecoder().decode(ShareCardConfiguration.self, from: data) else {
+            let configuration = try? JSONDecoder().decode(ShareCardConfiguration.self, from: data)
+        else {
             return ShareCardConfiguration()
         }
         return configuration.normalized

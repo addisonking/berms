@@ -23,15 +23,21 @@ struct LiftLearningEngine: Sendable {
     var activationCount = 3
     var maximumEndpointDistance = 180.0
 
-    func merge(observation: (bottom: Coordinate, top: Coordinate), into profiles: [LearnedLiftProfile], id: UUID = UUID()) -> [LearnedLiftProfile] {
+    func merge(
+        observation: (bottom: Coordinate, top: Coordinate), into profiles: [LearnedLiftProfile], id: UUID = UUID()
+    ) -> [LearnedLiftProfile] {
         var updated = profiles
-        guard let index = profiles.firstIndex(where: {
-            $0.bottom.distance(to: observation.bottom) <= maximumEndpointDistance
-                && $0.top.distance(to: observation.top) <= maximumEndpointDistance
-        }) else {
-            updated.append(LearnedLiftProfile(id: id, bottom: observation.bottom, top: observation.top,
-                                              bottomRadius: 70, topRadius: 70,
-                                              observationCount: 1, confidence: 1.0 / Double(activationCount)))
+        guard
+            let index = profiles.firstIndex(where: {
+                $0.bottom.distance(to: observation.bottom) <= maximumEndpointDistance
+                    && $0.top.distance(to: observation.top) <= maximumEndpointDistance
+            })
+        else {
+            updated.append(
+                LearnedLiftProfile(
+                    id: id, bottom: observation.bottom, top: observation.top,
+                    bottomRadius: 70, topRadius: 70,
+                    observationCount: 1, confidence: 1.0 / Double(activationCount)))
             return updated
         }
 
@@ -40,13 +46,15 @@ struct LiftLearningEngine: Sendable {
         let weight = 1.0 / Double(count + 1)
         let bottom = blend(old.bottom, observation.bottom, weight: weight)
         let top = blend(old.top, observation.top, weight: weight)
-        let bottomRadius = adaptiveRadius(old.bottomRadius, distance: old.bottom.distance(to: observation.bottom), count: count)
+        let bottomRadius = adaptiveRadius(
+            old.bottomRadius, distance: old.bottom.distance(to: observation.bottom), count: count)
         let topRadius = adaptiveRadius(old.topRadius, distance: old.top.distance(to: observation.top), count: count)
         let newCount = count + 1
-        updated[index] = LearnedLiftProfile(id: old.id, bottom: bottom, top: top,
-                                            bottomRadius: bottomRadius, topRadius: topRadius,
-                                            observationCount: newCount,
-                                            confidence: min(1, Double(newCount) / Double(activationCount)))
+        updated[index] = LearnedLiftProfile(
+            id: old.id, bottom: bottom, top: top,
+            bottomRadius: bottomRadius, topRadius: topRadius,
+            observationCount: newCount,
+            confidence: min(1, Double(newCount) / Double(activationCount)))
         return updated
     }
 
@@ -54,15 +62,19 @@ struct LiftLearningEngine: Sendable {
         segments.filter { $0.kind == .lift }.compactMap { segment in
             let points = RouteCleaner().clean(segment.points)
             guard let first = points.first, let last = points.last,
-                  first.timestamp < last.timestamp else { return nil }
-            return (bottom: Coordinate(latitude: first.latitude, longitude: first.longitude),
-                    top: Coordinate(latitude: last.latitude, longitude: last.longitude))
+                first.timestamp < last.timestamp
+            else { return nil }
+            return (
+                bottom: Coordinate(latitude: first.latitude, longitude: first.longitude),
+                top: Coordinate(latitude: last.latitude, longitude: last.longitude)
+            )
         }
     }
 
     private func blend(_ old: Coordinate, _ new: Coordinate, weight: Double) -> Coordinate {
-        Coordinate(latitude: old.latitude + (new.latitude - old.latitude) * weight,
-                    longitude: old.longitude + (new.longitude - old.longitude) * weight)
+        Coordinate(
+            latitude: old.latitude + (new.latitude - old.latitude) * weight,
+            longitude: old.longitude + (new.longitude - old.longitude) * weight)
     }
 
     private func adaptiveRadius(_ old: Double, distance: Double, count: Int) -> Double {

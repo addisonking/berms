@@ -21,6 +21,17 @@ References:
 
 Preserve the centered start composition: center the icon, description, Start button, and supporting text in the available screen, with scrolling only when content does not fit. During recording, keep the map full-screen behind a compact floating stats panel above the tab bar. Size that panel to its content; never give it a large empty fixed-height background or replace it with an edge-to-edge bottom block. Keep the recording navigation chrome transparent and avoid a redundant Recording title. These are explicit user preferences from the September 9 visual review.
 
+## Lint and format
+
+Swift formatting and linting use Apple's `swift-format` with the repo-root `.swift-format` config (4-space indent, 120-column lines, force-unwrap and `.forEach` rules on).
+
+- Format everything: `./scripts/format.sh`
+- Lint everything: `./scripts/lint.sh`
+- Install the pre-commit hook that formats staged Swift files: `./scripts/install-hooks.sh`
+- CI runs `./scripts/lint.sh` via `.github/workflows/lint.yml`
+
+Run lint before committing; it must pass clean. Scripts prefer /Applications/Xcode.app when DEVELOPER_DIR is unset.
+
 ## Local device workflow
 
 - For physical iPhone builds and installs, use the stable Xcode toolchain at /Applications/Xcode.app/Contents/Developer. The beta toolchain currently rejects Berms's legacy watchkit2-extension target.

@@ -45,8 +45,9 @@ enum ShareCardPreset: String, CaseIterable, Codable, Identifiable {
     }
 
     var pixelSize: CGSize {
-        CGSize(width: canvasSize.width * Self.renderScale,
-               height: canvasSize.height * Self.renderScale)
+        CGSize(
+            width: canvasSize.width * Self.renderScale,
+            height: canvasSize.height * Self.renderScale)
     }
 
     var pixelDescription: String {

@@ -5,10 +5,13 @@ import Foundation
 /// Berms Studio can name runs with the same matcher the iOS app uses.
 enum TrailCatalog {
     static func loadBundled() -> [TrailRouteCandidate] {
-        guard let url = Bundle.main.url(forResource: "mountain-creek-ridepal-trails-with-metadata",
-                                        withExtension: "geojson"),
-              let data = try? Data(contentsOf: url),
-              let candidates = try? candidates(from: data) else {
+        guard
+            let url = Bundle.main.url(
+                forResource: "mountain-creek-ridepal-trails-with-metadata",
+                withExtension: "geojson"),
+            let data = try? Data(contentsOf: url),
+            let candidates = try? candidates(from: data)
+        else {
             return []
         }
         return candidates
@@ -19,19 +22,22 @@ enum TrailCatalog {
         let reference = Date(timeIntervalSince1970: 0)
         return collection.features.compactMap { feature -> TrailRouteCandidate? in
             guard let slug = feature.properties.slug?.trimmedNonEmpty,
-                  let name = feature.properties.name?.trimmedNonEmpty,
-                  let difficulty = difficulty(from: feature.properties),
-                  let routes = feature.geometry.routeLines(referenceDate: reference) else {
+                let name = feature.properties.name?.trimmedNonEmpty,
+                let difficulty = difficulty(from: feature.properties),
+                let routes = feature.geometry.routeLines(referenceDate: reference)
+            else {
                 return nil
             }
-            return TrailRouteCandidate(id: stableID(for: slug), name: name,
-                                       difficulty: difficulty, routes: routes)
+            return TrailRouteCandidate(
+                id: stableID(for: slug), name: name,
+                difficulty: difficulty, routes: routes)
         }
     }
 
     private static func difficulty(from properties: Properties) -> TrailDifficulty? {
         if let slug = properties.slug?.trimmedNonEmpty,
-           let official = officialDifficultyBySlug[slug] {
+            let official = officialDifficultyBySlug[slug]
+        {
             return official
         }
         if let raw = properties.difficulty, let value = TrailDifficulty(rawValue: raw) {
@@ -48,10 +54,13 @@ enum TrailCatalog {
 
     private static func stableID(for slug: String) -> UUID {
         let digest = Array(SHA256.hash(data: Data("berms:ridepal:\(slug)".utf8)).prefix(16))
-        return UUID(uuid: (digest[0], digest[1], digest[2], digest[3],
-                           digest[4], digest[5], digest[6], digest[7],
-                           digest[8], digest[9], digest[10], digest[11],
-                           digest[12], digest[13], digest[14], digest[15]))
+        return UUID(
+            uuid: (
+                digest[0], digest[1], digest[2], digest[3],
+                digest[4], digest[5], digest[6], digest[7],
+                digest[8], digest[9], digest[10], digest[11],
+                digest[12], digest[13], digest[14], digest[15]
+            ))
     }
 
     // Mountain Creek map corrections: PRO/EXPERT lines are Double Black in Berms.
@@ -67,7 +76,7 @@ enum TrailCatalog {
         "the-pit": .doubleBlack,
         "covenant-d2z0pq": .doubleBlack,
         "anthem-2cky0y": .doubleBlack,
-        "phantom-drop": .doubleBlack
+        "phantom-drop": .doubleBlack,
     ]
 
     private struct FeatureCollection: Decodable {
@@ -122,19 +131,21 @@ enum TrailCatalog {
             let start = referenceDate.addingTimeInterval(-Double(coordinates.count - 1))
             let points = coordinates.enumerated().compactMap { index, coordinate -> RoutePoint? in
                 guard coordinate.count >= 2,
-                      (-180...180).contains(coordinate[0]),
-                      (-90...90).contains(coordinate[1]) else { return nil }
-                return RoutePoint(latitude: coordinate[1], longitude: coordinate[0],
-                                  altitude: 0, speed: 0,
-                                  timestamp: start.addingTimeInterval(Double(index)))
+                    (-180...180).contains(coordinate[0]),
+                    (-90...90).contains(coordinate[1])
+                else { return nil }
+                return RoutePoint(
+                    latitude: coordinate[1], longitude: coordinate[0],
+                    altitude: 0, speed: 0,
+                    timestamp: start.addingTimeInterval(Double(index)))
             }
             return points.count >= 2 ? points : nil
         }
     }
 }
 
-private extension String {
-    var trimmedNonEmpty: String? {
+extension String {
+    fileprivate var trimmedNonEmpty: String? {
         let value = trimmingCharacters(in: .whitespacesAndNewlines)
         return value.isEmpty ? nil : value
     }

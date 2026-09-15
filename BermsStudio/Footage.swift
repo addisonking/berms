@@ -25,7 +25,7 @@ struct Clip: Identifiable, Sendable {
 extension Clip {
     static func orderedBefore(_ lhs: Clip, _ rhs: Clip) -> Bool {
         switch (lhs.sequenceNumber, rhs.sequenceNumber) {
-        case let (left?, right?) where left != right:
+        case (let left?, let right?) where left != right:
             return left < right
         case (_?, nil):
             return true
@@ -33,7 +33,7 @@ extension Clip {
             return false
         default:
             switch (lhs.recordedAt, rhs.recordedAt) {
-            case let (leftDate?, rightDate?) where leftDate != rightDate:
+            case (let leftDate?, let rightDate?) where leftDate != rightDate:
                 return leftDate < rightDate
             default:
                 return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
@@ -122,9 +122,12 @@ enum FootageScanner {
         if !isDirectory.boolValue {
             return isVideo(root) ? [root] : []
         }
-        guard let enumerator = manager.enumerator(at: root,
-                                                   includingPropertiesForKeys: [.isRegularFileKey],
-                                                   options: [.skipsHiddenFiles]) else {
+        guard
+            let enumerator = manager.enumerator(
+                at: root,
+                includingPropertiesForKeys: [.isRegularFileKey],
+                options: [.skipsHiddenFiles])
+        else {
             return []
         }
         var files: [URL] = []
@@ -139,7 +142,7 @@ enum FootageScanner {
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         process.arguments = [
             FFmpeg.probePath, "-v", "error", "-print_format", "json",
-            "-show_entries", "format=duration:format_tags=creation_time", url.path
+            "-show_entries", "format=duration:format_tags=creation_time", url.path,
         ]
         let stdout = Pipe()
         let stderr = Pipe()
@@ -156,7 +159,8 @@ enum FootageScanner {
         process.waitUntilExit()
 
         guard process.terminationStatus == 0 else {
-            let message = String(data: errorOutput, encoding: .utf8)?
+            let message =
+                String(data: errorOutput, encoding: .utf8)?
                 .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             throw FootageError.probeFailed(url, message)
         }
@@ -180,12 +184,15 @@ enum FootageScanner {
         return MediaInfo(duration: max(0, duration), recordedAt: recordedAt)
     }
 
-    static func resolvedRecordedAt(mediaDate: Date?, fileCreationDate: Date?,
-                                   modificationDate: Date?) -> Date? {
+    static func resolvedRecordedAt(
+        mediaDate: Date?, fileCreationDate: Date?,
+        modificationDate: Date?
+    ) -> Date? {
         guard let mediaDate else { return fileCreationDate }
         guard let fileCreationDate, let modificationDate,
-              fileCreationDate < modificationDate.addingTimeInterval(-10),
-              abs(mediaDate.timeIntervalSince(modificationDate)) <= 10 else {
+            fileCreationDate < modificationDate.addingTimeInterval(-10),
+            abs(mediaDate.timeIntervalSince(modificationDate)) <= 10
+        else {
             return mediaDate
         }
         return fileCreationDate
@@ -206,14 +213,18 @@ enum FootageScanner {
             var parts: [ClipPart] = []
             for candidate in ordered {
                 guard let info = try? probe(candidate.url) else { continue }
-                parts.append(ClipPart(path: candidate.url, chapter: candidate.chapter,
-                                      recordedAt: info.recordedAt, duration: info.duration))
+                parts.append(
+                    ClipPart(
+                        path: candidate.url, chapter: candidate.chapter,
+                        recordedAt: info.recordedAt, duration: info.duration))
             }
             guard let first = parts.first?.path else { continue }
             let name = first.lastPathComponent
-            clips.append(Clip(key: first.standardizedFileURL.path, name: name,
-                              sequenceNumber: candidates.compactMap(\.sequenceNumber).first,
-                              parts: parts))
+            clips.append(
+                Clip(
+                    key: first.standardizedFileURL.path, name: name,
+                    sequenceNumber: candidates.compactMap(\.sequenceNumber).first,
+                    parts: parts))
         }
 
         guard !clips.isEmpty || fileURLs.isEmpty else {
@@ -281,17 +292,22 @@ enum FootageScanner {
 }
 
 enum FfmpegStitcher {
-    static func concat(clips: [[URL]], output: URL,
-                       estimatedDuration: TimeInterval = 0,
-                       trimStart: TimeInterval = 0, trimEnd: TimeInterval = 0) throws {
-        try concat(clips: clips, output: output, estimatedDuration: estimatedDuration,
-                   trimStart: trimStart, trimEnd: trimEnd, progress: { _ in })
+    static func concat(
+        clips: [[URL]], output: URL,
+        estimatedDuration: TimeInterval = 0,
+        trimStart: TimeInterval = 0, trimEnd: TimeInterval = 0
+    ) throws {
+        try concat(
+            clips: clips, output: output, estimatedDuration: estimatedDuration,
+            trimStart: trimStart, trimEnd: trimEnd, progress: { _ in })
     }
 
-    static func concat(clips: [[URL]], output: URL,
-                       estimatedDuration: TimeInterval = 0,
-                       trimStart: TimeInterval = 0, trimEnd: TimeInterval = 0,
-                       progress: @escaping @Sendable (Double) -> Void) throws {
+    static func concat(
+        clips: [[URL]], output: URL,
+        estimatedDuration: TimeInterval = 0,
+        trimStart: TimeInterval = 0, trimEnd: TimeInterval = 0,
+        progress: @escaping @Sendable (Double) -> Void
+    ) throws {
         let parts = clips.flatMap { $0 }
         guard !parts.isEmpty else { throw FfmpegStitcherError.nothingToBuild }
         let trimStart = max(0, trimStart)
@@ -299,21 +315,27 @@ enum FfmpegStitcher {
 
         progress(0)
         guard trimStart > 0 || trimEnd > 0 else {
-            try concat(parts, output: output, expectedDuration: estimatedDuration,
-                       progress: progress)
+            try concat(
+                parts, output: output, expectedDuration: estimatedDuration,
+                progress: progress)
             progress(1)
             return
         }
 
         let clipsToTrim = clips.filter { !$0.isEmpty }
         var staged: [URL] = []
-        defer { staged.forEach { try? FileManager.default.removeItem(at: $0) } }
+        defer {
+            for url in staged {
+                try? FileManager.default.removeItem(at: url)
+            }
+        }
         for (index, clip) in clipsToTrim.enumerated() {
             let start = Double(index) / Double(clipsToTrim.count) * 0.5
             let span = 0.5 / Double(clipsToTrim.count)
-            staged.append(try trimClip(clip, trimStart: trimStart, trimEnd: trimEnd) { fraction in
-                progress(start + span * fraction)
-            })
+            staged.append(
+                try trimClip(clip, trimStart: trimStart, trimEnd: trimEnd) { fraction in
+                    progress(start + span * fraction)
+                })
             progress(start + span)
         }
         try concat(staged, output: output, expectedDuration: estimatedDuration) { fraction in
@@ -324,9 +346,11 @@ enum FfmpegStitcher {
 
     /// Trims one clip. Its chapters are a single continuous recording, so only the
     /// clip's own start and end are cut, never the boundaries between chapters.
-    private static func trimClip(_ parts: [URL], trimStart: TimeInterval,
-                                 trimEnd: TimeInterval,
-                                 progress: @escaping @Sendable (Double) -> Void) throws -> URL {
+    private static func trimClip(
+        _ parts: [URL], trimStart: TimeInterval,
+        trimEnd: TimeInterval,
+        progress: @escaping @Sendable (Double) -> Void
+    ) throws -> URL {
         var source = parts[0]
         var joined: URL?
         if parts.count > 1 {
@@ -342,35 +366,49 @@ enum FfmpegStitcher {
         guard length > 0 else { throw FfmpegStitcherError.trimEatsWholeVideo }
 
         let output = temporaryFile()
-        try run(["-ss", seconds(trimStart), "-i", source.path, "-t", seconds(length),
-                 "-c", "copy", "-movflags", "+faststart", output.path],
-                 for: output, expectedDuration: length, progress: progress)
+        try run(
+            [
+                "-ss", seconds(trimStart), "-i", source.path, "-t", seconds(length),
+                "-c", "copy", "-movflags", "+faststart", output.path,
+            ],
+            for: output, expectedDuration: length, progress: progress)
         return output
     }
 
-    private static func concat(_ parts: [URL], output: URL,
-                               expectedDuration: TimeInterval?,
-                               progress: @escaping @Sendable (Double) -> Void) throws {
+    private static func concat(
+        _ parts: [URL], output: URL,
+        expectedDuration: TimeInterval?,
+        progress: @escaping @Sendable (Double) -> Void
+    ) throws {
         guard !parts.isEmpty else { throw FfmpegStitcherError.nothingToBuild }
-        try FileManager.default.createDirectory(at: output.deletingLastPathComponent(),
-                                                withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            at: output.deletingLastPathComponent(),
+            withIntermediateDirectories: true)
         let listURL = output.deletingPathExtension().appendingPathExtension("concat.txt")
         let list = parts.map { "file '\(escape($0.path))'\n" }.joined()
         try list.write(to: listURL, atomically: true, encoding: .utf8)
         defer { try? FileManager.default.removeItem(at: listURL) }
 
-        try run(["-f", "concat", "-safe", "0", "-i", listURL.path,
-                 "-c", "copy", "-movflags", "+faststart", output.path],
-                 for: output, expectedDuration: expectedDuration, progress: progress)
+        try run(
+            [
+                "-f", "concat", "-safe", "0", "-i", listURL.path,
+                "-c", "copy", "-movflags", "+faststart", output.path,
+            ],
+            for: output, expectedDuration: expectedDuration, progress: progress)
     }
 
-    private static func run(_ arguments: [String], for output: URL,
-                            expectedDuration: TimeInterval?,
-                            progress: @escaping @Sendable (Double) -> Void) throws {
+    private static func run(
+        _ arguments: [String], for output: URL,
+        expectedDuration: TimeInterval?,
+        progress: @escaping @Sendable (Double) -> Void
+    ) throws {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = [FFmpeg.path, "-hide_banner", "-loglevel", "error",
-                             "-nostats", "-progress", "pipe:1", "-y"] + arguments
+        process.arguments =
+            [
+                FFmpeg.path, "-hide_banner", "-loglevel", "error",
+                "-nostats", "-progress", "pipe:1", "-y",
+            ] + arguments
         let progressPipe = Pipe()
         let stderr = Pipe()
         process.standardOutput = progressPipe
@@ -382,8 +420,9 @@ enum FfmpegStitcher {
             throw FootageError.unavailable(error)
         }
 
-        let reader = FfmpegProgressReader(expectedDuration: expectedDuration,
-                                           progress: progress)
+        let reader = FfmpegProgressReader(
+            expectedDuration: expectedDuration,
+            progress: progress)
         let source = DispatchSource.makeReadSource(
             fileDescriptor: progressPipe.fileHandleForReading.fileDescriptor,
             queue: DispatchQueue.global(qos: .utility)
@@ -402,7 +441,8 @@ enum FfmpegStitcher {
         source.cancel()
 
         guard process.terminationStatus == 0 else {
-            let message = String(data: errorOutput, encoding: .utf8)?
+            let message =
+                String(data: errorOutput, encoding: .utf8)?
                 .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             throw FootageError.concatFailed(output, message)
         }
@@ -452,9 +492,10 @@ private final class FfmpegProgressReader: @unchecked Sendable {
 
     private func fraction(for line: String) -> Double? {
         guard line.hasPrefix("out_time_ms="),
-              let expectedDuration, expectedDuration > 0,
-              let raw = line.split(separator: "=", maxSplits: 1).last,
-              let microseconds = Double(raw) else {
+            let expectedDuration, expectedDuration > 0,
+            let raw = line.split(separator: "=", maxSplits: 1).last,
+            let microseconds = Double(raw)
+        else {
             return nil
         }
         return min(max(microseconds / 1_000_000 / expectedDuration, 0), 1)

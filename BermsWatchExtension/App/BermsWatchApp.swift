@@ -1,6 +1,6 @@
+import HealthKit
 import SwiftUI
 import WatchKit
-import HealthKit
 
 @MainActor
 final class BermsWatchDelegate: NSObject, WKExtensionDelegate {
