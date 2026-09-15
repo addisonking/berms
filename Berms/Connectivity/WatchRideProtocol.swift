@@ -29,6 +29,7 @@ struct WatchRideState: Codable, Equatable, Sendable {
     let speedMetersPerSecond: Double
     let run: RunMetrics?
     let updatedAt: Date
+    let activityModeRawValue: String?
 
     init(version: Int = WatchRideState.currentVersion,
          status: WatchRideStatus,
@@ -40,7 +41,8 @@ struct WatchRideState: Codable, Equatable, Sendable {
          descentMeters: Double,
          speedMetersPerSecond: Double,
          run: RunMetrics? = nil,
-         updatedAt: Date) {
+         updatedAt: Date,
+         activityModeRawValue: String? = nil) {
         self.version = version
         self.status = status
         self.rideID = rideID
@@ -52,6 +54,7 @@ struct WatchRideState: Codable, Equatable, Sendable {
         self.speedMetersPerSecond = speedMetersPerSecond
         self.run = run
         self.updatedAt = updatedAt
+        self.activityModeRawValue = activityModeRawValue
     }
 
     init(from decoder: Decoder) throws {
@@ -66,6 +69,7 @@ struct WatchRideState: Codable, Equatable, Sendable {
         descentMeters = try container.decodeIfPresent(Double.self, forKey: .descentMeters) ?? 0
         speedMetersPerSecond = try container.decodeIfPresent(Double.self, forKey: .speedMetersPerSecond) ?? 0
         run = try container.decodeIfPresent(RunMetrics.self, forKey: .run)
+        activityModeRawValue = try container.decodeIfPresent(String.self, forKey: .activityModeRawValue)
         // A missing timestamp must never look newer than what the watch already shows.
         updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? .distantPast
     }
@@ -83,6 +87,12 @@ struct WatchRideState: Codable, Equatable, Sendable {
     ) }
 
     var isActive: Bool { status != .idle }
+
+    var isSkiDay: Bool { activityModeRawValue == "ski" }
+
+    var activityTitle: String {
+        isSkiDay ? "Ski day" : "Berms"
+    }
 
     func isStale(at date: Date = .now, threshold: TimeInterval = 5) -> Bool {
         isActive && date.timeIntervalSince(updatedAt) > threshold

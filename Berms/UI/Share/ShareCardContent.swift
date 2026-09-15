@@ -44,7 +44,7 @@ enum ShareCardContentBuilder {
                       trailDetails: SessionDetailTrailDetails?,
                       manualCatalogID: String?,
                       configuration: ShareCardConfiguration) -> ShareCardContent {
-        let resortName = resolveResortName(base: base, manualCatalogID: manualCatalogID)
+        let resortName = resolveResortName(day: day, base: base, manualCatalogID: manualCatalogID)
         let dateText = day.startedAt.formatted(date: .abbreviated, time: .omitted)
         let customName = day.hasCustomName
             ? day.name?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -80,7 +80,12 @@ enum ShareCardContentBuilder {
         )
     }
 
-    private static func resolveResortName(base: SessionDetailBase?, manualCatalogID: String?) -> String {
+    private static func resolveResortName(day: RideDay,
+                                          base: SessionDetailBase?,
+                                          manualCatalogID: String?) -> String {
+        if let catalog = day.catalogID.flatMap(TrailCatalogRegistry.catalog(withID:)) {
+            return catalog.resortName
+        }
         if let active = base?.runs.first?.activeResort, !active.isEmpty {
             return active
         }
@@ -88,7 +93,10 @@ enum ShareCardContentBuilder {
            let catalog = TrailCatalogRegistry.catalog(withID: manualCatalogID) {
             return catalog.resortName
         }
-        return TrailCatalogRegistry.defaultCatalog.resortName
+        if let catalog = TrailCatalogRegistry.catalog(for: day.activityMode) {
+            return catalog.resortName
+        }
+        return day.activityMode == .ski ? "Ski day" : TrailCatalogRegistry.defaultCatalog.resortName
     }
 
     private static func statValues(day: RideDay, base: SessionDetailBase?) -> [ShareStatKind: String] {

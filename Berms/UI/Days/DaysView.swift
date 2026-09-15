@@ -5,7 +5,6 @@ import UIKit
 
 struct DaysView: View {
     @Environment(\.modelContext) private var modelContext
-    @EnvironmentObject private var trailCatalogSelection: TrailCatalogSelection
     @Query(sort: \RideDay.startedAt, order: .reverse) private var days: [RideDay]
     @Query(sort: \Trail.updatedAt, order: .reverse) private var trails: [Trail]
     @Binding private var pendingDayID: UUID?
@@ -63,7 +62,7 @@ struct DaysView: View {
                     let preheatedRunKey = SessionDetailPresentationPreheater.runCacheKey(
                         dayID: day.id,
                         segmentID: run.id,
-                        selectionID: trailCatalogSelection.selectionID,
+                        selectionID: catalogSelectionID(for: day),
                         trails: trails
                     )
                     let preheatedRun = SessionDetailPresentationCache.shared.runEntry(for: preheatedRunKey)
@@ -121,7 +120,7 @@ struct DaysView: View {
         ContentUnavailableView {
             Label("No days yet", systemImage: "mountain.2.fill")
         } description: {
-            Text("Finish a ride and it will appear here.")
+            Text("Finish a session and it will appear here.")
         } actions: {
             Button("Start tracking", action: onStartTracking)
                 .buttonStyle(.borderedProminent)
@@ -142,7 +141,8 @@ struct DaysView: View {
             return "none"
         }
         return "\(target.day.id.uuidString)|\(target.run.id.uuidString)|"
-            + "\(trailCatalogSelection.selectionID)|\(SessionDetailPresentationPreheater.trailRevision(for: trails))"
+            + "\(catalogSelectionID(for: target.day))|"
+            + "\(SessionDetailPresentationPreheater.trailRevision(for: trails))"
     }
 
     @MainActor
@@ -155,7 +155,7 @@ struct DaysView: View {
         let cacheKey = SessionDetailPresentationPreheater.runCacheKey(
             dayID: day.id,
             segmentID: latestRun.id,
-            selectionID: trailCatalogSelection.selectionID,
+            selectionID: catalogSelectionID(for: day),
             trails: trails
         )
         if SessionDetailPresentationCache.shared.runEntry(for: cacheKey) != nil {
@@ -165,7 +165,8 @@ struct DaysView: View {
         do {
             guard let entry = try await SessionDetailPresentationPreheater.prepareRun(
                 segmentID: latestRun.id,
-                manualCatalogID: trailCatalogSelection.manualCatalogID,
+                manualCatalogID: day.catalogID
+                    ?? TrailCatalogRegistry.catalog(for: day.activityMode)?.id,
                 container: modelContext.container
             ) else { return }
             guard !Task.isCancelled else { return }
@@ -175,6 +176,12 @@ struct DaysView: View {
         } catch {
             return
         }
+    }
+
+    private func catalogSelectionID(for day: RideDay) -> String {
+        day.catalogID
+            ?? TrailCatalogRegistry.catalog(for: day.activityMode)?.id
+            ?? TrailCatalogRegistry.automaticSelectionID
     }
 
     /// Sessions are sparse and rich, so the list stays primary: newest first,

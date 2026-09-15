@@ -5,8 +5,10 @@ import SwiftData
 
 struct TrailCatalogDescriptor: Identifiable, Hashable, Sendable {
     let id: String
+    let season: SeasonBucket
+    let resortID: String
     let resortName: String
-    let bundledResourceName: String
+    let bundledResourceName: String?
     let importVersion: String
     let locationAnchor: Coordinate
 
@@ -20,9 +22,12 @@ struct TrailCatalogDescriptor: Identifiable, Hashable, Sendable {
 
 enum TrailCatalogRegistry {
     static let automaticSelectionID = "automatic"
+    static let mountainCreekResortID = "mountain-creek"
 
     static let mountainCreek = TrailCatalogDescriptor(
         id: "mountain-creek-resort",
+        season: .summer,
+        resortID: mountainCreekResortID,
         resortName: "Mountain Creek Resort",
         bundledResourceName: "mountain-creek-ridepal-trails-with-metadata",
         importVersion: "mountain-creek-ridepal-v3",
@@ -31,13 +36,31 @@ enum TrailCatalogRegistry {
         legacyImportVersionKeys: ["berms.trailSeedImport.version"]
     )
 
+    static let mountainCreekWinter = TrailCatalogDescriptor(
+        id: "mountain-creek-winter",
+        season: .winter,
+        resortID: mountainCreekResortID,
+        resortName: "Mountain Creek Resort",
+        bundledResourceName: nil,
+        importVersion: "mountain-creek-winter-v1",
+        locationAnchor: Coordinate(latitude: 41.2505, longitude: -74.5012),
+        stableIDNamespace: "berms:mountain-creek-winter",
+        legacyImportVersionKeys: []
+    )
+
+    /// Catalogs with bundled geometry are imported into SwiftData. Seasonal
+    /// placeholders remain resolvable even before their map resource ships.
     static let catalogs: [TrailCatalogDescriptor] = [mountainCreek]
+    static let catalogsBySeason: [SeasonBucket: [TrailCatalogDescriptor]] = [
+        .summer: [mountainCreek],
+        .winter: [mountainCreekWinter]
+    ]
 
     static var defaultCatalog: TrailCatalogDescriptor { catalogs[0] }
 
     static func catalog(withID id: String?) -> TrailCatalogDescriptor? {
         guard let id else { return nil }
-        return catalogs.first { $0.id == id }
+        return [mountainCreek, mountainCreekWinter].first { $0.id == id }
     }
 
     static func nearestCatalog(to coordinate: Coordinate) -> TrailCatalogDescriptor {
@@ -45,6 +68,28 @@ enum TrailCatalogRegistry {
             coordinate.distance(to: $0.locationAnchor)
                 < coordinate.distance(to: $1.locationAnchor)
         } ?? defaultCatalog
+    }
+
+    static func catalog(for mode: ActivityMode,
+                        coordinate: Coordinate? = nil) -> TrailCatalogDescriptor? {
+        let candidates = catalogsBySeason[mode.season] ?? []
+        guard !candidates.isEmpty else { return nil }
+        guard let coordinate else { return candidates.first }
+        return candidates.min {
+            coordinate.distance(to: $0.locationAnchor)
+                < coordinate.distance(to: $1.locationAnchor)
+        }
+    }
+
+    static func trails(_ trails: [Trail], for catalog: TrailCatalogDescriptor) -> [Trail] {
+        trails.filter { trail in
+            if let trailCatalogID = trail.catalogID {
+                return trailCatalogID == catalog.id
+            }
+            // Trails created before seasonal catalog IDs existed belong to the
+            // original summer Mountain Creek catalog when their resort matches.
+            return catalog.id == mountainCreek.id && trail.resort == catalog.resortName
+        }
     }
 }
 
@@ -93,9 +138,24 @@ final class TrailCatalogSelection: ObservableObject {
         return TrailCatalogRegistry.nearestCatalog(to: coordinate)
     }
 
+    func catalog(for mode: ActivityMode,
+                 coordinate: Coordinate? = nil) -> TrailCatalogDescriptor? {
+        if let manualCatalogID,
+           let manualCatalog = TrailCatalogRegistry.catalog(withID: manualCatalogID),
+           manualCatalog.season == mode.season {
+            return manualCatalog
+        }
+        return TrailCatalogRegistry.catalog(for: mode, coordinate: coordinate)
+    }
+
     func trails(_ trails: [Trail], near coordinate: Coordinate? = nil) -> [Trail] {
-        let activeResort = catalog(for: coordinate).resortName
-        return trails.filter { $0.resort == activeResort }
+        trails(trails, mode: .bikePark, near: coordinate)
+    }
+
+    func trails(_ trails: [Trail], mode: ActivityMode,
+                near coordinate: Coordinate? = nil) -> [Trail] {
+        guard let catalog = catalog(for: mode, coordinate: coordinate) else { return [] }
+        return TrailCatalogRegistry.trails(trails, for: catalog)
     }
 }
 
@@ -164,9 +224,10 @@ enum TrailCatalogImporter {
         now: Date = .now
     ) throws -> Summary? {
         guard !isImported(catalog, defaults: defaults) else { return nil }
-        guard let url = bundle.url(forResource: catalog.bundledResourceName,
+        guard let resourceName = catalog.bundledResourceName,
+              let url = bundle.url(forResource: resourceName,
                                    withExtension: "geojson") else {
-            throw ImportError.missingResource
+            return nil
         }
         let data = try Data(contentsOf: url)
         return try `import`(data: data, into: context, defaults: defaults,
@@ -215,6 +276,7 @@ enum TrailCatalogImporter {
             let trail: Trail
             if let existing = trailsByID[id] {
                 trail = existing
+                existing.catalogID = catalog.id
                 if existing.name != name || existing.difficultyRawValue != difficulty.rawValue {
                     existing.name = name
                     existing.difficultyRawValue = difficulty.rawValue
@@ -225,7 +287,8 @@ enum TrailCatalogImporter {
                     continue
                 }
             } else {
-                trail = Trail(name: name, difficulty: difficulty, resort: catalog.resortName)
+                trail = Trail(name: name, difficulty: difficulty, resort: catalog.resortName,
+                              catalogID: catalog.id)
                 trail.id = id
                 context.insert(trail)
                 trailsByID[id] = trail
@@ -353,7 +416,8 @@ enum TrailCatalogImporter {
         catalog: TrailCatalogDescriptor,
         bundle: Bundle = .main
     ) -> [UUID: [RoutePoint]] {
-        guard let url = bundle.url(forResource: catalog.bundledResourceName,
+        guard let resourceName = catalog.bundledResourceName,
+              let url = bundle.url(forResource: resourceName,
                                    withExtension: "geojson"),
               let data = try? Data(contentsOf: url),
               let collection = try? JSONDecoder().decode(GeoJSONFeatureCollection.self, from: data) else {

@@ -8,16 +8,23 @@ struct DayRow: View {
 
     var body: some View {
         AdaptiveStatRow {
-            VStack(alignment: .leading, spacing: 5) {
-                Text(title)
+            HStack(alignment: .top, spacing: BermsSpacing.control) {
+                Image(systemName: day.activityMode.systemImage)
                     .font(.headline)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text(metadata)
-                    .font(.subheadline)
                     .foregroundStyle(Color.bermsMuted)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(width: BermsSpacing.target, height: BermsSpacing.target)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(title)
+                        .font(.headline)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(metadata)
+                        .font(.subheadline)
+                        .foregroundStyle(Color.bermsMuted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
             Text(BermsFormat.duration(day.duration))
                 .font(.subheadline.weight(.semibold))
                 .monospacedDigit()
@@ -26,7 +33,9 @@ struct DayRow: View {
         }
         .frame(maxWidth: .infinity, minHeight: BermsSpacing.target, alignment: .leading)
         .contentShape(Rectangle())
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(day.activityMode.title) day, \(title)")
+        .accessibilityValue("\(metadata), \(BermsFormat.duration(day.duration))")
     }
 
     /// The month header only names the month, so unnamed sessions lead with the

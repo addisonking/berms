@@ -1,11 +1,80 @@
 import Foundation
 import SwiftData
 
+enum SeasonBucket: String, Codable, CaseIterable, Identifiable, Sendable {
+    case summer
+    case winter
+
+    var id: String { rawValue }
+
+    var title: String {
+        rawValue.capitalized
+    }
+}
+
+enum ActivityMode: String, Codable, CaseIterable, Identifiable, Sendable {
+    case bikePark
+    case ski
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .bikePark: "Bike park"
+        case .ski: "Ski"
+        }
+    }
+
+    var readyTitle: String {
+        switch self {
+        case .bikePark: "Ready to ride"
+        case .ski: "Ready to ski"
+        }
+    }
+
+    var readyDescription: String {
+        switch self {
+        case .bikePark: "Track runs, lifts, and routes."
+        case .ski: "Track ski runs, lifts, and your day on the mountain."
+        }
+    }
+
+    var startTitle: String {
+        switch self {
+        case .bikePark: "Start"
+        case .ski: "Start ski day"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .bikePark: "figure.outdoor.cycle"
+        case .ski: "snowflake"
+        }
+    }
+
+    var season: SeasonBucket {
+        switch self {
+        case .bikePark: .summer
+        case .ski: .winter
+        }
+    }
+
+    var activeTimeTitle: String {
+        switch self {
+        case .bikePark: "Riding time"
+        case .ski: "Ski time"
+        }
+    }
+}
+
 @Model
 final class RideDay {
     @Attribute(.unique) var id: UUID
     var name: String?
     var notes: String?
+    var activityModeRawValue: String?
+    var catalogID: String?
     var startedAt: Date
     var endedAt: Date?
     var distanceMeters: Double
@@ -27,6 +96,8 @@ final class RideDay {
         self.id = UUID()
         self.name = nil
         self.notes = nil
+        self.activityModeRawValue = nil
+        self.catalogID = nil
         self.startedAt = startedAt
         self.endedAt = nil
         self.distanceMeters = 0
@@ -43,6 +114,10 @@ final class RideDay {
     var isFinished: Bool { endedAt != nil }
 
     var isPaused: Bool { endedAt == nil && pausedAt != nil }
+
+    var activityMode: ActivityMode {
+        ActivityMode(rawValue: activityModeRawValue ?? "") ?? .bikePark
+    }
 
     var displayName: String {
         normalizedName ?? startedAt.formatted(date: .abbreviated, time: .shortened)
@@ -185,6 +260,8 @@ struct BermsDataExport: Codable, Sendable {
         let id: String
         let name: String?
         let notes: String?
+        let activityMode: ActivityMode?
+        let catalogID: String?
         let startedAt: Date
         let endedAt: Date?
         let segments: [Segment]
@@ -243,9 +320,16 @@ struct BermsDataExport: Codable, Sendable {
     init(day: RideDay, trails: [Trail] = [], exportedAt: Date = .now,
          rawDiagnosticsFilename: String? = nil) {
         var nextRunNumber = 0
-        let trailNamesByID = Dictionary(trails.map { ($0.id, $0.name) },
+        let catalogTrails: [Trail]
+        if let catalogID = day.catalogID,
+           let catalog = TrailCatalogRegistry.catalog(withID: catalogID) {
+            catalogTrails = TrailCatalogRegistry.trails(trails, for: catalog)
+        } else {
+            catalogTrails = trails
+        }
+        let trailNamesByID = Dictionary(catalogTrails.map { ($0.id, $0.name) },
                                         uniquingKeysWith: { first, _ in first })
-        let trailCandidates = trails.map {
+        let trailCandidates = catalogTrails.map {
             TrailRouteCandidate(id: $0.id, name: $0.name, difficulty: $0.difficulty,
                                 routes: $0.matcherRoutes)
         }
@@ -304,9 +388,10 @@ struct BermsDataExport: Codable, Sendable {
         }
 
         format = "berms.day"
-        version = 3
+        version = 4
         self.exportedAt = exportedAt
         days = [Day(id: day.id.uuidString, name: day.name, notes: day.notes,
+                    activityMode: day.activityMode, catalogID: day.catalogID,
                     startedAt: day.startedAt, endedAt: day.endedAt, segments: segments)]
         parsed = Parsed(dayID: day.id.uuidString, runCount: runs.count, runs: runs)
         rawDiagnostics = rawDiagnosticsFilename.map {
@@ -389,6 +474,7 @@ final class Trail {
     var difficultyRawValue: String
     var styleRawValue: String?
     var resort: String
+    var catalogID: String?
     var createdAt: Date
     var updatedAt: Date
     @Attribute(.externalStorage) var averagedRouteData: Data?
@@ -399,12 +485,13 @@ final class Trail {
     var passes: [TrailPass]
 
     init(name: String, difficulty: TrailDifficulty, style: TrailStyle = .freeRide,
-         resort: String, createdAt: Date = .now) {
+         resort: String, catalogID: String? = nil, createdAt: Date = .now) {
         self.id = UUID()
         self.name = name
         self.difficultyRawValue = difficulty.rawValue
         self.styleRawValue = style.rawValue
         self.resort = resort
+        self.catalogID = catalogID
         self.createdAt = createdAt
         self.updatedAt = createdAt
         self.averagedRouteData = nil

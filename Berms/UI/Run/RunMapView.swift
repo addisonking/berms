@@ -50,7 +50,6 @@ struct RunMapView: View {
     let preparedDetail: SessionDetailSegment?
     let preparedTrailDetails: SessionDetailTrailDetails?
     @Query private var trails: [Trail]
-    @EnvironmentObject private var trailCatalogSelection: TrailCatalogSelection
     @State private var showingFullScreenMap = false
     @State private var ownBase: SessionDetailBase?
     @State private var ownTrailDetails: SessionDetailTrailDetails?
@@ -158,7 +157,10 @@ struct RunMapView: View {
     private func prepareIfNeeded(force: Bool = false) async {
         guard preparedDetail == nil, activeDetail == nil, (!isPreparing || force) else { return }
         if force { prepareFailed = false }
-        let selectionID = trailCatalogSelection.selectionID
+        let activityMode = segment.day?.activityMode ?? .bikePark
+        let catalogID = segment.day?.catalogID
+            ?? TrailCatalogRegistry.catalog(for: activityMode)?.id
+        let selectionID = catalogID ?? TrailCatalogRegistry.automaticSelectionID
         var runKey: String?
         if let dayID = segment.day?.id {
             runKey = SessionDetailPresentationPreheater.runCacheKey(dayID: dayID,
@@ -186,7 +188,7 @@ struct RunMapView: View {
         do {
             guard let entry = try await SessionDetailPresentationPreheater.prepareRun(
                 segmentID: segment.id,
-                manualCatalogID: trailCatalogSelection.manualCatalogID,
+                manualCatalogID: catalogID,
                 container: modelContext.container,
                 onBase: { ownBase = $0 }
             ) else { return }
