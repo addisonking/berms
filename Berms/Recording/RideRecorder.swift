@@ -341,7 +341,7 @@ enum DiagnosticSummaryRebuilder {
 @MainActor
 final class RideRecorder: ObservableObject {
     static let shared = RideRecorder()
-    private static let diagnosticSummaryVersion = "11"
+    private static let diagnosticSummaryVersion = "12"
     private static let diagnosticSummaryVersionKey = "berms.diagnosticSummaryVersion"
     private static let rawMotionLoggingKey = "berms.rawMotionLogging"
     private static let liveActivityMetricKey = "berms.liveActivityMetric"
@@ -914,12 +914,26 @@ final class RideRecorder: ObservableObject {
             }
         }
 
+        var repairedTrailIDs = Set<UUID>()
         if let passes = try? context.fetch(FetchDescriptor<TrailPass>()) {
             let passesByID = Dictionary(passes.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
             for repair in repairedPasses {
                 guard let pass = passesByID[repair.id] else { continue }
+                if let trailID = pass.trail?.id {
+                    repairedTrailIDs.insert(trailID)
+                }
                 pass.routeData = repair.routeData
                 pass.distanceMeters = repair.distanceMeters
+            }
+        }
+
+        // Trail.points prefers the cached average over its passes. Rebuilding a
+        // repaired pass without rebuilding that average leaves the old, thinned
+        // centerline on every map that reads Trail.points.
+        if !repairedTrailIDs.isEmpty,
+           let trails = try? context.fetch(FetchDescriptor<Trail>()) {
+            for trail in trails where repairedTrailIDs.contains(trail.id) {
+                trail.recalculateAverage()
             }
         }
 

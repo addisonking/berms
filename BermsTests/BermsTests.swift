@@ -1027,6 +1027,63 @@ final class BermsTests: XCTestCase {
         XCTAssertTrue(riderPass.isEmpty)
     }
 
+    @MainActor
+    func testCatalogPassRepairRebuildsTheTrailAverageDuringMigration() async throws {
+        let catalog = TrailCatalogRegistry.mountainCreek
+        let routes = TrailCatalogImporter.bundledRoutePoints(catalog: catalog)
+        let trailID = TrailCatalogImporter.stableID(for: "salvation-u41zh8", catalog: catalog)
+        let geometry = try XCTUnwrap(routes[trailID])
+        let damaged = RouteCleaner().clean(geometry)
+        XCTAssertLessThan(damaged.count, geometry.count)
+
+        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try ModelContainer(for: RideDay.self, RideSegment.self,
+                                           Trail.self, TrailPass.self, LearnedLift.self,
+                                           configurations: configuration)
+        let context = ModelContext(container)
+        let createdAt = Date(timeIntervalSince1970: 8_000)
+        let trail = Trail(name: "Salvation", difficulty: .blue,
+                          resort: catalog.resortName, createdAt: createdAt)
+        trail.id = trailID
+        let pass = TrailPass(routePoints: damaged,
+                             recordedAt: createdAt.addingTimeInterval(5))
+        pass.trail = trail
+        trail.passes.append(pass)
+        trail.averagedRouteData = try RouteCodec.encode(damaged)
+        context.insert(trail)
+        context.insert(pass)
+        try context.save()
+
+        let previousVersion = UserDefaults.standard.string(forKey: "berms.diagnosticSummaryVersion")
+        let previousRecordingState = UserDefaults.standard.bool(forKey: "berms.recordingActive")
+        defer {
+            if let previousVersion {
+                UserDefaults.standard.set(previousVersion, forKey: "berms.diagnosticSummaryVersion")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "berms.diagnosticSummaryVersion")
+            }
+            UserDefaults.standard.set(previousRecordingState, forKey: "berms.recordingActive")
+        }
+        UserDefaults.standard.set("11", forKey: "berms.diagnosticSummaryVersion")
+        UserDefaults.standard.set(false, forKey: "berms.recordingActive")
+
+        let recorder = RideRecorder(context: context, watchStateSink: nil)
+        recorder.resumeIfNeeded()
+        await recorder.migrationTask?.value
+
+        let savedTrail = try XCTUnwrap(context.fetch(FetchDescriptor<Trail>()).first)
+        XCTAssertGreaterThan(savedTrail.points.count, damaged.count)
+        XCTAssertEqual(savedTrail.points.count, geometry.count)
+        let savedFirst = try XCTUnwrap(savedTrail.points.first)
+        let expectedFirst = try XCTUnwrap(geometry.first)
+        let savedLast = try XCTUnwrap(savedTrail.points.last)
+        let expectedLast = try XCTUnwrap(geometry.last)
+        XCTAssertEqual(savedFirst.latitude, expectedFirst.latitude, accuracy: 1e-9)
+        XCTAssertEqual(savedFirst.longitude, expectedFirst.longitude, accuracy: 1e-9)
+        XCTAssertEqual(savedLast.latitude, expectedLast.latitude, accuracy: 1e-9)
+        XCTAssertEqual(savedLast.longitude, expectedLast.longitude, accuracy: 1e-9)
+    }
+
     func testRouteCodecRoundTripsPoints() throws {
         let points = [
             RoutePoint(latitude: 40.0, longitude: -105.0, altitude: 2_000, speed: 5, timestamp: Date(timeIntervalSince1970: 1_000)),
