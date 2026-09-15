@@ -38,7 +38,10 @@ struct TrackView: View {
             .toolbarVisibility(recorder.isRecording ? .hidden : .visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    settingsButton
+                    HStack(spacing: 0) {
+                        activityModePicker
+                        settingsButton
+                    }
                 }
             }
             .animation(reduceMotion ? nil : BermsMotion.content, value: recorder.isRecording)
@@ -95,15 +98,6 @@ struct TrackView: View {
                             .multilineTextAlignment(.center)
                             .frame(maxWidth: 300)
                     }
-
-                    Picker("Activity", selection: activityModeBinding) {
-                        ForEach(ActivityMode.allCases) { mode in
-                            Label(mode.title, systemImage: mode.systemImage)
-                                .tag(mode)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    .accessibilityLabel("Activity mode")
 
                     startButton
 
@@ -367,6 +361,21 @@ struct TrackView: View {
             get: { recorder.selectedActivityMode },
             set: { recorder.setSelectedActivityMode($0) }
         )
+    }
+
+    private var activityModePicker: some View {
+        Picker(selection: activityModeBinding) {
+            ForEach(ActivityMode.allCases) { mode in
+                Label(mode.title, systemImage: mode.systemImage)
+                    .tag(mode)
+            }
+        } label: {
+            Image(systemName: recorder.selectedActivityMode.systemImage)
+                .frame(width: BermsSpacing.target, height: BermsSpacing.target)
+                .contentShape(.rect)
+        }
+        .pickerStyle(.menu)
+        .accessibilityLabel("Activity mode")
     }
 
     private var gpsEmptyTitle: String {

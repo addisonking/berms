@@ -20,7 +20,7 @@ enum ActivityMode: String, Codable, CaseIterable, Identifiable, Sendable {
 
     var title: String {
         switch self {
-        case .bikePark: "Bike park"
+        case .bikePark: "Bike"
         case .ski: "Ski"
         }
     }
