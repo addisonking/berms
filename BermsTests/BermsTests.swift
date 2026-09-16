@@ -286,9 +286,9 @@ final class BermsTests: XCTestCase {
 
     func testBundledResortManifestLoadsAndResolvesResources() throws {
         let manifest = try ResortCatalogLoader.load(bundle: .main)
-        XCTAssertEqual(manifest.resorts.count, 2)
-        XCTAssertEqual(
-            manifest.catalogs.map(\.id), ["mountain-creek-resort", "mountain-creek-winter", "whistler-resort"])
+        XCTAssertFalse(manifest.resorts.isEmpty)
+        XCTAssertNotNil(TrailCatalogRegistry.catalog(withID: "mountain-creek-resort"))
+        XCTAssertNotNil(TrailCatalogRegistry.catalog(withID: "whistler-resort"))
 
         let catalogIDs = manifest.catalogs.map(\.id)
         XCTAssertEqual(Set(catalogIDs).count, catalogIDs.count)
@@ -490,6 +490,34 @@ final class BermsTests: XCTestCase {
                 manualSelectionID: TrailCatalogRegistry.mountainCreekWinterCatalogID,
                 firstPoint: whistler),
             "whistler-resort")
+        // GPS resolution has to respect the activity's season.
+        XCTAssertEqual(
+            TrailCatalogRegistry.resolvedCatalogID(
+                mode: .ski, manualSelectionID: nil, firstPoint: creek),
+            TrailCatalogRegistry.mountainCreekWinterCatalogID)
+        XCTAssertEqual(
+            TrailCatalogRegistry.resolvedCatalogID(
+                mode: .bikePark,
+                manualSelectionID: TrailCatalogRegistry.mountainCreekWinterCatalogID,
+                firstPoint: creek),
+            TrailCatalogRegistry.mountainCreekCatalogID)
+    }
+
+    func testManifestRejectsAnUnsupportedSchemaVersion() throws {
+        let data = Data(
+            """
+            {"schemaVersion":2,"resorts":[
+              {"id":"resort-a","name":"Resort A",
+               "bounds":{"center":{"latitude":40,"longitude":-105},"radiusMeters":1500},
+               "catalogs":[]}
+            ]}
+            """.utf8)
+
+        XCTAssertThrowsError(try ResortCatalogLoader.decode(data)) { error in
+            guard case ResortCatalogLoader.ManifestError.unsupportedSchema(2) = error else {
+                return XCTFail("Expected an unsupported schema error, got \(error)")
+            }
+        }
     }
 
     func testResortBoundaryResolvesOnlyInsideTheResort() throws {

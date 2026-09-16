@@ -72,7 +72,7 @@ final class PersistenceController {
 
         if let container = try? ModelContainer(for: schema, configurations: [configuration]) {
             self.container = container
-            importCatalogs(into: container.mainContext)
+            importCatalogs(in: container)
             return
         }
 
@@ -84,7 +84,7 @@ final class PersistenceController {
                     ? "Berms could not open its saved data, so it started fresh. The previous data was kept on this device."
                     : "Berms could not open its saved data, so it started fresh."
             )
-            importCatalogs(into: container.mainContext)
+            importCatalogs(in: container)
             return
         }
 
@@ -96,20 +96,33 @@ final class PersistenceController {
         storeIssue = StoreIssue(
             message: "Berms could not open its saved data and is running without saving. Restart the app to try again."
         )
-        importCatalogs(into: container.mainContext)
+        importCatalogs(in: container)
     }
 
-    private func importCatalogs(into context: ModelContext) {
-        do {
-            for result in try TrailCatalogImporter.importCatalogsIfNeeded(into: context) {
-                print(
-                    "Imported \(result.catalog.resortName) trails: "
-                        + "\(result.summary.trailsCreated) trails, "
-                        + "\(result.summary.passesCreated) passes")
+    /// Catalogs are imported on their own context off the main actor. A resort
+    /// catalog is megabytes of geometry, so doing this during launch would
+    /// stall the first frame.
+    private func importCatalogs(in container: ModelContainer) {
+        if let manifestError = TrailCatalogRegistry.manifestError {
+            catalogImportIssue = manifestError
+            print("Trail catalog import skipped: \(manifestError)")
+            return
+        }
+        Task.detached(priority: .utility) { [weak self, container] in
+            let context = ModelContext(container)
+            do {
+                for result in try TrailCatalogImporter.importCatalogsIfNeeded(into: context) {
+                    print(
+                        "Imported \(result.catalog.resortName) trails: "
+                            + "\(result.summary.trailsCreated) trails, "
+                            + "\(result.summary.passesCreated) passes")
+                }
+            } catch {
+                print("Trail catalog import skipped: \(error.localizedDescription)")
+                await MainActor.run {
+                    self?.catalogImportIssue = "Trail catalog import failed: \(error.localizedDescription)"
+                }
             }
-        } catch {
-            catalogImportIssue = "Trail catalog import failed: \(error.localizedDescription)"
-            print("Trail catalog import skipped: \(error.localizedDescription)")
         }
     }
 
@@ -805,6 +818,7 @@ final class RideRecorder: ObservableObject {
         updateTotals(for: day)
         guard saveContext(detail: "stop") else {
             day.endedAt = nil
+            day.catalogID = nil
             day.beginPause(at: stopDate)
             resetTrackingState(clearLastSample: false)
             updateLiveActivity(force: true)

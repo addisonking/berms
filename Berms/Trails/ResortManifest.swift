@@ -23,7 +23,6 @@ struct ResortDescriptor: Identifiable, Hashable, Sendable {
     let id: String
     let name: String
     let region: String?
-    let anchor: Coordinate
     let boundary: ResortBoundary
     let catalogs: [TrailCatalogDescriptor]
 
@@ -37,13 +36,21 @@ struct ResortDescriptor: Identifiable, Hashable, Sendable {
 
 enum ResortCatalogLoader {
     static let resourceName = "resorts"
+    static let supportedSchemaVersion = 1
 
     enum ManifestError: LocalizedError {
         case missingResource
+        case unsupportedSchema(Int)
+        case invalidManifest(String)
 
         var errorDescription: String? {
             switch self {
-            case .missingResource: "The bundled resort manifest could not be found."
+            case .missingResource:
+                "The bundled resort manifest could not be found."
+            case .unsupportedSchema(let version):
+                "The bundled resort manifest uses an unsupported format (version \(version))."
+            case .invalidManifest(let detail):
+                "The bundled resort manifest could not be read: \(detail)"
             }
         }
     }
@@ -56,14 +63,21 @@ enum ResortCatalogLoader {
     }
 
     static func decode(_ data: Data) throws -> ResortCatalogManifest {
-        let manifest = try JSONDecoder().decode(ManifestDTO.self, from: data)
+        let manifest: ManifestDTO
+        do {
+            manifest = try JSONDecoder().decode(ManifestDTO.self, from: data)
+        } catch {
+            throw ManifestError.invalidManifest(error.localizedDescription)
+        }
+        guard manifest.schemaVersion == supportedSchemaVersion else {
+            throw ManifestError.unsupportedSchema(manifest.schemaVersion)
+        }
         return ResortCatalogManifest(
             resorts: manifest.resorts.map { resort in
                 ResortDescriptor(
                     id: resort.id,
                     name: resort.name,
                     region: resort.region,
-                    anchor: resort.anchor,
                     boundary: ResortBoundary(
                         center: resort.bounds.center,
                         radiusMeters: resort.bounds.radiusMeters),
@@ -85,6 +99,7 @@ enum ResortCatalogLoader {
     }
 
     private struct ManifestDTO: Decodable {
+        let schemaVersion: Int
         let resorts: [ResortDTO]
     }
 
@@ -92,7 +107,6 @@ enum ResortCatalogLoader {
         let id: String
         let name: String
         let region: String?
-        let anchor: Coordinate
         let bounds: BoundaryDTO
         let catalogs: [CatalogDTO]
     }

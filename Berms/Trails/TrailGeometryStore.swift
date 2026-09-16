@@ -2,7 +2,7 @@ import Foundation
 
 /// Latitude/longitude box around a trail centerline. Maps and matching use it
 /// to skip trails that are far from the rider or off screen before touching
-/// their geometry.
+/// their geometry. Assumes a trail does not cross the antimeridian.
 struct GeoBounds: Hashable, Sendable {
     let minLatitude: Double
     let maxLatitude: Double
@@ -99,11 +99,13 @@ final class TrailGeometryStore {
     static let shared = TrailGeometryStore()
 
     struct Metrics {
+        let pointCount: Int
         let distanceMeters: Double
         let labelCoordinate: Coordinate?
         let bounds: GeoBounds?
 
-        var hasGeometry: Bool { bounds != nil }
+        /// A single point is not a drawable trail.
+        var hasGeometry: Bool { pointCount >= 2 }
     }
 
     private struct Cached {
@@ -119,15 +121,12 @@ final class TrailGeometryStore {
         }
         let points = trail.points
         let metrics = Metrics(
+            pointCount: points.count,
             distanceMeters: Self.distanceMeters(points),
             labelCoordinate: Self.labelCoordinate(points),
             bounds: GeoBounds(points: points))
         cache[trail.id] = Cached(updatedAt: trail.updatedAt, metrics: metrics)
         return metrics
-    }
-
-    func invalidate(_ trailID: UUID) {
-        cache[trailID] = nil
     }
 
     func invalidateAll() {

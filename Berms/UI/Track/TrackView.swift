@@ -94,7 +94,11 @@ struct TrackView: View {
         .onChange(of: trailCatalogSelection.manualCatalogID) { _, _ in
             recenterMapPosition()
         }
-        .onAppear { recenterMapPosition() }
+        .onAppear {
+            // Preview framing only. A rider who panned the live map keeps it.
+            guard isPreviewingResort else { return }
+            recenterMapPosition()
+        }
     }
 
     /// Follows the rider, or frames the selected resort while previewing one
@@ -556,9 +560,8 @@ struct TrackView: View {
     private var renderedTrails: [Trail] {
         guard let visibleRegion else { return nearbyTrails }
         return nearbyTrails.filter { trail in
-            guard let bounds = TrailGeometryStore.shared.metrics(for: trail).bounds else {
-                return false
-            }
+            let metrics = TrailGeometryStore.shared.metrics(for: trail)
+            guard let bounds = metrics.bounds, metrics.hasGeometry else { return false }
             return trailBoundsIntersect(bounds, region: visibleRegion)
         }
     }

@@ -104,9 +104,8 @@ struct TrailLibraryView: View {
     private var renderedTrails: [Trail] {
         guard let visibleRegion else { return visibleTrails }
         return visibleTrails.filter { trail in
-            guard let bounds = TrailGeometryStore.shared.metrics(for: trail).bounds else {
-                return false
-            }
+            let metrics = TrailGeometryStore.shared.metrics(for: trail)
+            guard let bounds = metrics.bounds, metrics.hasGeometry else { return false }
             return trailBoundsIntersect(bounds, region: visibleRegion)
         }
     }
@@ -174,7 +173,7 @@ struct TrailLibraryView: View {
             }
             .listSectionSpacing(.compact)
         }
-        .navigationTitle("Trail Library")
+        .navigationTitle(activeCatalog.resortName)
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $searchText, prompt: "Search trails")
         .toolbar {
@@ -186,9 +185,10 @@ struct TrailLibraryView: View {
                         }
                     }
                 } label: {
-                    Label(activeCatalog.resortName, systemImage: "mountain.2")
-                        .labelStyle(.titleAndIcon)
+                    Label("Resort", systemImage: "mountain.2")
+                        .labelStyle(.iconOnly)
                 }
+                .accessibilityLabel("Resort, \(activeCatalog.resortName)")
                 .accessibilityHint("Switches resorts")
             }
             ToolbarItem(placement: .topBarTrailing) {
@@ -208,12 +208,15 @@ struct TrailLibraryView: View {
             if let selectedTrailID, !ids.contains(selectedTrailID) {
                 self.selectedTrailID = nil
             }
+            // The region belongs to the old filter until the camera moves.
+            visibleRegion = nil
             recenterMap()
         }
         .onChange(of: selectedTrailID) { _, id in
             guard let trail = visibleTrails.first(where: { $0.id == id }),
                 let bounds = TrailGeometryStore.shared.metrics(for: trail).bounds
             else { return }
+            visibleRegion = nil
             let configuration = RouteMapConfiguration(bounds: bounds)
             mapLayerPreferences.showsActualTrails = true
             withAnimation(reduceMotion ? nil : BermsMotion.recenter) {
@@ -224,7 +227,7 @@ struct TrailLibraryView: View {
 
     @ViewBuilder
     private var libraryMap: some View {
-        if visibleBounds == nil {
+        if mapConfiguration == nil {
             ContentUnavailableView(
                 "No trail geometry", systemImage: "map",
                 description: Text("Trail routes will appear here when the catalog is available."))
