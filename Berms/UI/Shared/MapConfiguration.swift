@@ -57,8 +57,8 @@ struct RouteMapConfiguration {
             longitudinalMeters: diameter * 1.4)
 
         let positionCenter = extent?.center ?? resortCenter
-        let positionLatitude = min(max((extent?.latitudeMeters ?? 0) * 1.25, diameter * 0.5), diameter * 0.8)
-        let positionLongitude = min(max((extent?.longitudeMeters ?? 0) * 1.25, diameter * 0.5), diameter * 0.8)
+        let positionLatitude = min(max((extent?.latitudeMeters ?? 0) * 1.25, diameter * 0.5), diameter * 1.15)
+        let positionLongitude = min(max((extent?.longitudeMeters ?? 0) * 1.25, diameter * 0.5), diameter * 1.15)
 
         return RouteMapConfiguration(
             initialPosition: .region(
@@ -68,7 +68,8 @@ struct RouteMapConfiguration {
                     longitudinalMeters: positionLongitude)),
             initialDistance: max(positionLatitude, positionLongitude),
             minimumDistance: 60,
-            maximumDistance: max(1_200, diameter * 1.1),
+            // Enough distance that the whole resort boundary fits on screen.
+            maximumDistance: max(1_200, diameter * 2.0),
             panRegion: panRegion
         )
     }

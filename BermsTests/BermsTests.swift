@@ -516,7 +516,10 @@ final class BermsTests: XCTestCase {
         let diameter = resort.boundary.radiusMeters * 2
 
         XCTAssertGreaterThanOrEqual(configuration.minimumDistance, 60)
-        XCTAssertLessThanOrEqual(configuration.maximumDistance, diameter * 1.1)
+        XCTAssertLessThanOrEqual(configuration.maximumDistance, diameter * 2.1)
+        XCTAssertGreaterThanOrEqual(
+            configuration.maximumDistance, diameter * 1.5,
+            "Zooming out has to fit the whole resort")
         XCTAssertLessThanOrEqual(
             configuration.panRegion.span.latitudeDelta * 111_000, diameter * 1.5,
             "Panning has to stay at the resort")
