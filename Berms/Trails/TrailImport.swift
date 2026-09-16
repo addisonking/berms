@@ -315,8 +315,8 @@ enum TrailCatalogImporter {
             if retiredSlugs.contains(slug) {
                 continue
             }
-            guard let difficulty = difficulty(from: feature.properties, catalog: catalog),
-                let points = feature.geometry.routePoints(referenceDate: now),
+            let difficulty = difficulty(from: feature.properties, catalog: catalog)
+            guard let points = feature.geometry.routePoints(referenceDate: now),
                 points.count >= 2
             else {
                 invalidFeaturesSkipped += 1
@@ -370,10 +370,11 @@ enum TrailCatalogImporter {
         )
     }
 
+    /// Unknown ratings become `.unrated` instead of dropping the trail.
     nonisolated private static func difficulty(
         from properties: GeoJSONProperties,
         catalog: TrailCatalogDescriptor
-    ) -> TrailDifficulty? {
+    ) -> TrailDifficulty {
         if let slug = properties.slug?.trimmedNonEmpty,
             let officialDifficulty = catalog.difficultyOverrides[slug]
         {
@@ -391,7 +392,7 @@ enum TrailCatalogImporter {
         case "Blue Square": TrailDifficulty.blue
         case "Black Diamond": TrailDifficulty.black
         case "Double Black Diamond": TrailDifficulty.doubleBlack
-        default: nil
+        default: TrailDifficulty.unrated
         }
     }
 
@@ -492,11 +493,11 @@ enum TrailCatalogImporter {
                 guard let slug = feature.properties.slug?.trimmedNonEmpty,
                     let name = feature.properties.name?.trimmedNonEmpty,
                     !catalog.aliases.keys.contains(slug),
-                    let difficulty = difficulty(from: feature.properties, catalog: catalog),
                     let routes = feature.geometry.routeLines(referenceDate: reference)
                 else {
                     return nil
                 }
+                let difficulty = difficulty(from: feature.properties, catalog: catalog)
                 return TrailRouteCandidate(
                     id: stableID(for: slug, catalog: catalog),
                     name: name,

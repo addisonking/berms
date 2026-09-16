@@ -424,6 +424,9 @@ enum TrailDifficulty: String, Codable, CaseIterable, Identifiable, Sendable {
     case blue
     case black
     case doubleBlack
+    /// Published without a rating, which is common for service roads and
+    /// new cuts. Kept so a trail is never dropped or given a made-up color.
+    case unrated
 
     var id: String { rawValue }
 
@@ -433,6 +436,7 @@ enum TrailDifficulty: String, Codable, CaseIterable, Identifiable, Sendable {
         case .blue: "Blue"
         case .black: "Black"
         case .doubleBlack: "Double Black"
+        case .unrated: "Unrated"
         }
     }
 }
