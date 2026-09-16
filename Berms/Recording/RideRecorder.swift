@@ -662,7 +662,9 @@ final class RideRecorder: ObservableObject {
 
         let day = RideDay()
         day.activityModeRawValue = mode.rawValue
-        day.catalogID = TrailCatalogRegistry.catalog(for: mode)?.id
+        // The resort is resolved from GPS when the ride stops. Until then the
+        // day stays untagged so per-run resolution can match every resort.
+        day.catalogID = nil
         context.insert(day)
         do {
             try context.save()
@@ -675,7 +677,9 @@ final class RideRecorder: ObservableObject {
                 RawDiagnosticRecord(
                     kind: "session_started", timestamp: day.startedAt,
                     detectorVersion: jumpDetector.detectorVersion,
-                    detail: "Berms recording started; mode=\(mode.rawValue),catalog=\(day.catalogID ?? "none")"))
+                    detail:
+                        "Berms recording started; mode=\(mode.rawValue),catalog=\(TrailCatalogSelection.persistedCatalogID() ?? "automatic")"
+                ))
             diagnosticLogger?.append(
                 RawDiagnosticRecord(
                     kind: "jump_detector_config",
@@ -793,6 +797,10 @@ final class RideRecorder: ObservableObject {
             ))
 
         day.endedAt = stopDate
+        day.catalogID = TrailCatalogRegistry.resolvedCatalogID(
+            mode: day.activityMode,
+            manualSelectionID: TrailCatalogSelection.persistedCatalogID(),
+            firstPoint: firstRecordedCoordinate(in: day))
         clearCheckpoint(for: day)
         updateTotals(for: day)
         guard saveContext(detail: "stop") else {
@@ -811,6 +819,14 @@ final class RideRecorder: ObservableObject {
         watchStateSink?.publish(.idle, force: true)
         UserDefaults.standard.set(false, forKey: "berms.recordingActive")
         return day
+    }
+
+    private func firstRecordedCoordinate(in day: RideDay) -> Coordinate? {
+        for segment in day.segments.sorted(by: { $0.startedAt < $1.startedAt }) {
+            guard let point = segment.points.first else { continue }
+            return Coordinate(latitude: point.latitude, longitude: point.longitude)
+        }
+        return nil
     }
 
     private func finishOpenSegment(to day: RideDay, reason: String) {

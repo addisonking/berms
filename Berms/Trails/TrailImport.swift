@@ -101,6 +101,21 @@ enum TrailCatalogRegistry {
         }
     }
 
+    /// The catalog a recorded day belongs to. A deliberate manual selection
+    /// wins; otherwise the first GPS point picks the nearest resort. Nil means
+    /// "resolve per run" so a trip across resorts still matches each run.
+    static func resolvedCatalogID(
+        mode: ActivityMode,
+        manualSelectionID: String?,
+        firstPoint: Coordinate?
+    ) -> String? {
+        if let manual = catalog(withID: manualSelectionID), manual.season == mode.season {
+            return manual.id
+        }
+        guard let firstPoint else { return nil }
+        return nearestCatalog(to: firstPoint).id
+    }
+
     static func trails(_ trails: [Trail], for catalog: TrailCatalogDescriptor) -> [Trail] {
         trails.filter { trail in
             if let trailCatalogID = trail.catalogID {
@@ -115,7 +130,12 @@ enum TrailCatalogRegistry {
 
 @MainActor
 final class TrailCatalogSelection: ObservableObject {
-    private static let selectionKey = "berms.trailCatalog.activeSelection"
+    static let selectionKey = "berms.trailCatalog.activeSelection"
+
+    /// The persisted manual resort choice, readable before a ride starts.
+    static func persistedCatalogID(defaults: UserDefaults = .standard) -> String? {
+        defaults.string(forKey: selectionKey)
+    }
 
     private let defaults: UserDefaults
     @Published private(set) var manualCatalogID: String?

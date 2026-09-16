@@ -286,7 +286,9 @@ final class BermsTests: XCTestCase {
 
     func testBundledResortManifestLoadsAndResolvesResources() throws {
         let manifest = try ResortCatalogLoader.load(bundle: .main)
-        XCTAssertFalse(manifest.resorts.isEmpty)
+        XCTAssertEqual(manifest.resorts.count, 2)
+        XCTAssertEqual(
+            manifest.catalogs.map(\.id), ["mountain-creek-resort", "mountain-creek-winter", "whistler-resort"])
 
         let catalogIDs = manifest.catalogs.map(\.id)
         XCTAssertEqual(Set(catalogIDs).count, catalogIDs.count)
@@ -398,6 +400,74 @@ final class BermsTests: XCTestCase {
         XCTAssertEqual(trails.first?.id, TrailCatalogImporter.stableID(for: "new-line", catalog: catalog))
         XCTAssertEqual(trails.first?.difficulty, .doubleBlack)
         XCTAssertEqual(trails.first?.passCount, 2)
+    }
+
+    @MainActor
+    func testWhistlerCatalogImportsBundledGeometryWithAliases() throws {
+        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try ModelContainer(
+            for: Trail.self, TrailPass.self,
+            configurations: configuration)
+        let context = container.mainContext
+        let suiteName = "BermsTests.whistlerImport.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let catalog = try XCTUnwrap(TrailCatalogRegistry.catalog(withID: "whistler-resort"))
+        XCTAssertEqual(catalog.resortName, "Whistler Mountain Bike Park")
+        XCTAssertEqual(catalog.aliases.count, 20)
+        let resource = try XCTUnwrap(catalog.bundledResourceName)
+        let url = try XCTUnwrap(Bundle.main.url(forResource: resource, withExtension: "geojson"))
+
+        let summary = try TrailCatalogImporter.import(
+            data: Data(contentsOf: url), into: context,
+            defaults: defaults, catalog: catalog)
+
+        XCTAssertEqual(summary.trailsCreated, 99)
+        XCTAssertEqual(summary.invalidFeaturesSkipped, 1)
+
+        let trails = try context.fetch(FetchDescriptor<Trail>())
+        XCTAssertEqual(trails.count, 99)
+        XCTAssertEqual(trails.filter { $0.name == "Una Moss" }.count, 1)
+        XCTAssertEqual(trails.filter { $0.name == "Expressway" }.count, 1)
+        XCTAssertEqual(trails.first { $0.name == "Expressway" }?.difficulty, .blue)
+        XCTAssertEqual(trails.first { $0.name == "Blue Velvet" }?.difficulty, .blue)
+        XCTAssertNil(trails.first { $0.name == "Northwest Passage" })
+        XCTAssertTrue(
+            trails.allSatisfy {
+                $0.resort == "Whistler Mountain Bike Park"
+                    && $0.catalogID == "whistler-resort"
+            })
+    }
+
+    func testDayCatalogResolutionPrefersManualSelectionThenGPS() {
+        let whistler = Coordinate(latitude: 50.0891, longitude: -122.9634)
+        let creek = Coordinate(latitude: 41.2505, longitude: -74.5012)
+
+        XCTAssertEqual(
+            TrailCatalogRegistry.resolvedCatalogID(
+                mode: .bikePark, manualSelectionID: nil, firstPoint: whistler),
+            "whistler-resort")
+        XCTAssertEqual(
+            TrailCatalogRegistry.resolvedCatalogID(
+                mode: .bikePark, manualSelectionID: nil, firstPoint: creek),
+            TrailCatalogRegistry.mountainCreekCatalogID)
+        XCTAssertEqual(
+            TrailCatalogRegistry.resolvedCatalogID(
+                mode: .bikePark,
+                manualSelectionID: TrailCatalogRegistry.mountainCreekCatalogID,
+                firstPoint: whistler),
+            TrailCatalogRegistry.mountainCreekCatalogID)
+        XCTAssertNil(
+            TrailCatalogRegistry.resolvedCatalogID(
+                mode: .bikePark, manualSelectionID: nil, firstPoint: nil))
+        // A winter selection does not apply to a summer ride.
+        XCTAssertEqual(
+            TrailCatalogRegistry.resolvedCatalogID(
+                mode: .bikePark,
+                manualSelectionID: TrailCatalogRegistry.mountainCreekWinterCatalogID,
+                firstPoint: whistler),
+            "whistler-resort")
     }
 
     func testSeasonalTrailSelectionDoesNotLeakSummerTrailsIntoWinter() {
