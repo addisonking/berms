@@ -12,6 +12,7 @@ struct TrackView: View {
     @EnvironmentObject private var trailCatalogSelection: TrailCatalogSelection
     @Namespace private var mapScope
     @State private var mapPosition: MapCameraPosition = .userLocation(followsHeading: false, fallback: .automatic)
+    @State private var visibleRegion: MKCoordinateRegion?
     @State private var liveStatsHeight: CGFloat = 320
     @State private var showingStopConfirmation = false
     @State private var showingSettings = false
@@ -405,11 +406,24 @@ struct TrackView: View {
                         trailMapContent(coordinates: trailCoordinates(for: trail), difficulty: trail.difficulty)
                     }
                 }
+                ForEach(labeledTrails) { trail in
+                    if let coordinate = trailLabelCoordinate(for: trail.points) {
+                        Annotation("", coordinate: coordinate) {
+                            TrailMapLabel(
+                                name: trail.name,
+                                difficulty: trail.difficulty,
+                                color: .bermsDifficulty(trail.difficulty))
+                        }
+                    }
+                }
             }
         }
         .mapStyle(.bermsMonochrome)
         .mapControls { MapScaleView() }
         .ignoresSafeArea()
+        .onMapCameraChange(frequency: .onEnd) { context in
+            visibleRegion = context.region
+        }
         .overlay(alignment: .topLeading) {
             MapCompass(scope: mapScope)
                 .padding(BermsSpacing.content)
@@ -521,6 +535,45 @@ struct TrackView: View {
         return catalogTrails.filter { trail in
             trailDistance(from: coordinate, to: trail.points) <= 750
         }
+    }
+
+    /// Names only appear once the rider zooms in past a resort-wide view, and
+    /// only for trails on screen. Hundreds of trails would otherwise stack
+    /// pills across the whole map.
+    private var labeledTrails: [Trail] {
+        guard let visibleRegion, currentSpanMeters(in: visibleRegion) <= 2_000 else { return [] }
+        let center = Coordinate(
+            latitude: visibleRegion.center.latitude,
+            longitude: visibleRegion.center.longitude)
+        return
+            nearbyTrails
+            .compactMap { trail -> (trail: Trail, distance: Double)? in
+                guard let coordinate = trailLabelCoordinate(for: trail.points),
+                    coordinateIsVisible(coordinate, in: visibleRegion)
+                else { return nil }
+                let label = Coordinate(latitude: coordinate.latitude, longitude: coordinate.longitude)
+                return (trail, center.distance(to: label))
+            }
+            .sorted { $0.distance < $1.distance }
+            .prefix(8)
+            .map(\.trail)
+    }
+
+    private func currentSpanMeters(in region: MKCoordinateRegion) -> Double {
+        max(
+            region.span.latitudeDelta * 111_000,
+            region.span.longitudeDelta * 111_000 * cos(region.center.latitude * .pi / 180)
+        )
+    }
+
+    private func coordinateIsVisible(
+        _ coordinate: CLLocationCoordinate2D,
+        in region: MKCoordinateRegion
+    ) -> Bool {
+        let halfLatitude = region.span.latitudeDelta / 2
+        let halfLongitude = region.span.longitudeDelta / 2
+        return abs(coordinate.latitude - region.center.latitude) <= halfLatitude
+            && abs(coordinate.longitude - region.center.longitude) <= halfLongitude
     }
 
     private var liveMapPaths: [LiveMapPath] {
