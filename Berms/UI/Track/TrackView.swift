@@ -9,7 +9,6 @@ struct TrackView: View {
     @ObservedObject var recorder: RideRecorder
     @Query private var trails: [Trail]
     @EnvironmentObject private var mapLayerPreferences: MapLayerPreferences
-    @EnvironmentObject private var trailCatalogSelection: TrailCatalogSelection
     @Namespace private var mapScope
     @State private var mapPosition: MapCameraPosition = .userLocation(followsHeading: false, fallback: .automatic)
     @State private var liveStatsHeight: CGFloat = 320
@@ -327,22 +326,18 @@ struct TrackView: View {
                 || recorder.locationAuthorization == .restricted)
     }
 
-    private var currentResort: ResortDescriptor? {
-        if let coordinate = currentCoordinate,
-            let resort = TrailCatalogRegistry.resort(containing: coordinate)
-        {
-            return resort
-        }
-        guard !trailCatalogSelection.isAutomatic,
-            let catalog = trailCatalogSelection.catalog(for: recorder.activeActivityMode)
-        else { return nil }
-        return TrailCatalogRegistry.resort(withID: catalog.resortID)
+    /// The recording map follows the rider. A browse selection in Settings is
+    /// for the trail library and never overrides GPS here, otherwise a stale
+    /// selection draws another resort's trails somewhere off screen.
+    private var liveResort: ResortDescriptor? {
+        guard let coordinate = currentCoordinate else { return nil }
+        return TrailCatalogRegistry.resort(containing: coordinate)
     }
 
     private var liveMapConfiguration: RouteMapConfiguration? {
         RouteMapConfiguration(
             points: liveMapPaths.flatMap(\.points),
-            boundary: currentResort?.boundary)
+            boundary: liveResort?.boundary)
     }
 
     private var liveMap: some View {
@@ -464,22 +459,14 @@ struct TrackView: View {
     }
 
     private var nearbyTrails: [Trail] {
-        let catalogTrails = trailCatalogSelection.trails(
-            trails,
-            mode: recorder.activeActivityMode,
-            near: currentCoordinate
-        )
-        guard !trailCatalogSelection.isAutomatic else {
-            guard let coordinate = currentCoordinate else { return [] }
-            return catalogTrails.filter { trail in
-                trail.points.count > 1 && trailDistance(from: coordinate, to: trail.points) <= 750
-            }
+        guard let coordinate = currentCoordinate,
+            let catalog = TrailCatalogRegistry.catalog(
+                for: recorder.activeActivityMode,
+                coordinate: coordinate)
+        else { return [] }
+        return TrailCatalogRegistry.trails(trails, for: catalog).filter { trail in
+            trail.points.count > 1 && trailDistance(from: coordinate, to: trail.points) <= 750
         }
-
-        // A manually selected resort is a deliberate map preview. Keep its
-        // full catalog available even when the rider is somewhere else, so
-        // panning from a city to the resort actually reveals the trails.
-        return catalogTrails.filter { $0.points.count > 1 }
     }
 
     private var liveMapPaths: [LiveMapPath] {
