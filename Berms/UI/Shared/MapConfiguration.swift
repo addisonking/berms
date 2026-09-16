@@ -43,6 +43,17 @@ struct RouteMapConfiguration {
         }
     }
 
+    /// Frames a set of trails from their combined bounds, so callers never
+    /// flatten every point of a large catalog just to place the camera.
+    init(bounds: GeoBounds, boundary: ResortBoundary? = nil) {
+        let extent = RouteExtent(bounds: bounds)
+        if let boundary {
+            self = Self.resortConfiguration(extent: extent, boundary: boundary)
+        } else {
+            self = Self.sessionConfiguration(extent: extent)
+        }
+    }
+
     private static func resortConfiguration(
         extent: RouteExtent?,
         boundary: ResortBoundary
@@ -135,5 +146,14 @@ private struct RouteExtent {
         center = CLLocationCoordinate2D(latitude: centerLatitude, longitude: centerLongitude)
         latitudeMeters = max(100, (maxLatitude - minLatitude) * 111_000)
         longitudeMeters = max(100, (maxLongitude - minLongitude) * 111_000 * longitudeScale)
+    }
+
+    init(bounds: GeoBounds) {
+        let centerLatitude = (bounds.minLatitude + bounds.maxLatitude) / 2
+        let centerLongitude = (bounds.minLongitude + bounds.maxLongitude) / 2
+        let longitudeScale = max(0.1, cos(centerLatitude * .pi / 180))
+        center = CLLocationCoordinate2D(latitude: centerLatitude, longitude: centerLongitude)
+        latitudeMeters = max(100, (bounds.maxLatitude - bounds.minLatitude) * 111_000)
+        longitudeMeters = max(100, (bounds.maxLongitude - bounds.minLongitude) * 111_000 * longitudeScale)
     }
 }

@@ -3,6 +3,30 @@ import SwiftData
 import SwiftUI
 import UIKit
 
+enum TrailLibrarySort: String, CaseIterable, Identifiable {
+    case difficulty
+    case name
+    case length
+    case recent
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .difficulty: "Difficulty"
+        case .name: "Name"
+        case .length: "Length"
+        case .recent: "Recently updated"
+        }
+    }
+}
+
+private struct TrailLibrarySection: Identifiable {
+    let id: String
+    let title: String?
+    let trails: [Trail]
+}
+
 struct TrailLibraryView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Query(sort: \Trail.updatedAt, order: .reverse) private var trails: [Trail]
@@ -13,9 +37,22 @@ struct TrailLibraryView: View {
     @State private var searchText = ""
     @State private var selectedDifficulty: TrailDifficulty?
     @State private var selectedTrailID: UUID?
+    @State private var sort: TrailLibrarySort = .difficulty
+    @State private var visibleRegion: MKCoordinateRegion?
 
     private var activeCatalog: TrailCatalogDescriptor {
         trailCatalogSelection.browseCatalog
+    }
+
+    private var selectableCatalogs: [TrailCatalogDescriptor] {
+        var seenResortNames: Set<String> = []
+        return TrailCatalogRegistry.catalogs.filter { seenResortNames.insert($0.resortName).inserted }
+    }
+
+    private var catalogSelection: Binding<String> {
+        Binding(
+            get: { activeCatalog.id },
+            set: { trailCatalogSelection.setSelectionID($0) })
     }
 
     private var visibleTrails: [Trail] {
@@ -30,9 +67,61 @@ struct TrailLibraryView: View {
         }
     }
 
+    private var sortedTrails: [Trail] {
+        switch sort {
+        case .difficulty, .name:
+            return visibleTrails.sorted {
+                $0.name.localizedStandardCompare($1.name) == .orderedAscending
+            }
+        case .length:
+            return visibleTrails.sorted {
+                TrailGeometryStore.shared.metrics(for: $0).distanceMeters
+                    > TrailGeometryStore.shared.metrics(for: $1).distanceMeters
+            }
+        case .recent:
+            return visibleTrails.sorted { $0.updatedAt > $1.updatedAt }
+        }
+    }
+
+    private var sections: [TrailLibrarySection] {
+        let trails = sortedTrails
+        guard sort == .difficulty else {
+            guard !trails.isEmpty else { return [] }
+            return [TrailLibrarySection(id: "all", title: nil, trails: trails)]
+        }
+        return TrailDifficulty.allCases.compactMap { difficulty in
+            let matching = trails.filter { $0.difficulty == difficulty }
+            guard !matching.isEmpty else { return nil }
+            return TrailLibrarySection(
+                id: difficulty.rawValue,
+                title: "\(difficulty.title) · \(matching.count)",
+                trails: matching)
+        }
+    }
+
+    /// Off-screen trails are skipped so a several-hundred-trail catalog does
+    /// not build every overlay on every camera move.
+    private var renderedTrails: [Trail] {
+        guard let visibleRegion else { return visibleTrails }
+        return visibleTrails.filter { trail in
+            guard let bounds = TrailGeometryStore.shared.metrics(for: trail).bounds else {
+                return false
+            }
+            return trailBoundsIntersect(bounds, region: visibleRegion)
+        }
+    }
+
+    private var visibleBounds: GeoBounds? {
+        visibleTrails.compactMap { TrailGeometryStore.shared.metrics(for: $0).bounds }
+            .reduce(nil as GeoBounds?) { total, bounds in
+                total.map { $0.union(bounds) } ?? bounds
+            }
+    }
+
     private var mapConfiguration: RouteMapConfiguration? {
-        RouteMapConfiguration(
-            points: visibleTrails.flatMap(\.points),
+        guard let visibleBounds else { return nil }
+        return RouteMapConfiguration(
+            bounds: visibleBounds,
             boundary: TrailCatalogRegistry.resort(withID: activeCatalog.resortID)?.boundary)
     }
 
@@ -54,35 +143,67 @@ struct TrailLibraryView: View {
                     }
                     .pickerStyle(.navigationLink)
                 }
-                Section {
-                    if visibleTrails.isEmpty {
+                if visibleTrails.isEmpty {
+                    Section {
                         ContentUnavailableView(
                             "No matching trails", systemImage: "map",
                             description: Text("Try a different search or difficulty filter."))
-                    } else {
-                        ForEach(visibleTrails) { trail in
-                            Button {
-                                selectedTrailID = trail.id
-                                withAnimation(reduceMotion ? nil : BermsMotion.recenter) {
-                                    proxy.scrollTo("libraryMap", anchor: .top)
+                    }
+                } else {
+                    ForEach(sections) { section in
+                        Section {
+                            ForEach(section.trails) { trail in
+                                Button {
+                                    selectedTrailID = trail.id
+                                    withAnimation(reduceMotion ? nil : BermsMotion.recenter) {
+                                        proxy.scrollTo("libraryMap", anchor: .top)
+                                    }
+                                } label: {
+                                    ProductionTrailLibraryRow(
+                                        trail: trail,
+                                        isSelected: selectedTrailID == trail.id)
                                 }
-                            } label: {
-                                ProductionTrailLibraryRow(
-                                    trail: trail,
-                                    isSelected: selectedTrailID == trail.id)
+                                .buttonStyle(.plain)
+                                .accessibilityHint("Shows this trail on the map")
                             }
-                            .buttonStyle(.plain)
-                            .accessibilityHint("Shows this trail on the map")
+                        } header: {
+                            Text(section.title ?? "\(visibleTrails.count) trails · \(activeCatalog.resortName)")
                         }
                     }
-                } header: {
-                    Text("\(visibleTrails.count) trails · \(activeCatalog.resortName)")
                 }
             }
+            .listSectionSpacing(.compact)
         }
         .navigationTitle("Trail Library")
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $searchText, prompt: "Search trails")
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Menu {
+                    Picker("Resort", selection: catalogSelection) {
+                        ForEach(selectableCatalogs) { catalog in
+                            Text(catalog.resortName).tag(catalog.id)
+                        }
+                    }
+                } label: {
+                    Label(activeCatalog.resortName, systemImage: "mountain.2")
+                        .labelStyle(.titleAndIcon)
+                }
+                .accessibilityHint("Switches resorts")
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Picker("Sort", selection: $sort) {
+                        ForEach(TrailLibrarySort.allCases) { option in
+                            Text(option.title).tag(option)
+                        }
+                    }
+                } label: {
+                    Label("Sort", systemImage: "arrow.up.arrow.down")
+                }
+                .accessibilityHint("Changes the trail order")
+            }
+        }
         .onChange(of: visibleTrails.map(\.id)) { _, ids in
             if let selectedTrailID, !ids.contains(selectedTrailID) {
                 self.selectedTrailID = nil
@@ -91,8 +212,9 @@ struct TrailLibraryView: View {
         }
         .onChange(of: selectedTrailID) { _, id in
             guard let trail = visibleTrails.first(where: { $0.id == id }),
-                let configuration = RouteMapConfiguration(points: trail.points)
+                let bounds = TrailGeometryStore.shared.metrics(for: trail).bounds
             else { return }
+            let configuration = RouteMapConfiguration(bounds: bounds)
             mapLayerPreferences.showsActualTrails = true
             withAnimation(reduceMotion ? nil : BermsMotion.recenter) {
                 mapPosition = configuration.initialPosition
@@ -102,7 +224,7 @@ struct TrailLibraryView: View {
 
     @ViewBuilder
     private var libraryMap: some View {
-        if visibleTrails.flatMap(\.points).isEmpty {
+        if visibleBounds == nil {
             ContentUnavailableView(
                 "No trail geometry", systemImage: "map",
                 description: Text("Trail routes will appear here when the catalog is available."))
@@ -114,7 +236,7 @@ struct TrailLibraryView: View {
                         interactionModes: [.pan, .zoom, .rotate], selection: $selectedTrailID, scope: mapScope
                     ) {
                         if mapLayerPreferences.showsActualTrails {
-                            ForEach(visibleTrails) { trail in
+                            ForEach(renderedTrails) { trail in
                                 if trail.points.count > 1 {
                                     trailMapContent(
                                         coordinates: trailCoordinates(for: trail),
@@ -125,8 +247,13 @@ struct TrailLibraryView: View {
                             }
 
                             ForEach(Array(libraryLabelTrails)) { trail in
-                                if let coordinate = trailLabelCoordinate(for: trail.points) {
-                                    Annotation("", coordinate: coordinate) {
+                                if let coordinate = TrailGeometryStore.shared.metrics(for: trail).labelCoordinate {
+                                    Annotation(
+                                        "",
+                                        coordinate: CLLocationCoordinate2D(
+                                            latitude: coordinate.latitude,
+                                            longitude: coordinate.longitude)
+                                    ) {
                                         TrailMapLabel(
                                             name: trail.name,
                                             difficulty: trail.difficulty,
@@ -138,6 +265,9 @@ struct TrailLibraryView: View {
                     }
                     .mapStyle(.bermsMonochrome)
                     .mapControls { MapScaleView() }
+                    .onMapCameraChange(frequency: .onEnd) { context in
+                        visibleRegion = context.region
+                    }
 
                 }
 
@@ -200,10 +330,6 @@ struct ProductionTrailLibraryRow: View {
     }
 
     private var distance: Double {
-        zip(trail.points, trail.points.dropFirst()).reduce(0) { total, pair in
-            let start = Coordinate(latitude: pair.0.latitude, longitude: pair.0.longitude)
-            let end = Coordinate(latitude: pair.1.latitude, longitude: pair.1.longitude)
-            return total + start.distance(to: end)
-        }
+        TrailGeometryStore.shared.metrics(for: trail).distanceMeters
     }
 }

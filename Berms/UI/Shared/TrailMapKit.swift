@@ -87,6 +87,23 @@ func trailLabelCoordinate(for points: [RoutePoint]) -> CLLocationCoordinate2D? {
     return CLLocationCoordinate2D(latitude: point.latitude, longitude: point.longitude)
 }
 
+/// True when a trail box overlaps the visible region. Used to keep a
+/// several-hundred-trail catalog from building off-screen overlays.
+func trailBoundsIntersect(_ bounds: GeoBounds, region: MKCoordinateRegion) -> Bool {
+    bounds.intersects(
+        centerLatitude: region.center.latitude,
+        centerLongitude: region.center.longitude,
+        latitudeSpan: region.span.latitudeDelta,
+        longitudeSpan: region.span.longitudeDelta)
+}
+
+func regionSpanMeters(_ region: MKCoordinateRegion) -> Double {
+    max(
+        region.span.latitudeDelta * 111_000,
+        region.span.longitudeDelta * 111_000 * cos(region.center.latitude * .pi / 180)
+    )
+}
+
 struct TrailMapLabelItem: Identifiable {
     let id: String
     let name: String

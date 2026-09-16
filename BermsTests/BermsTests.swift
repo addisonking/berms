@@ -525,6 +525,83 @@ final class BermsTests: XCTestCase {
             "Panning has to stay at the resort")
     }
 
+    func testGeoBoundsPruneAndMerge() throws {
+        let points = [
+            RoutePoint(latitude: 41.18, longitude: -74.50, altitude: 0, speed: 0, timestamp: .now),
+            RoutePoint(latitude: 41.19, longitude: -74.49, altitude: 0, speed: 0, timestamp: .now),
+        ]
+        let bounds = try XCTUnwrap(GeoBounds(points: points))
+        XCTAssertTrue(bounds.contains(Coordinate(latitude: 41.185, longitude: -74.495)))
+        XCTAssertFalse(bounds.contains(Coordinate(latitude: 41.30, longitude: -74.495)))
+        XCTAssertTrue(
+            bounds.contains(Coordinate(latitude: 41.30, longitude: -74.495), paddingMeters: 20_000))
+        XCTAssertTrue(
+            bounds.intersects(
+                centerLatitude: 41.185, centerLongitude: -74.495,
+                latitudeSpan: 0.001, longitudeSpan: 0.001))
+        XCTAssertFalse(
+            bounds.intersects(
+                centerLatitude: 42.0, centerLongitude: -74.495,
+                latitudeSpan: 0.01, longitudeSpan: 0.01))
+        XCTAssertNil(GeoBounds(points: []))
+
+        let far = try XCTUnwrap(
+            GeoBounds(points: [
+                RoutePoint(latitude: 40, longitude: -75, altitude: 0, speed: 0, timestamp: .now)
+            ]))
+        let union = bounds.union(far)
+        XCTAssertEqual(union.minLatitude, 40)
+        XCTAssertEqual(union.maxLatitude, 41.19)
+        XCTAssertEqual(union.minLongitude, -75)
+        XCTAssertEqual(union.maxLongitude, -74.49)
+    }
+
+    @MainActor
+    func testTrailGeometryStoreRefreshesWhenATrailChanges() throws {
+        TrailGeometryStore.shared.invalidateAll()
+        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try ModelContainer(
+            for: Trail.self, TrailPass.self,
+            configurations: configuration)
+        let context = container.mainContext
+
+        let trail = Trail(name: "Cache Test", difficulty: .blue, resort: "Test Resort", catalogID: "test")
+        let shortPass = TrailPass(
+            routePoints: [
+                RoutePoint(latitude: 40, longitude: -105, altitude: 0, speed: 0, timestamp: .now),
+                RoutePoint(
+                    latitude: 40.001, longitude: -105, altitude: 0, speed: 0,
+                    timestamp: .now.addingTimeInterval(1)),
+            ], recordedAt: .now)
+        shortPass.trail = trail
+        trail.passes.append(shortPass)
+        context.insert(trail)
+        trail.recalculateAverage()
+
+        let first = TrailGeometryStore.shared.metrics(for: trail)
+        XCTAssertGreaterThan(first.distanceMeters, 0)
+        XCTAssertNotNil(first.bounds)
+        XCTAssertNotNil(first.labelCoordinate)
+        XCTAssertEqual(TrailGeometryStore.shared.metrics(for: trail).distanceMeters, first.distanceMeters)
+
+        context.delete(shortPass)
+        let longPass = TrailPass(
+            routePoints: [
+                RoutePoint(latitude: 40, longitude: -105, altitude: 0, speed: 0, timestamp: .now),
+                RoutePoint(
+                    latitude: 40.01, longitude: -105, altitude: 0, speed: 0,
+                    timestamp: .now.addingTimeInterval(1)),
+            ], recordedAt: .now)
+        longPass.trail = trail
+        trail.passes.append(longPass)
+        trail.recalculateAverage()
+        trail.updatedAt = Date().addingTimeInterval(120)
+
+        XCTAssertGreaterThan(
+            TrailGeometryStore.shared.metrics(for: trail).distanceMeters, first.distanceMeters,
+            "A changed trail has to refresh its cached metrics")
+    }
+
     func testSessionMapConfigurationCannotZoomToTheGlobe() throws {
         let points = (0...10).map { index in
             RoutePoint(
