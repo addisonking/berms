@@ -298,6 +298,9 @@ final class BermsTests: XCTestCase {
             XCTAssertFalse(resort.name.isEmpty)
             XCTAssertFalse(resort.catalogs.isEmpty)
             XCTAssertGreaterThan(resort.boundary.radiusMeters, 0)
+            XCTAssertLessThanOrEqual(
+                resort.boundary.radiusMeters, 25_000,
+                "\(resort.id) boundary is larger than any resort; a stray coordinate would do this")
             for catalog in resort.catalogs {
                 XCTAssertEqual(catalog.resortID, resort.id)
                 XCTAssertEqual(catalog.resortName, resort.name)
@@ -440,16 +443,18 @@ final class BermsTests: XCTestCase {
             data: Data(contentsOf: url), into: context,
             defaults: defaults, catalog: catalog)
 
-        XCTAssertEqual(summary.trailsCreated, 99)
-        XCTAssertEqual(summary.invalidFeaturesSkipped, 1)
+        XCTAssertEqual(summary.trailsCreated, 100)
+        XCTAssertEqual(summary.invalidFeaturesSkipped, 0)
 
         let trails = try context.fetch(FetchDescriptor<Trail>())
-        XCTAssertEqual(trails.count, 99)
+        XCTAssertEqual(trails.count, 100)
         XCTAssertEqual(trails.filter { $0.name == "Una Moss" }.count, 1)
         XCTAssertEqual(trails.filter { $0.name == "Expressway" }.count, 1)
         XCTAssertEqual(trails.first { $0.name == "Expressway" }?.difficulty, .blue)
         XCTAssertEqual(trails.first { $0.name == "Blue Velvet" }?.difficulty, .blue)
-        XCTAssertNil(trails.first { $0.name == "Northwest Passage" })
+        XCTAssertEqual(
+            trails.first { $0.name == "Northwest Passage" }?.difficulty, .unrated,
+            "RidePal has no rating for this trail, so it imports as unrated")
         XCTAssertTrue(
             trails.allSatisfy {
                 $0.resort == "Whistler Mountain Bike Park"

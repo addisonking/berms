@@ -29,6 +29,7 @@ extension Color {
         case .green: .green
         case .blue: .blue
         case .black, .doubleBlack: .primary
+        case .unrated: .secondary
         }
     }
 

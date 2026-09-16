@@ -70,7 +70,8 @@ func trailMapStrokeStyle(
         lineWidth: lineWidth,
         lineCap: .round,
         lineJoin: .round,
-        dash: difficulty == .doubleBlack ? TrailMapRendering.doubleBlackDash : [])
+        dash: difficulty == .doubleBlack || difficulty == .unrated
+            ? TrailMapRendering.doubleBlackDash : [])
 }
 
 func trailMapAccentStrokeStyle(lineWidth: CGFloat = TrailMapRendering.accentLineWidth) -> StrokeStyle {
@@ -238,6 +239,10 @@ struct TrailRatingBadge: View {
                     TrailDiamond()
                         .stroke(Color.bermsMuted.opacity(0.7), lineWidth: 0.75)
                 }
+        case .unrated:
+            Circle()
+                .strokeBorder(color, lineWidth: max(1, size * 0.18))
+                .frame(width: size, height: size)
         }
     }
 }

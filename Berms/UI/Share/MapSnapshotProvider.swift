@@ -180,6 +180,7 @@ struct MapKitShareSnapshotter: ShareMapSnapshotting {
         case .green: .systemGreen
         case .blue: .systemBlue
         case .black, .doubleBlack: style == .satellite ? .white : .black
+        case .unrated: style == .satellite ? UIColor(white: 0.8, alpha: 1) : .systemGray
         }
     }
 }
