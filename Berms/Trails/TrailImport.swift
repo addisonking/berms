@@ -11,8 +11,12 @@ struct TrailCatalogDescriptor: Identifiable, Hashable, Sendable {
     let bundledResourceName: String?
     let importVersion: String
 
-    // Catalog IDs keep their original stable-ID namespace so existing device
-    // records keep matching after a resort is imported from the manifest.
+    /// Prefix for the catalog's stable trail IDs, `SHA256(namespace:slug)`.
+    /// Every catalog needs its own namespace: slugs repeat across parks
+    /// (`candyland` exists at three resorts), and an ID is only as unique as
+    /// this prefix. Bundled RidePal catalogs use `berms:ridepal:<park-slug>`;
+    /// `berms:ridepal` alone is reserved for the original Mountain Creek
+    /// records so they keep matching.
     let stableIDNamespace: String
     let legacyImportVersionKeys: [String]
 

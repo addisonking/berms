@@ -503,6 +503,27 @@ final class BermsTests: XCTestCase {
             TrailCatalogRegistry.mountainCreekCatalogID)
     }
 
+    /// Slugs repeat across parks, so a shared namespace silently merges two
+    /// trails into one ID. Catch that before a bundle ships.
+    func testBundledCatalogStableIDsDoNotCollide() {
+        let candidates = TrailCatalogImporter.bundledRouteCandidates()
+        XCTAssertFalse(candidates.isEmpty)
+
+        var catalogsByID: [UUID: Set<String>] = [:]
+        for candidate in candidates {
+            catalogsByID[candidate.id, default: []].insert(candidate.name)
+        }
+        let collisions = catalogsByID.filter { $0.value.count > 1 }
+        XCTAssertTrue(
+            collisions.isEmpty,
+            "Stable ID collisions across catalog namespaces: \(collisions.map { $0.value.sorted().joined(separator: "/") }.sorted())"
+        )
+
+        XCTAssertEqual(
+            Set(candidates.map(\.id)).count, candidates.count,
+            "Two bundled trails share a stable ID")
+    }
+
     func testManifestRejectsAnUnsupportedSchemaVersion() throws {
         let data = Data(
             """
