@@ -54,7 +54,7 @@ final class RawLogWriter: @unchecked Sendable {
 }
 
 @MainActor
-final class PersistenceController {
+final class PersistenceController: ObservableObject {
     static let shared = PersistenceController()
 
     struct StoreIssue: Identifiable, Equatable {
@@ -64,7 +64,7 @@ final class PersistenceController {
 
     let container: ModelContainer
     private(set) var storeIssue: StoreIssue?
-    private(set) var catalogImportIssue: String?
+    @Published private(set) var catalogImportIssue: String?
 
     private init() {
         let schema = Schema([RideDay.self, RideSegment.self, Trail.self, TrailPass.self, LearnedLift.self])
@@ -813,7 +813,7 @@ final class RideRecorder: ObservableObject {
         day.catalogID = TrailCatalogRegistry.resolvedCatalogID(
             mode: day.activityMode,
             manualSelectionID: TrailCatalogSelection.persistedCatalogID(),
-            firstPoint: firstRecordedCoordinate(in: day))
+            firstPoint: day.firstRecordedCoordinate)
         clearCheckpoint(for: day)
         updateTotals(for: day)
         guard saveContext(detail: "stop") else {
@@ -833,14 +833,6 @@ final class RideRecorder: ObservableObject {
         watchStateSink?.publish(.idle, force: true)
         UserDefaults.standard.set(false, forKey: "berms.recordingActive")
         return day
-    }
-
-    private func firstRecordedCoordinate(in day: RideDay) -> Coordinate? {
-        for segment in day.segments.sorted(by: { $0.startedAt < $1.startedAt }) {
-            guard let point = segment.points.first else { continue }
-            return Coordinate(latitude: point.latitude, longitude: point.longitude)
-        }
-        return nil
     }
 
     private func finishOpenSegment(to day: RideDay, reason: String) {
@@ -1003,9 +995,13 @@ final class RideRecorder: ObservableObject {
                         verticalMeters: cleaned.vertical,
                         maximumSpeedMetersPerSecond: cleaned.maximumSpeed)
                 }
-                let catalogRoutePoints = TrailCatalogImporter.bundledRoutePoints(
-                    catalog: TrailCatalogRegistry.mountainCreek
-                )
+                let catalogRoutePoints = TrailCatalogRegistry.catalogs.reduce(
+                    into: [UUID: [RoutePoint]]()
+                ) { routes, catalog in
+                    routes.merge(TrailCatalogImporter.bundledRoutePoints(catalog: catalog)) {
+                        current, _ in current
+                    }
+                }
                 let repairedPasses = CatalogPassRepair.repairs(
                     inputs: passInputs,
                     catalogRoutes: catalogRoutePoints

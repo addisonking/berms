@@ -10,6 +10,7 @@ struct RootView: View {
     }
 
     @ObservedObject var recorder: RideRecorder
+    @ObservedObject private var persistence = PersistenceController.shared
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var mapLayerPreferences = MapLayerPreferences()
     @StateObject private var trailCatalogSelection = TrailCatalogSelection()
@@ -62,6 +63,11 @@ struct RootView: View {
             guard url.scheme == "berms", url.host == "track" else { return }
             selectedTab = .track
             recorder.handleLiveActivityOpen()
+        }
+        .onChange(of: persistence.catalogImportIssue) { _, issue in
+            // The catalog import runs after launch, so its failure arrives late.
+            guard let issue else { return }
+            startupIssue = StartupIssue(title: "Trail import problem", message: issue)
         }
         .alert(item: $startupIssue) { issue in
             Alert(

@@ -63,14 +63,23 @@ enum ResortCatalogLoader {
     }
 
     static func decode(_ data: Data) throws -> ResortCatalogManifest {
+        // Read the version first, so a future format reports its version
+        // rather than a decode error about keys it renamed.
+        let schema: SchemaDTO
+        do {
+            schema = try JSONDecoder().decode(SchemaDTO.self, from: data)
+        } catch {
+            throw ManifestError.invalidManifest(error.localizedDescription)
+        }
+        guard schema.schemaVersion == supportedSchemaVersion else {
+            throw ManifestError.unsupportedSchema(schema.schemaVersion)
+        }
+
         let manifest: ManifestDTO
         do {
             manifest = try JSONDecoder().decode(ManifestDTO.self, from: data)
         } catch {
             throw ManifestError.invalidManifest(error.localizedDescription)
-        }
-        guard manifest.schemaVersion == supportedSchemaVersion else {
-            throw ManifestError.unsupportedSchema(manifest.schemaVersion)
         }
         return ResortCatalogManifest(
             resorts: manifest.resorts.map { resort in
@@ -98,8 +107,11 @@ enum ResortCatalogLoader {
             })
     }
 
-    private struct ManifestDTO: Decodable {
+    private struct SchemaDTO: Decodable {
         let schemaVersion: Int
+    }
+
+    private struct ManifestDTO: Decodable {
         let resorts: [ResortDTO]
     }
 

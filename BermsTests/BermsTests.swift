@@ -520,6 +520,19 @@ final class BermsTests: XCTestCase {
         }
     }
 
+    func testManifestReportsMalformedEntries() throws {
+        let data = Data(
+            """
+            {"schemaVersion":1,"resorts":[{"id":"resort-a","name":"Resort A","catalogs":[]}]}
+            """.utf8)
+
+        XCTAssertThrowsError(try ResortCatalogLoader.decode(data)) { error in
+            guard case ResortCatalogLoader.ManifestError.invalidManifest = error else {
+                return XCTFail("Expected an invalid manifest error, got \(error)")
+            }
+        }
+    }
+
     func testResortBoundaryResolvesOnlyInsideTheResort() throws {
         let creek = try XCTUnwrap(TrailCatalogRegistry.resort(withID: "mountain-creek"))
         XCTAssertTrue(creek.boundary.contains(Coordinate(latitude: 41.1844, longitude: -74.5033)))

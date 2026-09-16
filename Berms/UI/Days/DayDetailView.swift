@@ -84,8 +84,7 @@ struct DayDetailView: View {
     }
 
     private var firstRecordedCoordinate: Coordinate? {
-        guard let point = detailBase?.mapSegments.first?.routePoints.first else { return nil }
-        return Coordinate(latitude: point.latitude, longitude: point.longitude)
+        day.firstRecordedCoordinate
     }
 
     private var resortCaption: String {
