@@ -10,7 +10,6 @@ struct TrailCatalogDescriptor: Identifiable, Hashable, Sendable {
     let resortName: String
     let bundledResourceName: String?
     let importVersion: String
-    let locationAnchor: Coordinate
 
     // Catalog IDs keep their original stable-ID namespace so existing device
     // records keep matching after a resort is imported from the manifest.
@@ -60,6 +59,28 @@ enum TrailCatalogRegistry {
         allCatalogs.filter { $0.resortID == resortID }
     }
 
+    static func resort(withID id: String?) -> ResortDescriptor? {
+        guard let id else { return nil }
+        return resorts.first { $0.id == id }
+    }
+
+    /// The resort whose boundary contains the coordinate. Nil means the rider
+    /// is not at a known resort, which keeps trail matching from guessing.
+    static func resort(containing coordinate: Coordinate) -> ResortDescriptor? {
+        resorts
+            .filter { $0.boundary.contains(coordinate) }
+            .min { coordinate.distance(to: $0.boundary.center) < coordinate.distance(to: $1.boundary.center) }
+    }
+
+    static func catalog(containing coordinate: Coordinate) -> TrailCatalogDescriptor? {
+        catalogs
+            .filter { resort(withID: $0.resortID)?.boundary.contains(coordinate) == true }
+            .min {
+                (resort(withID: $0.resortID)?.boundary.center.distance(to: coordinate) ?? .greatestFiniteMagnitude)
+                    < (resort(withID: $1.resortID)?.boundary.center.distance(to: coordinate) ?? .greatestFiniteMagnitude)
+            }
+    }
+
     static func catalog(withID id: String?) -> TrailCatalogDescriptor? {
         guard let id else { return nil }
         return allCatalogs.first { $0.id == id }
@@ -74,19 +95,11 @@ enum TrailCatalogRegistry {
         resortName: "Mountain Creek Resort",
         bundledResourceName: nil,
         importVersion: "mountain-creek-ridepal-v3",
-        locationAnchor: Coordinate(latitude: 41.2505, longitude: -74.5012),
         stableIDNamespace: "berms:ridepal",
         legacyImportVersionKeys: [],
         difficultyOverrides: [:],
         aliases: [:]
     )
-
-    static func nearestCatalog(to coordinate: Coordinate) -> TrailCatalogDescriptor {
-        catalogs.min {
-            coordinate.distance(to: $0.locationAnchor)
-                < coordinate.distance(to: $1.locationAnchor)
-        } ?? defaultCatalog
-    }
 
     static func catalog(
         for mode: ActivityMode,
@@ -95,15 +108,14 @@ enum TrailCatalogRegistry {
         let candidates = catalogsBySeason[mode.season] ?? []
         guard !candidates.isEmpty else { return nil }
         guard let coordinate else { return candidates.first }
-        return candidates.min {
-            coordinate.distance(to: $0.locationAnchor)
-                < coordinate.distance(to: $1.locationAnchor)
+        return candidates.first {
+            resort(withID: $0.resortID)?.boundary.contains(coordinate) == true
         }
     }
 
     /// The catalog a recorded day belongs to. A deliberate manual selection
-    /// wins; otherwise the first GPS point picks the nearest resort. Nil means
-    /// "resolve per run" so a trip across resorts still matches each run.
+    /// wins; otherwise the first GPS point must land inside a resort. Nil means
+    /// "no resort" so per-run resolution can still match every resort on a trip.
     static func resolvedCatalogID(
         mode: ActivityMode,
         manualSelectionID: String?,
@@ -113,7 +125,7 @@ enum TrailCatalogRegistry {
             return manual.id
         }
         guard let firstPoint else { return nil }
-        return nearestCatalog(to: firstPoint).id
+        return catalog(containing: firstPoint)?.id
     }
 
     static func trails(_ trails: [Trail], for catalog: TrailCatalogDescriptor) -> [Trail] {
@@ -148,6 +160,13 @@ final class TrailCatalogSelection: ObservableObject {
 
     var isAutomatic: Bool { manualCatalogID == nil }
 
+    /// The catalog a browse surface shows. Browsing is deliberate, so the
+    /// manual choice wins and GPS is ignored.
+    var browseCatalog: TrailCatalogDescriptor {
+        manualCatalogID.flatMap(TrailCatalogRegistry.catalog(withID:))
+            ?? TrailCatalogRegistry.defaultCatalog
+    }
+
     var selectionID: String {
         manualCatalogID ?? TrailCatalogRegistry.automaticSelectionID
     }
@@ -168,16 +187,6 @@ final class TrailCatalogSelection: ObservableObject {
         } else {
             defaults.removeObject(forKey: Self.selectionKey)
         }
-    }
-
-    func catalog(for coordinate: Coordinate?) -> TrailCatalogDescriptor {
-        if let manualCatalogID,
-            let manualCatalog = TrailCatalogRegistry.catalog(withID: manualCatalogID)
-        {
-            return manualCatalog
-        }
-        guard let coordinate else { return TrailCatalogRegistry.defaultCatalog }
-        return TrailCatalogRegistry.nearestCatalog(to: coordinate)
     }
 
     func catalog(

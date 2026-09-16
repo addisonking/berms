@@ -102,10 +102,7 @@ enum ShareCardContentBuilder {
         {
             return catalog.resortName
         }
-        if let catalog = TrailCatalogRegistry.catalog(for: day.activityMode) {
-            return catalog.resortName
-        }
-        return day.activityMode == .ski ? "Ski day" : TrailCatalogRegistry.defaultCatalog.resortName
+        return day.activityMode == .ski ? "Ski day" : "Ride day"
     }
 
     private static func statValues(day: RideDay, base: SessionDetailBase?) -> [ShareStatKind: String] {

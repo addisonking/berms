@@ -1,12 +1,106 @@
 import MapKit
-import SwiftData
 import SwiftUI
-import UIKit
 
+/// Camera framing and legal pan/zoom range for a route map. When a resort is
+/// known the boundary owns the range, so toggling map layers never moves the
+/// camera limits and the camera can never leave the resort.
 struct RouteMapConfiguration {
     let initialPosition: MapCameraPosition
     let initialDistance: CLLocationDistance
-    let bounds: MapCameraBounds
+    let minimumDistance: CLLocationDistance
+    let maximumDistance: CLLocationDistance
+    let panRegion: MKCoordinateRegion
+
+    var bounds: MapCameraBounds {
+        MapCameraBounds(
+            centerCoordinateBounds: panRegion,
+            minimumDistance: minimumDistance,
+            maximumDistance: maximumDistance)
+    }
+
+    private init(
+        initialPosition: MapCameraPosition,
+        initialDistance: CLLocationDistance,
+        minimumDistance: CLLocationDistance,
+        maximumDistance: CLLocationDistance,
+        panRegion: MKCoordinateRegion
+    ) {
+        self.initialPosition = initialPosition
+        self.initialDistance = initialDistance
+        self.minimumDistance = minimumDistance
+        self.maximumDistance = maximumDistance
+        self.panRegion = panRegion
+    }
+
+    init?(points: [RoutePoint], boundary: ResortBoundary? = nil) {
+        let extent = RouteExtent(points: points)
+        if let boundary {
+            self = Self.resortConfiguration(extent: extent, boundary: boundary)
+        } else if let extent {
+            self = Self.sessionConfiguration(extent: extent)
+        } else {
+            return nil
+        }
+    }
+
+    private static func resortConfiguration(
+        extent: RouteExtent?,
+        boundary: ResortBoundary
+    ) -> RouteMapConfiguration {
+        let resortCenter = CLLocationCoordinate2D(
+            latitude: boundary.center.latitude,
+            longitude: boundary.center.longitude)
+        let diameter = boundary.radiusMeters * 2
+        let panRegion = MKCoordinateRegion(
+            center: resortCenter,
+            latitudinalMeters: diameter * 1.4,
+            longitudinalMeters: diameter * 1.4)
+
+        let positionCenter = extent?.center ?? resortCenter
+        let positionLatitude = min(max((extent?.latitudeMeters ?? 0) * 1.25, diameter * 0.5), diameter * 0.8)
+        let positionLongitude = min(max((extent?.longitudeMeters ?? 0) * 1.25, diameter * 0.5), diameter * 0.8)
+
+        return RouteMapConfiguration(
+            initialPosition: .region(
+                MKCoordinateRegion(
+                    center: positionCenter,
+                    latitudinalMeters: positionLatitude,
+                    longitudinalMeters: positionLongitude)),
+            initialDistance: max(positionLatitude, positionLongitude),
+            minimumDistance: 60,
+            maximumDistance: max(1_200, diameter * 1.1),
+            panRegion: panRegion
+        )
+    }
+
+    private static func sessionConfiguration(extent: RouteExtent) -> RouteMapConfiguration {
+        let latitudeMeters = max(800, extent.latitudeMeters * 1.25)
+        let longitudeMeters = max(800, extent.longitudeMeters * 1.25)
+        let largestSpan = max(latitudeMeters, longitudeMeters)
+        let center = extent.center
+        let panRegion = MKCoordinateRegion(
+            center: center,
+            latitudinalMeters: max(2_500, latitudeMeters * 2.2),
+            longitudinalMeters: max(2_500, longitudeMeters * 2.2))
+
+        return RouteMapConfiguration(
+            initialPosition: .region(
+                MKCoordinateRegion(
+                    center: center,
+                    latitudinalMeters: latitudeMeters,
+                    longitudinalMeters: longitudeMeters)),
+            initialDistance: largestSpan,
+            minimumDistance: max(60, largestSpan * 0.05),
+            maximumDistance: min(max(2_500, largestSpan * 3.5), 15_000),
+            panRegion: panRegion
+        )
+    }
+}
+
+private struct RouteExtent {
+    let center: CLLocationCoordinate2D
+    let latitudeMeters: Double
+    let longitudeMeters: Double
 
     init?(points: [RoutePoint]) {
         var minLatitude = 0.0
@@ -33,31 +127,12 @@ struct RouteMapConfiguration {
             maxLongitude = max(maxLongitude, point.longitude)
         }
         guard hasValidPoint else { return nil }
+
         let centerLatitude = (minLatitude + maxLatitude) / 2
         let centerLongitude = (minLongitude + maxLongitude) / 2
-        let latitudeMeters = max(100, (maxLatitude - minLatitude) * 111_000)
         let longitudeScale = max(0.1, cos(centerLatitude * .pi / 180))
-        let longitudeMeters = max(100, (maxLongitude - minLongitude) * 111_000 * longitudeScale)
-        let cameraLatitudeMeters = max(800, latitudeMeters * 1.25)
-        let cameraLongitudeMeters = max(800, longitudeMeters * 1.25)
-        let largestSpan = max(cameraLatitudeMeters, cameraLongitudeMeters)
-        let cameraRegion = MKCoordinateRegion(
-            center: CLLocationCoordinate2D(latitude: centerLatitude, longitude: centerLongitude),
-            latitudinalMeters: cameraLatitudeMeters,
-            longitudinalMeters: cameraLongitudeMeters
-        )
-        let boundsRegion = MKCoordinateRegion(
-            center: cameraRegion.center,
-            latitudinalMeters: max(2_500, cameraLatitudeMeters * 3.0),
-            longitudinalMeters: max(2_500, cameraLongitudeMeters * 3.0)
-        )
-
-        initialPosition = .region(cameraRegion)
-        initialDistance = largestSpan
-        bounds = MapCameraBounds(
-            centerCoordinateBounds: boundsRegion,
-            minimumDistance: max(60, largestSpan * 0.08),
-            maximumDistance: max(20_000, largestSpan * 8)
-        )
+        center = CLLocationCoordinate2D(latitude: centerLatitude, longitude: centerLongitude)
+        latitudeMeters = max(100, (maxLatitude - minLatitude) * 111_000)
+        longitudeMeters = max(100, (maxLongitude - minLongitude) * 111_000 * longitudeScale)
     }
 }

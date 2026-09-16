@@ -15,7 +15,7 @@ struct TrailLibraryView: View {
     @State private var selectedTrailID: UUID?
 
     private var activeCatalog: TrailCatalogDescriptor {
-        trailCatalogSelection.catalog(for: nil)
+        trailCatalogSelection.browseCatalog
     }
 
     private var visibleTrails: [Trail] {
@@ -31,7 +31,9 @@ struct TrailLibraryView: View {
     }
 
     private var mapConfiguration: RouteMapConfiguration? {
-        RouteMapConfiguration(points: visibleTrails.flatMap(\.points))
+        RouteMapConfiguration(
+            points: visibleTrails.flatMap(\.points),
+            boundary: TrailCatalogRegistry.resort(withID: activeCatalog.resortID)?.boundary)
     }
 
     var body: some View {

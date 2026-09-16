@@ -5,7 +5,11 @@
       "id": "mountain-creek",
       "name": "Mountain Creek Resort",
       "region": "Vernon, New Jersey",
-      "anchor": { "latitude": 41.2505, "longitude": -74.5012 },
+      "anchor": { "latitude": 41.1844, "longitude": -74.5033 },
+      "bounds": {
+        "center": { "latitude": 41.1844, "longitude": -74.5033 },
+        "radiusMeters": 1200
+      },
       "catalogs": [
         {
           "id": "mountain-creek-resort",
@@ -46,6 +50,10 @@
       "name": "Whistler Mountain Bike Park",
       "region": "Whistler, British Columbia",
       "anchor": { "latitude": 50.0891, "longitude": -122.9634 },
+      "bounds": {
+        "center": { "latitude": 50.0891, "longitude": -122.9634 },
+        "radiusMeters": 3200
+      },
       "catalogs": [
         {
           "id": "whistler-resort",

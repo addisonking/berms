@@ -122,13 +122,13 @@ final class BermsTests: XCTestCase {
         let firstCatalog = TrailCatalogDescriptor(
             id: "catalog-a", season: .summer, resortID: "resort-a",
             resortName: "Resort A", bundledResourceName: "a",
-            importVersion: "a-v1", locationAnchor: Coordinate(latitude: 40, longitude: -105),
+            importVersion: "a-v1",
             stableIDNamespace: "berms:catalog-a", legacyImportVersionKeys: [],
             difficultyOverrides: [:], aliases: [:])
         let secondCatalog = TrailCatalogDescriptor(
             id: "catalog-b", season: .summer, resortID: "resort-b",
             resortName: "Resort B", bundledResourceName: "b",
-            importVersion: "b-v1", locationAnchor: Coordinate(latitude: 41, longitude: -106),
+            importVersion: "b-v1",
             stableIDNamespace: "berms:catalog-b", legacyImportVersionKeys: [],
             difficultyOverrides: [:], aliases: [:])
         let data = Data(
@@ -297,6 +297,7 @@ final class BermsTests: XCTestCase {
             XCTAssertFalse(resort.id.isEmpty)
             XCTAssertFalse(resort.name.isEmpty)
             XCTAssertFalse(resort.catalogs.isEmpty)
+            XCTAssertGreaterThan(resort.boundary.radiusMeters, 0)
             for catalog in resort.catalogs {
                 XCTAssertEqual(catalog.resortID, resort.id)
                 XCTAssertEqual(catalog.resortName, resort.name)
@@ -305,6 +306,19 @@ final class BermsTests: XCTestCase {
                 XCTAssertNotNil(
                     Bundle.main.url(forResource: resource, withExtension: "geojson"),
                     "Missing bundled trail resource \(resource)")
+
+                // The boundary has to cover the catalog geometry, since it
+                // decides both camera limits and whether a ride is "at" the resort.
+                let routes = TrailCatalogImporter.bundledRoutePoints(catalog: catalog)
+                XCTAssertFalse(routes.isEmpty, "Missing bundled geometry for \(resource)")
+                for points in routes.values {
+                    for point in points {
+                        XCTAssertTrue(
+                            resort.boundary.contains(
+                                Coordinate(latitude: point.latitude, longitude: point.longitude)),
+                            "\(resort.id) boundary misses a \(catalog.id) point")
+                    }
+                }
             }
         }
 
@@ -322,8 +336,10 @@ final class BermsTests: XCTestCase {
             """
             {"schemaVersion":1,"resorts":[
               {"id":"resort-a","name":"Resort A","anchor":{"latitude":40,"longitude":-105},
+               "bounds":{"center":{"latitude":40,"longitude":-105},"radiusMeters":1500},
                "catalogs":[{"id":"a-summer","season":"summer","resource":"a","version":"a-v1","stableIDNamespace":"berms:a"}]},
               {"id":"resort-b","name":"Resort B","region":"Utah","anchor":{"latitude":41,"longitude":-106},
+               "bounds":{"center":{"latitude":41,"longitude":-106},"radiusMeters":2500},
                "catalogs":[{"id":"b-winter","season":"winter","version":"b-v1","stableIDNamespace":"berms:b",
                  "difficultyOverrides":{"x":"black"},"aliases":{"old-x":"x"}}]}
             ]}
@@ -337,7 +353,9 @@ final class BermsTests: XCTestCase {
         XCTAssertEqual(manifest.resorts[1].region, "Utah")
         XCTAssertEqual(manifest.catalogs[0].resortID, "resort-a")
         XCTAssertEqual(manifest.catalogs[0].resortName, "Resort A")
-        XCTAssertEqual(manifest.catalogs[0].locationAnchor.latitude, 40, accuracy: 1e-9)
+        XCTAssertEqual(manifest.resorts[0].boundary.center.latitude, 40, accuracy: 1e-9)
+        XCTAssertEqual(manifest.resorts[0].boundary.radiusMeters, 1500)
+        XCTAssertEqual(manifest.resorts[1].boundary.radiusMeters, 2500)
         XCTAssertEqual(manifest.catalogs[0].bundledResourceName, "a")
         XCTAssertEqual(manifest.catalogs[1].difficultyOverrides["x"], .black)
         XCTAssertEqual(manifest.catalogs[1].aliases["old-x"], "x")
@@ -359,7 +377,6 @@ final class BermsTests: XCTestCase {
             id: "test-resort-summer", season: .summer, resortID: "test-resort",
             resortName: "Test Resort", bundledResourceName: nil,
             importVersion: "test-v1",
-            locationAnchor: Coordinate(latitude: 40, longitude: -105),
             stableIDNamespace: "berms:test-resort",
             legacyImportVersionKeys: [],
             difficultyOverrides: ["new-line": .doubleBlack],
@@ -440,9 +457,10 @@ final class BermsTests: XCTestCase {
             })
     }
 
-    func testDayCatalogResolutionPrefersManualSelectionThenGPS() {
+    func testDayCatalogResolutionRequiresAResortBoundary() {
         let whistler = Coordinate(latitude: 50.0891, longitude: -122.9634)
-        let creek = Coordinate(latitude: 41.2505, longitude: -74.5012)
+        let creek = Coordinate(latitude: 41.1844, longitude: -74.5033)
+        let city = Coordinate(latitude: 40.7128, longitude: -74.0060)
 
         XCTAssertEqual(
             TrailCatalogRegistry.resolvedCatalogID(
@@ -452,6 +470,10 @@ final class BermsTests: XCTestCase {
             TrailCatalogRegistry.resolvedCatalogID(
                 mode: .bikePark, manualSelectionID: nil, firstPoint: creek),
             TrailCatalogRegistry.mountainCreekCatalogID)
+        XCTAssertNil(
+            TrailCatalogRegistry.resolvedCatalogID(
+                mode: .bikePark, manualSelectionID: nil, firstPoint: city),
+            "A ride outside every resort boundary stays unassigned")
         XCTAssertEqual(
             TrailCatalogRegistry.resolvedCatalogID(
                 mode: .bikePark,
@@ -468,6 +490,50 @@ final class BermsTests: XCTestCase {
                 manualSelectionID: TrailCatalogRegistry.mountainCreekWinterCatalogID,
                 firstPoint: whistler),
             "whistler-resort")
+    }
+
+    func testResortBoundaryResolvesOnlyInsideTheResort() throws {
+        let creek = try XCTUnwrap(TrailCatalogRegistry.resort(withID: "mountain-creek"))
+        XCTAssertTrue(creek.boundary.contains(Coordinate(latitude: 41.1844, longitude: -74.5033)))
+        XCTAssertNil(
+            TrailCatalogRegistry.resort(
+                containing: Coordinate(latitude: 40.7128, longitude: -74.0060)),
+            "Rides far from every resort do not resolve")
+        XCTAssertEqual(
+            TrailCatalogRegistry.resort(
+                containing: Coordinate(latitude: 50.0891, longitude: -122.9634))?.id,
+            "whistler")
+    }
+
+    func testResortMapConfigurationKeepsTheCameraAtTheResort() throws {
+        let resort = try XCTUnwrap(TrailCatalogRegistry.resort(withID: "mountain-creek"))
+        let route = [
+            RoutePoint(
+                latitude: 41.1844, longitude: -74.5033, altitude: 0, speed: 0, timestamp: .now)
+        ]
+        let configuration = try XCTUnwrap(
+            RouteMapConfiguration(points: route, boundary: resort.boundary))
+        let diameter = resort.boundary.radiusMeters * 2
+
+        XCTAssertGreaterThanOrEqual(configuration.minimumDistance, 60)
+        XCTAssertLessThanOrEqual(configuration.maximumDistance, diameter * 1.1)
+        XCTAssertLessThanOrEqual(
+            configuration.panRegion.span.latitudeDelta * 111_000, diameter * 1.5,
+            "Panning has to stay at the resort")
+    }
+
+    func testSessionMapConfigurationCannotZoomToTheGlobe() throws {
+        let points = (0...10).map { index in
+            RoutePoint(
+                latitude: 40 + Double(index) * 0.001, longitude: -105,
+                altitude: 0, speed: 0, timestamp: .now)
+        }
+        let configuration = try XCTUnwrap(RouteMapConfiguration(points: points))
+
+        XCTAssertLessThan(configuration.maximumDistance, 20_000)
+        XCTAssertLessThanOrEqual(
+            configuration.panRegion.span.latitudeDelta * 111_000, 12_000,
+            "A short ride must not allow a regional camera")
     }
 
     func testSeasonalTrailSelectionDoesNotLeakSummerTrailsIntoWinter() {
@@ -713,7 +779,7 @@ final class BermsTests: XCTestCase {
     func testRunPreheatSnapshotsOnlyTheActiveResort() throws {
         let start = Date(timeIntervalSince1970: 31_000)
         let point = RoutePoint(
-            latitude: 41.2505, longitude: -74.5012,
+            latitude: 41.1844, longitude: -74.5033,
             altitude: 100, speed: 8, timestamp: start)
         let segment = RideSegment(
             kind: .run, startedAt: start, endedAt: start,
@@ -801,7 +867,7 @@ final class BermsTests: XCTestCase {
         let base = Date(timeIntervalSince1970: 33_000)
         let route = (0...4).map { index in
             RoutePoint(
-                latitude: 41.2505 + Double(index) * 0.0001, longitude: -74.5012,
+                latitude: 41.1844 + Double(index) * 0.0001, longitude: -74.5033,
                 altitude: 100 - Double(index), speed: 8,
                 timestamp: base.addingTimeInterval(Double(index)))
         }

@@ -292,6 +292,7 @@ struct SessionDetailSegment: Identifiable, Sendable {
     let maximumSpeedMetersPerSecond: Double
     let routePoints: [RoutePoint]
     let jumps: [JumpEvent]
+    let resortID: String?
     let activeResort: String
 
     var duration: TimeInterval {
@@ -364,6 +365,9 @@ enum SessionDetailPresentationBuilder {
             try Task.checkCancellation()
             let routePoints = (try? RouteCodec.decode(segment.routeData)) ?? []
             let jumps = segment.jumpData.flatMap { try? decoder.decode([JumpEvent].self, from: $0) } ?? []
+            let resort = resolvedResort(
+                for: routePoints.first,
+                manualCatalogID: input.manualCatalogID)
             segments.append(
                 SessionDetailSegment(
                     id: segment.id,
@@ -375,9 +379,8 @@ enum SessionDetailPresentationBuilder {
                     maximumSpeedMetersPerSecond: segment.maximumSpeedMetersPerSecond,
                     routePoints: routePoints,
                     jumps: jumps,
-                    activeResort: activeResort(
-                        for: routePoints.first,
-                        manualCatalogID: input.manualCatalogID)
+                    resortID: resort?.id,
+                    activeResort: resort?.name ?? ""
                 ))
         }
 
@@ -434,13 +437,13 @@ enum SessionDetailPresentationBuilder {
         manualCatalogID: String?
     ) -> SessionDetailPreparationInput {
         let routePoints = (try? RouteCodec.decode(segment.routeData)) ?? []
-        let activeResort = activeResort(
+        let resort = resolvedResort(
             for: routePoints.first,
             manualCatalogID: manualCatalogID)
         let catalogTrails = trailsForCatalog(trails, catalogID: manualCatalogID)
         return SessionDetailPreparationInput(
             segments: [makeSegmentInput(segment)],
-            trails: makeTrailInputs(catalogTrails.filter { $0.resort == activeResort }),
+            trails: makeTrailInputs(catalogTrails.filter { $0.resort == resort?.name }),
             manualCatalogID: manualCatalogID
         )
     }
@@ -571,17 +574,22 @@ enum SessionDetailPresentationBuilder {
         )
     }
 
-    static func activeResort(for firstPoint: RoutePoint?, manualCatalogID: String?) -> String {
+    /// The resort a run belongs to: a manual catalog choice wins, otherwise the
+    /// first GPS point must land inside a resort boundary. Nil means no known
+    /// resort, so no catalog trails are offered for that run.
+    static func resolvedResort(
+        for firstPoint: RoutePoint?,
+        manualCatalogID: String?
+    ) -> ResortDescriptor? {
         if let manualCatalogID,
-            let manualCatalog = TrailCatalogRegistry.catalog(withID: manualCatalogID)
+            let manualCatalog = TrailCatalogRegistry.catalog(withID: manualCatalogID),
+            let resort = TrailCatalogRegistry.resort(withID: manualCatalog.resortID)
         {
-            return manualCatalog.resortName
+            return resort
         }
-        guard let firstPoint else {
-            return TrailCatalogRegistry.defaultCatalog.resortName
-        }
-        let coordinate = Coordinate(latitude: firstPoint.latitude, longitude: firstPoint.longitude)
-        return TrailCatalogRegistry.nearestCatalog(to: coordinate).resortName
+        guard let firstPoint else { return nil }
+        return TrailCatalogRegistry.resort(
+            containing: Coordinate(latitude: firstPoint.latitude, longitude: firstPoint.longitude))
     }
 
     private static func makeCandidate(for input: SessionDetailTrailInput) -> TrailRouteCandidate? {
