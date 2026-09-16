@@ -40,6 +40,43 @@
           "stableIDNamespace": "berms:mountain-creek-winter"
         }
       ]
+    },
+    {
+      "id": "whistler",
+      "name": "Whistler Mountain Bike Park",
+      "region": "Whistler, British Columbia",
+      "anchor": { "latitude": 50.0891, "longitude": -122.9634 },
+      "catalogs": [
+        {
+          "id": "whistler-resort",
+          "season": "summer",
+          "resource": "whistler-ridepal-trails-with-metadata",
+          "version": "whistler-ridepal-v1",
+          "stableIDNamespace": "berms:whistler",
+          "aliases": {
+            "bengal-bear-715978": "bengal-bear",
+            "blue-velvet-301115": "blue-velvet",
+            "blue-velvet-369353": "blue-velvet",
+            "blue-velvet-369355": "blue-velvet",
+            "earth-circus-110822": "earth-circus",
+            "earth-circus-325544": "earth-circus",
+            "expressway-b5qgm8": "expressway",
+            "freight-train-351620": "freight-train",
+            "insomnia-129193": "insomnia",
+            "insomnia-320793": "insomnia",
+            "lower-a-line-500537": "lower-a-line",
+            "lower-ez-does-it-500541": "lower-ez-does-it",
+            "southpark-309668": "southpark",
+            "una-moss-287447": "una-moss",
+            "una-moss-287461": "una-moss",
+            "una-moss-293344": "una-moss",
+            "una-moss-348827": "una-moss",
+            "una-moss-351618": "una-moss",
+            "upper-b-line-339376": "upper-b-line",
+            "upper-freight-train-351616": "upper-freight-train"
+          }
+        }
+      ]
     }
   ]
 }
