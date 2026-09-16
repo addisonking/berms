@@ -114,7 +114,7 @@ final class StudioLibrary {
     private var exportID: UUID?
 
     init() {
-        catalog = TrailCatalog.loadBundled()
+        catalog = TrailCatalogImporter.bundledRouteCandidates()
         outputRoot = FileManager.default
             .urls(for: .moviesDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Berms")
