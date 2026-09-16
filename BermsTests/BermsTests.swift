@@ -123,12 +123,14 @@ final class BermsTests: XCTestCase {
             id: "catalog-a", season: .summer, resortID: "resort-a",
             resortName: "Resort A", bundledResourceName: "a",
             importVersion: "a-v1", locationAnchor: Coordinate(latitude: 40, longitude: -105),
-            stableIDNamespace: "berms:catalog-a", legacyImportVersionKeys: [])
+            stableIDNamespace: "berms:catalog-a", legacyImportVersionKeys: [],
+            difficultyOverrides: [:], aliases: [:])
         let secondCatalog = TrailCatalogDescriptor(
             id: "catalog-b", season: .summer, resortID: "resort-b",
             resortName: "Resort B", bundledResourceName: "b",
             importVersion: "b-v1", locationAnchor: Coordinate(latitude: 41, longitude: -106),
-            stableIDNamespace: "berms:catalog-b", legacyImportVersionKeys: [])
+            stableIDNamespace: "berms:catalog-b", legacyImportVersionKeys: [],
+            difficultyOverrides: [:], aliases: [:])
         let data = Data(
             """
             {"type":"FeatureCollection","features":[{"type":"Feature","properties":{"name":"Shared name","slug":"shared","difficulty":"green"},"geometry":{"type":"LineString","coordinates":[[-105,40],[-105,40.001]]}}]}
@@ -280,6 +282,122 @@ final class BermsTests: XCTestCase {
             TrailCatalogRegistry.catalog(for: .ski)?.id,
             TrailCatalogRegistry.mountainCreekWinter.id)
         XCTAssertNil(TrailCatalogRegistry.mountainCreekWinter.bundledResourceName)
+    }
+
+    func testBundledResortManifestLoadsAndResolvesResources() throws {
+        let manifest = try ResortCatalogLoader.load(bundle: .main)
+        XCTAssertFalse(manifest.resorts.isEmpty)
+
+        let catalogIDs = manifest.catalogs.map(\.id)
+        XCTAssertEqual(Set(catalogIDs).count, catalogIDs.count)
+
+        for resort in manifest.resorts {
+            XCTAssertFalse(resort.id.isEmpty)
+            XCTAssertFalse(resort.name.isEmpty)
+            XCTAssertFalse(resort.catalogs.isEmpty)
+            for catalog in resort.catalogs {
+                XCTAssertEqual(catalog.resortID, resort.id)
+                XCTAssertEqual(catalog.resortName, resort.name)
+                XCTAssertFalse(catalog.stableIDNamespace.isEmpty)
+                guard let resource = catalog.bundledResourceName else { continue }
+                XCTAssertNotNil(
+                    Bundle.main.url(forResource: resource, withExtension: "geojson"),
+                    "Missing bundled trail resource \(resource)")
+            }
+        }
+
+        let summer = TrailCatalogRegistry.mountainCreek
+        XCTAssertEqual(summer.resortID, TrailCatalogRegistry.mountainCreekResortID)
+        XCTAssertEqual(summer.difficultyOverrides.count, 12)
+        XCTAssertEqual(summer.aliases.count, 2)
+        XCTAssertEqual(
+            TrailCatalogRegistry.catalogsBySeason[.winter]?.first?.id,
+            TrailCatalogRegistry.mountainCreekWinter.id)
+    }
+
+    func testResortManifestDecodesMultipleResorts() throws {
+        let data = Data(
+            """
+            {"schemaVersion":1,"resorts":[
+              {"id":"resort-a","name":"Resort A","anchor":{"latitude":40,"longitude":-105},
+               "catalogs":[{"id":"a-summer","season":"summer","resource":"a","version":"a-v1","stableIDNamespace":"berms:a"}]},
+              {"id":"resort-b","name":"Resort B","region":"Utah","anchor":{"latitude":41,"longitude":-106},
+               "catalogs":[{"id":"b-winter","season":"winter","version":"b-v1","stableIDNamespace":"berms:b",
+                 "difficultyOverrides":{"x":"black"},"aliases":{"old-x":"x"}}]}
+            ]}
+            """.utf8)
+
+        let manifest = try ResortCatalogLoader.decode(data)
+        XCTAssertEqual(manifest.resorts.map(\.id), ["resort-a", "resort-b"])
+        XCTAssertEqual(manifest.catalogs.map(\.id), ["a-summer", "b-winter"])
+        XCTAssertEqual(manifest.resorts[0].seasons, [.summer])
+        XCTAssertEqual(manifest.resorts[1].seasons, [.winter])
+        XCTAssertEqual(manifest.resorts[1].region, "Utah")
+        XCTAssertEqual(manifest.catalogs[0].resortID, "resort-a")
+        XCTAssertEqual(manifest.catalogs[0].resortName, "Resort A")
+        XCTAssertEqual(manifest.catalogs[0].locationAnchor.latitude, 40, accuracy: 1e-9)
+        XCTAssertEqual(manifest.catalogs[0].bundledResourceName, "a")
+        XCTAssertEqual(manifest.catalogs[1].difficultyOverrides["x"], .black)
+        XCTAssertEqual(manifest.catalogs[1].aliases["old-x"], "x")
+        XCTAssertEqual(manifest.catalogs[1].legacyImportVersionKeys, [])
+    }
+
+    @MainActor
+    func testCatalogImportAppliesDescriptorOverridesAndMergesAliases() throws {
+        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try ModelContainer(
+            for: Trail.self, TrailPass.self,
+            configurations: configuration)
+        let context = container.mainContext
+        let suiteName = "BermsTests.descriptorCorrections.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let catalog = TrailCatalogDescriptor(
+            id: "test-resort-summer", season: .summer, resortID: "test-resort",
+            resortName: "Test Resort", bundledResourceName: nil,
+            importVersion: "test-v1",
+            locationAnchor: Coordinate(latitude: 40, longitude: -105),
+            stableIDNamespace: "berms:test-resort",
+            legacyImportVersionKeys: [],
+            difficultyOverrides: ["new-line": .doubleBlack],
+            aliases: ["old-line": "new-line"])
+
+        let retiredTrail = Trail(
+            name: "New Line", difficulty: .green,
+            resort: catalog.resortName, catalogID: catalog.id)
+        retiredTrail.id = TrailCatalogImporter.stableID(for: "old-line", catalog: catalog)
+        let retiredPass = TrailPass(
+            routePoints: [
+                RoutePoint(
+                    latitude: 40, longitude: -105, altitude: 0, speed: 0,
+                    timestamp: .now),
+                RoutePoint(
+                    latitude: 40.001, longitude: -105, altitude: 0, speed: 0,
+                    timestamp: .now.addingTimeInterval(1)),
+            ], recordedAt: .now)
+        retiredPass.trail = retiredTrail
+        retiredTrail.passes.append(retiredPass)
+        context.insert(retiredTrail)
+        context.insert(retiredPass)
+        try context.save()
+
+        let data = Data(
+            """
+            {"type":"FeatureCollection","features":[
+              {"type":"Feature","properties":{"name":"New Line","slug":"new-line","difficulty":"green"},"geometry":{"type":"LineString","coordinates":[[-105,40],[-105,40.001]]}},
+              {"type":"Feature","properties":{"name":"New Line","slug":"old-line","difficulty":"green"},"geometry":{"type":"LineString","coordinates":[[-105,40],[-105,40.001]]}}
+            ]}
+            """.utf8)
+
+        _ = try TrailCatalogImporter.import(
+            data: data, into: context, defaults: defaults, catalog: catalog)
+
+        let trails = try context.fetch(FetchDescriptor<Trail>())
+        XCTAssertEqual(trails.count, 1)
+        XCTAssertEqual(trails.first?.id, TrailCatalogImporter.stableID(for: "new-line", catalog: catalog))
+        XCTAssertEqual(trails.first?.difficulty, .doubleBlack)
+        XCTAssertEqual(trails.first?.passCount, 2)
     }
 
     func testSeasonalTrailSelectionDoesNotLeakSummerTrailsIntoWinter() {

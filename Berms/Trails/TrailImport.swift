@@ -12,10 +12,17 @@ struct TrailCatalogDescriptor: Identifiable, Hashable, Sendable {
     let importVersion: String
     let locationAnchor: Coordinate
 
-    // Mountain Creek's original IDs were generated in the RidePal namespace.
-    // Keep that namespace for this catalog so existing device records match.
+    // Catalog IDs keep their original stable-ID namespace so existing device
+    // records keep matching after a resort is imported from the manifest.
     let stableIDNamespace: String
     let legacyImportVersionKeys: [String]
+
+    /// Slugs whose published difficulty differs from the official map.
+    let difficultyOverrides: [String: TrailDifficulty]
+
+    /// Retired slug to canonical slug. Retired records merge into the canonical
+    /// trail during import.
+    let aliases: [String: String]
 
     var displayName: String { resortName }
 }
@@ -23,45 +30,56 @@ struct TrailCatalogDescriptor: Identifiable, Hashable, Sendable {
 enum TrailCatalogRegistry {
     static let automaticSelectionID = "automatic"
     static let mountainCreekResortID = "mountain-creek"
+    static let mountainCreekCatalogID = "mountain-creek-resort"
+    static let mountainCreekWinterCatalogID = "mountain-creek-winter"
 
-    static let mountainCreek = TrailCatalogDescriptor(
-        id: "mountain-creek-resort",
-        season: .summer,
-        resortID: mountainCreekResortID,
-        resortName: "Mountain Creek Resort",
-        bundledResourceName: "mountain-creek-ridepal-trails-with-metadata",
-        importVersion: "mountain-creek-ridepal-v3",
-        locationAnchor: Coordinate(latitude: 41.2505, longitude: -74.5012),
-        stableIDNamespace: "berms:ridepal",
-        legacyImportVersionKeys: ["berms.trailSeedImport.version"]
-    )
+    static let manifest: ResortCatalogManifest = (try? ResortCatalogLoader.load()) ?? .empty
 
-    static let mountainCreekWinter = TrailCatalogDescriptor(
-        id: "mountain-creek-winter",
-        season: .winter,
-        resortID: mountainCreekResortID,
-        resortName: "Mountain Creek Resort",
-        bundledResourceName: nil,
-        importVersion: "mountain-creek-winter-v1",
-        locationAnchor: Coordinate(latitude: 41.2505, longitude: -74.5012),
-        stableIDNamespace: "berms:mountain-creek-winter",
-        legacyImportVersionKeys: []
-    )
+    static let resorts: [ResortDescriptor] = manifest.resorts
+    static let allCatalogs: [TrailCatalogDescriptor] = manifest.catalogs
 
     /// Catalogs with bundled geometry are imported into SwiftData. Seasonal
     /// placeholders remain resolvable even before their map resource ships.
-    static let catalogs: [TrailCatalogDescriptor] = [mountainCreek]
-    static let catalogsBySeason: [SeasonBucket: [TrailCatalogDescriptor]] = [
-        .summer: [mountainCreek],
-        .winter: [mountainCreekWinter],
-    ]
+    static let catalogs: [TrailCatalogDescriptor] = allCatalogs.filter {
+        $0.bundledResourceName != nil
+    }
+    static let catalogsBySeason: [SeasonBucket: [TrailCatalogDescriptor]] = Dictionary(
+        grouping: allCatalogs, by: \.season)
 
-    static var defaultCatalog: TrailCatalogDescriptor { catalogs[0] }
+    static var defaultCatalog: TrailCatalogDescriptor { catalogs.first ?? fallbackCatalog }
+
+    // Compatibility accessors for the original single-resort API.
+    static var mountainCreek: TrailCatalogDescriptor {
+        catalog(withID: mountainCreekCatalogID) ?? fallbackCatalog
+    }
+    static var mountainCreekWinter: TrailCatalogDescriptor {
+        catalog(withID: mountainCreekWinterCatalogID) ?? fallbackCatalog
+    }
+
+    static func catalogs(forResort resortID: String) -> [TrailCatalogDescriptor] {
+        allCatalogs.filter { $0.resortID == resortID }
+    }
 
     static func catalog(withID id: String?) -> TrailCatalogDescriptor? {
         guard let id else { return nil }
-        return [mountainCreek, mountainCreekWinter].first { $0.id == id }
+        return allCatalogs.first { $0.id == id }
     }
+
+    /// Safety net when the manifest resource is missing. Match the original
+    /// catalog so callers resolve a sensible default instead of crashing.
+    private static let fallbackCatalog = TrailCatalogDescriptor(
+        id: mountainCreekCatalogID,
+        season: .summer,
+        resortID: mountainCreekResortID,
+        resortName: "Mountain Creek Resort",
+        bundledResourceName: nil,
+        importVersion: "mountain-creek-ridepal-v3",
+        locationAnchor: Coordinate(latitude: 41.2505, longitude: -74.5012),
+        stableIDNamespace: "berms:ridepal",
+        legacyImportVersionKeys: [],
+        difficultyOverrides: [:],
+        aliases: [:]
+    )
 
     static func nearestCatalog(to coordinate: Coordinate) -> TrailCatalogDescriptor {
         catalogs.min {
@@ -90,7 +108,7 @@ enum TrailCatalogRegistry {
             }
             // Trails created before seasonal catalog IDs existed belong to the
             // original summer Mountain Creek catalog when their resort matches.
-            return catalog.id == mountainCreek.id && trail.resort == catalog.resortName
+            return catalog.id == mountainCreekCatalogID && trail.resort == catalog.resortName
         }
     }
 }
@@ -170,10 +188,6 @@ final class TrailCatalogSelection: ObservableObject {
 
 @MainActor
 enum TrailCatalogImporter {
-    // Compatibility constants for code that used the original importer API.
-    static let mountainCreekResourceName = TrailCatalogRegistry.mountainCreek.bundledResourceName
-    static let mountainCreekImportVersion = TrailCatalogRegistry.mountainCreek.importVersion
-
     private static let versionKeyPrefix = "berms.trailCatalogImport"
 
     struct Summary: Sendable {
@@ -195,18 +209,6 @@ enum TrailCatalogImporter {
                 "Expected a GeoJSON FeatureCollection, received \(type)."
             }
         }
-    }
-
-    static func importMountainCreekIfNeeded(
-        into context: ModelContext,
-        bundle: Bundle = .main,
-        defaults: UserDefaults = .standard,
-        now: Date = .now
-    ) throws -> Summary? {
-        try importCatalogIfNeeded(
-            TrailCatalogRegistry.mountainCreek,
-            into: context, bundle: bundle,
-            defaults: defaults, now: now)
     }
 
     static func importCatalogsIfNeeded(
@@ -338,13 +340,12 @@ enum TrailCatalogImporter {
         )
     }
 
-    private static func difficulty(
+    nonisolated private static func difficulty(
         from properties: GeoJSONProperties,
         catalog: TrailCatalogDescriptor
     ) -> TrailDifficulty? {
-        if catalog.id == TrailCatalogRegistry.mountainCreek.id,
-            let slug = properties.slug?.trimmedNonEmpty,
-            let officialDifficulty = mountainCreekOfficialDifficultyBySlug[slug]
+        if let slug = properties.slug?.trimmedNonEmpty,
+            let officialDifficulty = catalog.difficultyOverrides[slug]
         {
             return officialDifficulty
         }
@@ -364,35 +365,8 @@ enum TrailCatalogImporter {
         }
     }
 
-    // These corrections follow the supplied Mountain Creek Bike Park map.
-    // Its PRO LINE and EXPERT routes are represented as Double Black in
-    // Berms. ADVANCED routes remain regular Black.
-    private static let mountainCreekOfficialDifficultyBySlug: [String: TrailDifficulty] = [
-        "progression-drops": .green,
-        "deviant-kg9399": .green,
-        "fat-lip-rf8hz9": .blue,
-        "ripper-5ashmy": .doubleBlack,
-        "dmlh-abz5gf": .doubleBlack,
-        "utah": .doubleBlack,
-        "flipper-bfr3vr": .doubleBlack,
-        "pipeline-5y2v8p": .black,
-        "the-pit": .doubleBlack,
-        "covenant-d2z0pq": .doubleBlack,
-        "anthem-2cky0y": .doubleBlack,
-        "phantom-drop": .doubleBlack,
-    ]
-
-    // RidePal published the same Lower Asylum centerline three times. Keep
-    // the first stable ID as the canonical record and merge old records into
-    // it during the v2 catalog migration.
-    private static let mountainCreekRetiredTrailSlugs: [String: String] = [
-        "lower-asylum-196712": "lower-asylum-1f4u6s",
-        "lower-asylum-dud3va": "lower-asylum-1f4u6s",
-    ]
-
     private static func retiredTrailSlugs(for catalog: TrailCatalogDescriptor) -> Set<String> {
-        guard catalog.id == TrailCatalogRegistry.mountainCreek.id else { return [] }
-        return Set(mountainCreekRetiredTrailSlugs.keys)
+        Set(catalog.aliases.keys)
     }
 
     private static func reconcileRetiredTrails(
@@ -400,9 +374,7 @@ enum TrailCatalogImporter {
         trailsByID: [UUID: Trail],
         context: ModelContext
     ) {
-        guard catalog.id == TrailCatalogRegistry.mountainCreek.id else { return }
-
-        for (retiredSlug, canonicalSlug) in mountainCreekRetiredTrailSlugs {
+        for (retiredSlug, canonicalSlug) in catalog.aliases {
             let retiredID = stableID(for: retiredSlug, catalog: catalog)
             let canonicalID = stableID(for: canonicalSlug, catalog: catalog)
             guard let retiredTrail = trailsByID[retiredID],
@@ -465,6 +437,45 @@ enum TrailCatalogImporter {
         return routes
     }
 
+    /// Bundled centerlines as matcher candidates. Berms Studio names runs with
+    /// this so its results match the iOS app.
+    nonisolated static func bundledRouteCandidates(
+        bundle: Bundle = .main
+    ) -> [TrailRouteCandidate] {
+        guard let manifest = try? ResortCatalogLoader.load(bundle: bundle) else { return [] }
+        return manifest.catalogs.filter { $0.bundledResourceName != nil }.flatMap {
+            catalog -> [TrailRouteCandidate] in
+            guard
+                let resourceName = catalog.bundledResourceName,
+                let url = bundle.url(
+                    forResource: resourceName,
+                    withExtension: "geojson"),
+                let data = try? Data(contentsOf: url),
+                let collection = try? JSONDecoder().decode(
+                    GeoJSONFeatureCollection.self, from: data)
+            else {
+                return []
+            }
+
+            let reference = Date(timeIntervalSince1970: 0)
+            return collection.features.compactMap { feature in
+                guard let slug = feature.properties.slug?.trimmedNonEmpty,
+                    let name = feature.properties.name?.trimmedNonEmpty,
+                    !catalog.aliases.keys.contains(slug),
+                    let difficulty = difficulty(from: feature.properties, catalog: catalog),
+                    let routes = feature.geometry.routeLines(referenceDate: reference)
+                else {
+                    return nil
+                }
+                return TrailRouteCandidate(
+                    id: stableID(for: slug, catalog: catalog),
+                    name: name,
+                    difficulty: difficulty,
+                    routes: routes)
+            }
+        }
+    }
+
     private static func versionKey(for catalog: TrailCatalogDescriptor) -> String {
         "\(versionKeyPrefix).\(catalog.id).version"
     }
@@ -480,10 +491,6 @@ enum TrailCatalogImporter {
         }
     }
 }
-
-// Keep source compatibility for the first version of the importer while all
-// new code uses catalog terminology.
-typealias TrailSeedImporter = TrailCatalogImporter
 
 private struct GeoJSONFeatureCollection: Decodable {
     let type: String
@@ -553,9 +560,30 @@ private enum GeoJSONGeometry: Decodable {
             coordinateLines = coordinates
         }
 
+        // Catalog centerlines concatenate multi-line geometries into one path.
         let coordinates = coordinateLines.reduce(into: [[Double]]()) { result, line in
             result.append(contentsOf: line)
         }
+        return route(referenceDate: referenceDate, coordinates: coordinates)
+    }
+
+    /// Each LineString kept separate. Matcher candidates score one route at a
+    /// time, so multi-line features must not be stitched together.
+    func routeLines(referenceDate: Date) -> [[RoutePoint]]? {
+        let coordinateLines: [[[Double]]]
+        switch self {
+        case .lineString(let coordinates):
+            coordinateLines = [coordinates]
+        case .multiLineString(let coordinates):
+            coordinateLines = coordinates
+        }
+        let lines = coordinateLines.compactMap {
+            route(referenceDate: referenceDate, coordinates: $0)
+        }
+        return lines.isEmpty ? nil : lines
+    }
+
+    private func route(referenceDate: Date, coordinates: [[Double]]) -> [RoutePoint]? {
         guard coordinates.count >= 2 else { return nil }
 
         let startDate = referenceDate.addingTimeInterval(-Double(coordinates.count - 1))

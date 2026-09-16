@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "resorts": [
+    {
+      "id": "mountain-creek",
+      "name": "Mountain Creek Resort",
+      "region": "Vernon, New Jersey",
+      "anchor": { "latitude": 41.2505, "longitude": -74.5012 },
+      "catalogs": [
+        {
+          "id": "mountain-creek-resort",
+          "season": "summer",
+          "resource": "mountain-creek-ridepal-trails-with-metadata",
+          "version": "mountain-creek-ridepal-v3",
+          "stableIDNamespace": "berms:ridepal",
+          "legacyVersionKeys": ["berms.trailSeedImport.version"],
+          "difficultyOverrides": {
+            "progression-drops": "green",
+            "deviant-kg9399": "green",
+            "fat-lip-rf8hz9": "blue",
+            "ripper-5ashmy": "doubleBlack",
+            "dmlh-abz5gf": "doubleBlack",
+            "utah": "doubleBlack",
+            "flipper-bfr3vr": "doubleBlack",
+            "pipeline-5y2v8p": "black",
+            "the-pit": "doubleBlack",
+            "covenant-d2z0pq": "doubleBlack",
+            "anthem-2cky0y": "doubleBlack",
+            "phantom-drop": "doubleBlack"
+          },
+          "aliases": {
+            "lower-asylum-196712": "lower-asylum-1f4u6s",
+            "lower-asylum-dud3va": "lower-asylum-1f4u6s"
+          }
+        },
+        {
+          "id": "mountain-creek-winter",
+          "season": "winter",
+          "version": "mountain-creek-winter-v1",
+          "stableIDNamespace": "berms:mountain-creek-winter"
+        }
+      ]
+    }
+  ]
+}

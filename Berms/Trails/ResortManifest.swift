@@ -1,0 +1,97 @@
+import Foundation
+
+/// The bundled resort manifest. Adding a resort means adding its entry here and
+/// its trail resources to the bundle; no Swift changes are required.
+struct ResortCatalogManifest: Sendable {
+    static let empty = ResortCatalogManifest(resorts: [])
+
+    let resorts: [ResortDescriptor]
+
+    var catalogs: [TrailCatalogDescriptor] { resorts.flatMap(\.catalogs) }
+}
+
+struct ResortDescriptor: Identifiable, Hashable, Sendable {
+    let id: String
+    let name: String
+    let region: String?
+    let anchor: Coordinate
+    let catalogs: [TrailCatalogDescriptor]
+
+    var displayName: String { name }
+
+    var seasons: [SeasonBucket] {
+        var seen: Set<SeasonBucket> = []
+        return catalogs.map(\.season).filter { seen.insert($0).inserted }
+    }
+}
+
+enum ResortCatalogLoader {
+    static let resourceName = "resorts"
+
+    enum ManifestError: LocalizedError {
+        case missingResource
+
+        var errorDescription: String? {
+            switch self {
+            case .missingResource: "The bundled resort manifest could not be found."
+            }
+        }
+    }
+
+    static func load(bundle: Bundle = .main) throws -> ResortCatalogManifest {
+        guard let url = bundle.url(forResource: resourceName, withExtension: "json") else {
+            throw ManifestError.missingResource
+        }
+        return try decode(Data(contentsOf: url))
+    }
+
+    static func decode(_ data: Data) throws -> ResortCatalogManifest {
+        let manifest = try JSONDecoder().decode(ManifestDTO.self, from: data)
+        return ResortCatalogManifest(
+            resorts: manifest.resorts.map { resort in
+                ResortDescriptor(
+                    id: resort.id,
+                    name: resort.name,
+                    region: resort.region,
+                    anchor: resort.anchor,
+                    catalogs: resort.catalogs.map { catalog in
+                        TrailCatalogDescriptor(
+                            id: catalog.id,
+                            season: catalog.season,
+                            resortID: resort.id,
+                            resortName: resort.name,
+                            bundledResourceName: catalog.resource,
+                            importVersion: catalog.version,
+                            locationAnchor: resort.anchor,
+                            stableIDNamespace: catalog.stableIDNamespace,
+                            legacyImportVersionKeys: catalog.legacyVersionKeys ?? [],
+                            difficultyOverrides: catalog.difficultyOverrides ?? [:],
+                            aliases: catalog.aliases ?? [:]
+                        )
+                    })
+            })
+    }
+
+    private struct ManifestDTO: Decodable {
+        let resorts: [ResortDTO]
+    }
+
+    private struct ResortDTO: Decodable {
+        let id: String
+        let name: String
+        let region: String?
+        let anchor: Coordinate
+        let catalogs: [CatalogDTO]
+    }
+
+    private struct CatalogDTO: Decodable {
+        let id: String
+        let season: SeasonBucket
+        let resource: String?
+        let version: String
+        let stableIDNamespace: String
+        let legacyVersionKeys: [String]?
+        let difficultyOverrides: [String: TrailDifficulty]?
+        let aliases: [String: String]?
+    }
+}
