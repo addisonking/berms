@@ -47,7 +47,7 @@ struct SettingsView: View {
                     .pickerStyle(.menu)
                     Text(
                         trailCatalogSelection.isAutomatic
-                            ? "Automatic chooses the nearest bundled resort from GPS."
+                            ? "Automatic matches trails for the resort you are riding in, from GPS."
                             : "Using this resort until you switch back to Automatic."
                     )
                     .font(.caption)

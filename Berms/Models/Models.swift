@@ -145,6 +145,15 @@ final class RideDay {
         duration(at: .now)
     }
 
+    /// First GPS point of the day, used to resolve which resort it belongs to.
+    var firstRecordedCoordinate: Coordinate? {
+        for segment in segments.sorted(by: { $0.startedAt < $1.startedAt }) {
+            guard let point = segment.points.first else { continue }
+            return Coordinate(latitude: point.latitude, longitude: point.longitude)
+        }
+        return nil
+    }
+
     func duration(at date: Date) -> TimeInterval {
         let end = endedAt ?? date
         let paused =
