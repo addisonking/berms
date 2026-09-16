@@ -9,6 +9,7 @@ struct TrackView: View {
     @ObservedObject var recorder: RideRecorder
     @Query private var trails: [Trail]
     @EnvironmentObject private var mapLayerPreferences: MapLayerPreferences
+    @EnvironmentObject private var trailCatalogSelection: TrailCatalogSelection
     @Namespace private var mapScope
     @State private var mapPosition: MapCameraPosition = .userLocation(followsHeading: false, fallback: .automatic)
     @State private var liveStatsHeight: CGFloat = 320
@@ -83,8 +84,27 @@ struct TrackView: View {
         }
         .onChange(of: recorder.isRecording) { _, recording in
             if recording {
-                mapPosition = .userLocation(followsHeading: false, fallback: .automatic)
+                recenterMapPosition()
             }
+        }
+        .onChange(of: isPreviewingResort) { _, _ in
+            recenterMapPosition()
+        }
+        .onChange(of: trailCatalogSelection.manualCatalogID) { _, _ in
+            recenterMapPosition()
+        }
+        .onAppear { recenterMapPosition() }
+    }
+
+    /// Follows the rider, or frames the selected resort while previewing one
+    /// the rider is not standing in.
+    private func recenterMapPosition() {
+        if isPreviewingResort, let configuration = liveMapConfiguration {
+            withAnimation(reduceMotion ? nil : BermsMotion.recenter) {
+                mapPosition = configuration.initialPosition
+            }
+        } else {
+            mapPosition = .userLocation(followsHeading: false, fallback: .automatic)
         }
     }
 
@@ -326,17 +346,44 @@ struct TrackView: View {
                 || recorder.locationAuthorization == .restricted)
     }
 
-    /// The recording map follows the rider. A browse selection in Settings is
-    /// for the trail library and never overrides GPS here, otherwise a stale
-    /// selection draws another resort's trails somewhere off screen.
-    private var liveResort: ResortDescriptor? {
+    /// The resort the rider is standing in, from GPS.
+    private var riderResort: ResortDescriptor? {
         guard let coordinate = currentCoordinate else { return nil }
         return TrailCatalogRegistry.resort(containing: coordinate)
     }
 
+    /// The resort chosen in Settings, when it matches the activity season.
+    private var selectedCatalog: TrailCatalogDescriptor? {
+        guard let manualID = trailCatalogSelection.manualCatalogID,
+            let catalog = TrailCatalogRegistry.catalog(withID: manualID),
+            catalog.season == recorder.activeActivityMode.season
+        else { return nil }
+        return catalog
+    }
+
+    /// Outside every resort the selection previews that resort, so a rider can
+    /// line up trails before they arrive. Inside a resort GPS always wins.
+    private var isPreviewingResort: Bool {
+        riderResort == nil && selectedCatalog != nil
+    }
+
+    private var liveCatalog: TrailCatalogDescriptor? {
+        if riderResort != nil {
+            return TrailCatalogRegistry.catalog(
+                for: recorder.activeActivityMode,
+                coordinate: currentCoordinate)
+        }
+        return selectedCatalog
+    }
+
+    private var liveResort: ResortDescriptor? {
+        guard let catalog = liveCatalog else { return nil }
+        return TrailCatalogRegistry.resort(withID: catalog.resortID)
+    }
+
     private var liveMapConfiguration: RouteMapConfiguration? {
         RouteMapConfiguration(
-            points: liveMapPaths.flatMap(\.points),
+            points: isPreviewingResort ? [] : liveMapPaths.flatMap(\.points),
             boundary: liveResort?.boundary)
     }
 
@@ -378,21 +425,27 @@ struct TrackView: View {
                 showsJumpsControl: false,
                 showsPreviousRunsControl: true,
                 onSettings: { showingSettings = true })
-            MapActionButton(
-                title: "My location",
-                systemImage: mapPosition.followsUserLocation ? "location.fill" : "location"
-            ) {
-                withAnimation(reduceMotion ? nil : BermsMotion.recenter) {
-                    mapPosition = .userLocation(
-                        followsHeading: !mapPosition.followsUserHeading
-                            && mapPosition.followsUserLocation,
-                        fallback: .automatic)
+            if isPreviewingResort {
+                MapActionButton(title: "Show resort", systemImage: "map") {
+                    recenterMapPosition()
                 }
+            } else {
+                MapActionButton(
+                    title: "My location",
+                    systemImage: mapPosition.followsUserLocation ? "location.fill" : "location"
+                ) {
+                    withAnimation(reduceMotion ? nil : BermsMotion.recenter) {
+                        mapPosition = .userLocation(
+                            followsHeading: !mapPosition.followsUserHeading
+                                && mapPosition.followsUserLocation,
+                            fallback: .automatic)
+                    }
+                }
+                .accessibilityValue(
+                    mapPosition.followsUserHeading
+                        ? "Following heading"
+                        : mapPosition.followsUserLocation ? "Following location" : "Not following")
             }
-            .accessibilityValue(
-                mapPosition.followsUserHeading
-                    ? "Following heading"
-                    : mapPosition.followsUserLocation ? "Following location" : "Not following")
         }
         .padding(.top, BermsSpacing.control)
         .padding(.trailing, BermsSpacing.content)
@@ -459,13 +512,14 @@ struct TrackView: View {
     }
 
     private var nearbyTrails: [Trail] {
-        guard let coordinate = currentCoordinate,
-            let catalog = TrailCatalogRegistry.catalog(
-                for: recorder.activeActivityMode,
-                coordinate: coordinate)
-        else { return [] }
-        return TrailCatalogRegistry.trails(trails, for: catalog).filter { trail in
-            trail.points.count > 1 && trailDistance(from: coordinate, to: trail.points) <= 750
+        guard let catalog = liveCatalog else { return [] }
+        let catalogTrails = TrailCatalogRegistry.trails(trails, for: catalog)
+            .filter { $0.points.count > 1 }
+        guard !isPreviewingResort, let coordinate = currentCoordinate else {
+            return catalogTrails
+        }
+        return catalogTrails.filter { trail in
+            trailDistance(from: coordinate, to: trail.points) <= 750
         }
     }
 
