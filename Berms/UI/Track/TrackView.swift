@@ -401,14 +401,17 @@ struct TrackView: View {
                 }
             }
             if mapLayerPreferences.showsActualTrails {
-                ForEach(nearbyTrails) { trail in
-                    if trail.points.count > 1 {
-                        trailMapContent(coordinates: trailCoordinates(for: trail), difficulty: trail.difficulty)
-                    }
+                ForEach(renderedTrails) { trail in
+                    trailMapContent(coordinates: trailCoordinates(for: trail), difficulty: trail.difficulty)
                 }
                 ForEach(labeledTrails) { trail in
-                    if let coordinate = trailLabelCoordinate(for: trail.points) {
-                        Annotation("", coordinate: coordinate) {
+                    if let coordinate = TrailGeometryStore.shared.metrics(for: trail).labelCoordinate {
+                        Annotation(
+                            "",
+                            coordinate: CLLocationCoordinate2D(
+                                latitude: coordinate.latitude,
+                                longitude: coordinate.longitude)
+                        ) {
                             TrailMapLabel(
                                 name: trail.name,
                                 difficulty: trail.difficulty,
@@ -528,12 +531,35 @@ struct TrackView: View {
     private var nearbyTrails: [Trail] {
         guard let catalog = liveCatalog else { return [] }
         let catalogTrails = TrailCatalogRegistry.trails(trails, for: catalog)
-            .filter { $0.points.count > 1 }
         guard !isPreviewingResort, let coordinate = currentCoordinate else {
-            return catalogTrails
+            return catalogTrails.filter { TrailGeometryStore.shared.metrics(for: $0).hasGeometry }
         }
-        return catalogTrails.filter { trail in
-            trailDistance(from: coordinate, to: trail.points) <= 750
+        // Bounds first, so only the trails around the rider get an exact
+        // distance over every point.
+        return
+            catalogTrails
+            .compactMap { trail -> (trail: Trail, distance: Double)? in
+                let metrics = TrailGeometryStore.shared.metrics(for: trail)
+                guard let bounds = metrics.bounds,
+                    bounds.contains(coordinate, paddingMeters: 750)
+                else { return nil }
+                let distance = trailDistance(from: coordinate, to: trail.points)
+                guard distance <= 750 else { return nil }
+                return (trail, distance)
+            }
+            .sorted { $0.distance < $1.distance }
+            .map(\.trail)
+    }
+
+    /// Trails on screen, so a resort-wide view never builds overlays for the
+    /// whole catalog.
+    private var renderedTrails: [Trail] {
+        guard let visibleRegion else { return nearbyTrails }
+        return nearbyTrails.filter { trail in
+            guard let bounds = TrailGeometryStore.shared.metrics(for: trail).bounds else {
+                return false
+            }
+            return trailBoundsIntersect(bounds, region: visibleRegion)
         }
     }
 
@@ -541,33 +567,25 @@ struct TrackView: View {
     /// only for trails on screen. Hundreds of trails would otherwise stack
     /// pills across the whole map.
     private var labeledTrails: [Trail] {
-        guard let visibleRegion, currentSpanMeters(in: visibleRegion) <= 2_000 else { return [] }
+        guard let visibleRegion, regionSpanMeters(visibleRegion) <= 2_000 else { return [] }
         let center = Coordinate(
             latitude: visibleRegion.center.latitude,
             longitude: visibleRegion.center.longitude)
         return
-            nearbyTrails
+            renderedTrails
             .compactMap { trail -> (trail: Trail, distance: Double)? in
-                guard let coordinate = trailLabelCoordinate(for: trail.points),
+                guard let coordinate = TrailGeometryStore.shared.metrics(for: trail).labelCoordinate,
                     coordinateIsVisible(coordinate, in: visibleRegion)
                 else { return nil }
-                let label = Coordinate(latitude: coordinate.latitude, longitude: coordinate.longitude)
-                return (trail, center.distance(to: label))
+                return (trail, center.distance(to: coordinate))
             }
             .sorted { $0.distance < $1.distance }
             .prefix(8)
             .map(\.trail)
     }
 
-    private func currentSpanMeters(in region: MKCoordinateRegion) -> Double {
-        max(
-            region.span.latitudeDelta * 111_000,
-            region.span.longitudeDelta * 111_000 * cos(region.center.latitude * .pi / 180)
-        )
-    }
-
     private func coordinateIsVisible(
-        _ coordinate: CLLocationCoordinate2D,
+        _ coordinate: Coordinate,
         in region: MKCoordinateRegion
     ) -> Bool {
         let halfLatitude = region.span.latitudeDelta / 2
