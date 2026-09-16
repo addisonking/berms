@@ -441,9 +441,16 @@ enum SessionDetailPresentationBuilder {
             for: routePoints.first,
             manualCatalogID: manualCatalogID)
         let catalogTrails = trailsForCatalog(trails, catalogID: manualCatalogID)
+        guard let resort else {
+            return SessionDetailPreparationInput(
+                segments: [makeSegmentInput(segment)],
+                trails: [],
+                manualCatalogID: manualCatalogID
+            )
+        }
         return SessionDetailPreparationInput(
             segments: [makeSegmentInput(segment)],
-            trails: makeTrailInputs(catalogTrails.filter { $0.resort == resort?.name }),
+            trails: makeTrailInputs(catalogTrails.filter { $0.resort == resort.name }),
             manualCatalogID: manualCatalogID
         )
     }

@@ -74,14 +74,28 @@ struct DayDetailView: View {
         return TrailCatalogRegistry.resort(withID: resortID)?.name
     }
 
+    /// What the day would resolve to with no manual choice, so the caption can
+    /// tell a GPS result apart from a resort the rider picked.
+    private var autoResolvedCatalogID: String? {
+        TrailCatalogRegistry.resolvedCatalogID(
+            mode: day.activityMode,
+            manualSelectionID: nil,
+            firstPoint: firstRecordedCoordinate)
+    }
+
+    private var firstRecordedCoordinate: Coordinate? {
+        guard let point = detailBase?.mapSegments.first?.routePoints.first else { return nil }
+        return Coordinate(latitude: point.latitude, longitude: point.longitude)
+    }
+
     private var resortCaption: String {
-        if day.catalogID != nil {
-            return "Using this resort until you switch back to Automatic."
-        }
-        guard let detectedResortName else {
+        guard let catalogID = day.catalogID else {
             return "No resort detected from GPS. Pick one if this ride was at a resort."
         }
-        return "Detected from GPS: \(detectedResortName)."
+        if catalogID == autoResolvedCatalogID {
+            return "Detected from GPS: \(detectedResortName ?? "this resort")."
+        }
+        return "Using this resort until you switch back to Automatic."
     }
 
     private func preparationCacheKey(for trails: [Trail]) -> String {

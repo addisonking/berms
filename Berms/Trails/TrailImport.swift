@@ -32,7 +32,18 @@ enum TrailCatalogRegistry {
     static let mountainCreekCatalogID = "mountain-creek-resort"
     static let mountainCreekWinterCatalogID = "mountain-creek-winter"
 
-    static let manifest: ResortCatalogManifest = (try? ResortCatalogLoader.load()) ?? .empty
+    private static let manifestResult: Result<ResortCatalogManifest, any Error> = Result {
+        try ResortCatalogLoader.load()
+    }
+
+    static let manifest: ResortCatalogManifest = (try? manifestResult.get()) ?? .empty
+
+    /// Set when the bundled manifest could not be read. Surfaced to the rider
+    /// instead of silently running with no catalogs.
+    static var manifestError: String? {
+        guard case .failure(let error) = manifestResult else { return nil }
+        return error.localizedDescription
+    }
 
     static let resorts: [ResortDescriptor] = manifest.resorts
     static let allCatalogs: [TrailCatalogDescriptor] = manifest.catalogs
@@ -55,10 +66,6 @@ enum TrailCatalogRegistry {
         catalog(withID: mountainCreekWinterCatalogID) ?? fallbackCatalog
     }
 
-    static func catalogs(forResort resortID: String) -> [TrailCatalogDescriptor] {
-        allCatalogs.filter { $0.resortID == resortID }
-    }
-
     static func resort(withID id: String?) -> ResortDescriptor? {
         guard let id else { return nil }
         return resorts.first { $0.id == id }
@@ -70,15 +77,6 @@ enum TrailCatalogRegistry {
         resorts
             .filter { $0.boundary.contains(coordinate) }
             .min { coordinate.distance(to: $0.boundary.center) < coordinate.distance(to: $1.boundary.center) }
-    }
-
-    static func catalog(containing coordinate: Coordinate) -> TrailCatalogDescriptor? {
-        catalogs
-            .filter { resort(withID: $0.resortID)?.boundary.contains(coordinate) == true }
-            .min {
-                (resort(withID: $0.resortID)?.boundary.center.distance(to: coordinate) ?? .greatestFiniteMagnitude)
-                    < (resort(withID: $1.resortID)?.boundary.center.distance(to: coordinate) ?? .greatestFiniteMagnitude)
-            }
     }
 
     static func catalog(withID id: String?) -> TrailCatalogDescriptor? {
@@ -125,7 +123,7 @@ enum TrailCatalogRegistry {
             return manual.id
         }
         guard let firstPoint else { return nil }
-        return catalog(containing: firstPoint)?.id
+        return catalog(for: mode, coordinate: firstPoint)?.id
     }
 
     static func trails(_ trails: [Trail], for catalog: TrailCatalogDescriptor) -> [Trail] {
@@ -215,7 +213,6 @@ final class TrailCatalogSelection: ObservableObject {
     }
 }
 
-@MainActor
 enum TrailCatalogImporter {
     private static let versionKeyPrefix = "berms.trailCatalogImport"
 
