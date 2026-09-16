@@ -24,8 +24,18 @@ struct SessionRouteMap: View {
         }
     }
 
+    /// One resort means the map is bounded to its trails. A trip across resorts
+    /// falls back to the session extent so the camera still cannot wander.
+    private var resortBoundary: ResortBoundary? {
+        let resortIDs = Set(segments.compactMap(\.resortID))
+        guard resortIDs.count == 1, let resortID = resortIDs.first else { return nil }
+        return TrailCatalogRegistry.resort(withID: resortID)?.boundary
+    }
+
     private var configuration: RouteMapConfiguration? {
-        RouteMapConfiguration(points: segments.flatMap(\.routePoints))
+        RouteMapConfiguration(
+            points: segments.flatMap(\.routePoints),
+            boundary: resortBoundary)
     }
 
     private var jumps: [SessionDetailJumpMarker] {

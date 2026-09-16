@@ -265,7 +265,8 @@ import UIKit
         }
 
         private var activeCatalog: TrailCatalogDescriptor {
-            trailCatalogSelection.catalog(for: activeLocation)
+            trailCatalogSelection.catalog(for: .bikePark, coordinate: activeLocation)
+                ?? trailCatalogSelection.browseCatalog
         }
 
         private var visibleTrails: [Trail] {

@@ -10,11 +10,21 @@ struct ResortCatalogManifest: Sendable {
     var catalogs: [TrailCatalogDescriptor] { resorts.flatMap(\.catalogs) }
 }
 
+struct ResortBoundary: Hashable, Sendable {
+    let center: Coordinate
+    let radiusMeters: Double
+
+    func contains(_ coordinate: Coordinate) -> Bool {
+        center.distance(to: coordinate) <= radiusMeters
+    }
+}
+
 struct ResortDescriptor: Identifiable, Hashable, Sendable {
     let id: String
     let name: String
     let region: String?
     let anchor: Coordinate
+    let boundary: ResortBoundary
     let catalogs: [TrailCatalogDescriptor]
 
     var displayName: String { name }
@@ -54,6 +64,9 @@ enum ResortCatalogLoader {
                     name: resort.name,
                     region: resort.region,
                     anchor: resort.anchor,
+                    boundary: ResortBoundary(
+                        center: resort.bounds.center,
+                        radiusMeters: resort.bounds.radiusMeters),
                     catalogs: resort.catalogs.map { catalog in
                         TrailCatalogDescriptor(
                             id: catalog.id,
@@ -62,7 +75,6 @@ enum ResortCatalogLoader {
                             resortName: resort.name,
                             bundledResourceName: catalog.resource,
                             importVersion: catalog.version,
-                            locationAnchor: resort.anchor,
                             stableIDNamespace: catalog.stableIDNamespace,
                             legacyImportVersionKeys: catalog.legacyVersionKeys ?? [],
                             difficultyOverrides: catalog.difficultyOverrides ?? [:],
@@ -81,7 +93,13 @@ enum ResortCatalogLoader {
         let name: String
         let region: String?
         let anchor: Coordinate
+        let bounds: BoundaryDTO
         let catalogs: [CatalogDTO]
+    }
+
+    private struct BoundaryDTO: Decodable {
+        let center: Coordinate
+        let radiusMeters: Double
     }
 
     private struct CatalogDTO: Decodable {

@@ -327,8 +327,29 @@ struct TrackView: View {
                 || recorder.locationAuthorization == .restricted)
     }
 
+    private var currentResort: ResortDescriptor? {
+        if let coordinate = currentCoordinate,
+            let resort = TrailCatalogRegistry.resort(containing: coordinate)
+        {
+            return resort
+        }
+        guard !trailCatalogSelection.isAutomatic,
+            let catalog = trailCatalogSelection.catalog(for: recorder.activeActivityMode)
+        else { return nil }
+        return TrailCatalogRegistry.resort(withID: catalog.resortID)
+    }
+
+    private var liveMapConfiguration: RouteMapConfiguration? {
+        RouteMapConfiguration(
+            points: liveMapPaths.flatMap(\.points),
+            boundary: currentResort?.boundary)
+    }
+
     private var liveMap: some View {
-        Map(position: $mapPosition, scope: mapScope) {
+        Map(
+            position: $mapPosition, bounds: liveMapConfiguration?.bounds,
+            interactionModes: [.pan, .zoom, .rotate], scope: mapScope
+        ) {
             UserAnnotation()
             if mapLayerPreferences.showsRidePath {
                 ForEach(Array(liveMapPaths.enumerated()), id: \.offset) { _, path in

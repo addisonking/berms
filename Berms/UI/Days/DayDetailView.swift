@@ -48,6 +48,42 @@ struct DayDetailView: View {
         dayCatalogID ?? TrailCatalogRegistry.automaticSelectionID
     }
 
+    private var selectableCatalogs: [TrailCatalogDescriptor] {
+        var seenResortNames: Set<String> = []
+        return TrailCatalogRegistry.allCatalogs
+            .filter { $0.season == day.activityMode.season }
+            .filter { seenResortNames.insert($0.resortName).inserted }
+    }
+
+    private var resortSelection: Binding<String?> {
+        Binding(
+            get: { day.catalogID },
+            set: { newValue in
+                day.catalogID = newValue
+                do {
+                    try modelContext.save()
+                } catch {
+                    saveErrorMessage = "The resort could not be saved. \(error.localizedDescription)"
+                }
+            })
+    }
+
+    private var detectedResortName: String? {
+        let resortIDs = Set((detailBase?.runs ?? []).compactMap(\.resortID))
+        guard resortIDs.count == 1, let resortID = resortIDs.first else { return nil }
+        return TrailCatalogRegistry.resort(withID: resortID)?.name
+    }
+
+    private var resortCaption: String {
+        if day.catalogID != nil {
+            return "Using this resort until you switch back to Automatic."
+        }
+        guard let detectedResortName else {
+            return "No resort detected from GPS. Pick one if this ride was at a resort."
+        }
+        return "Detected from GPS: \(detectedResortName)."
+    }
+
     private func preparationCacheKey(for trails: [Trail]) -> String {
         SessionDetailPresentationPreheater.cacheKey(
             dayID: day.id,
@@ -75,6 +111,18 @@ struct DayDetailView: View {
                     LabeledContent("Duration", value: BermsFormat.duration(day.duration))
                 } else {
                     summary
+                }
+                VStack(alignment: .leading, spacing: BermsSpacing.compact) {
+                    Picker("Resort", selection: resortSelection) {
+                        Text("Automatic").tag(String?.none)
+                        ForEach(selectableCatalogs) { catalog in
+                            Text(catalog.resortName).tag(Optional(catalog.id))
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    Text(resortCaption)
+                        .font(.caption)
+                        .foregroundStyle(Color.bermsMuted)
                 }
             }
             if !runs.isEmpty {
