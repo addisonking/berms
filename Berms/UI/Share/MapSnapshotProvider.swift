@@ -74,7 +74,7 @@ struct MapKitShareSnapshotter: ShareMapSnapshotting {
                     snapshot: snapshot,
                     color: Self.trailColor(trail.difficulty, style: request.mapStyle),
                     width: 1.8,
-                    dash: trail.difficulty == .doubleBlack ? [5, 3] : [])
+                    dash: Self.trailDash(trail.difficulty))
             }
 
             for route in request.routes where route.kind == .lift {
@@ -181,6 +181,15 @@ struct MapKitShareSnapshotter: ShareMapSnapshotting {
         case .blue: .systemBlue
         case .black, .doubleBlack: style == .satellite ? .white : .black
         case .unrated: style == .satellite ? UIColor(white: 0.8, alpha: 1) : .systemGray
+        }
+    }
+
+    /// Matches the in-app map: long dashes for double black, dots for unrated.
+    private static func trailDash(_ difficulty: TrailDifficulty) -> [CGFloat] {
+        switch difficulty {
+        case .doubleBlack: [5, 3]
+        case .unrated: [2, 3]
+        default: []
         }
     }
 }

@@ -59,7 +59,17 @@ enum TrailMapRendering {
     static let lineWidth: CGFloat = 2.25
     static let accentLineWidth: CGFloat = 1.1
     static let doubleBlackDash: [CGFloat] = [7, 5]
+    /// Dots, so an unrated trail never borrows the double black dash.
+    static let unratedDash: [CGFloat] = [2, 4]
     static let accentDash: [CGFloat] = [3, 5]
+}
+
+func trailMapDash(for difficulty: TrailDifficulty) -> [CGFloat] {
+    switch difficulty {
+    case .doubleBlack: TrailMapRendering.doubleBlackDash
+    case .unrated: TrailMapRendering.unratedDash
+    default: []
+    }
 }
 
 func trailMapStrokeStyle(
@@ -70,8 +80,7 @@ func trailMapStrokeStyle(
         lineWidth: lineWidth,
         lineCap: .round,
         lineJoin: .round,
-        dash: difficulty == .doubleBlack || difficulty == .unrated
-            ? TrailMapRendering.doubleBlackDash : [])
+        dash: trailMapDash(for: difficulty))
 }
 
 func trailMapAccentStrokeStyle(lineWidth: CGFloat = TrailMapRendering.accentLineWidth) -> StrokeStyle {
@@ -241,7 +250,10 @@ struct TrailRatingBadge: View {
                 }
         case .unrated:
             Circle()
-                .strokeBorder(color, lineWidth: max(1, size * 0.18))
+                .strokeBorder(
+                    color,
+                    style: StrokeStyle(lineWidth: max(1, size * 0.18), dash: [size * 0.3, size * 0.22])
+                )
                 .frame(width: size, height: size)
         }
     }
