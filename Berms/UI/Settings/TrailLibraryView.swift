@@ -51,7 +51,7 @@ struct TrailLibraryView: View {
 
     private var catalogSelection: Binding<String> {
         Binding(
-            get: { activeCatalog.id },
+            get: { trailCatalogSelection.selectionID },
             set: { trailCatalogSelection.setSelectionID($0) })
     }
 
@@ -117,11 +117,21 @@ struct TrailLibraryView: View {
             }
     }
 
+    /// True when the active catalog has a drawable trail, so a filter that
+    /// matches nothing does not read as a missing catalog.
+    private var catalogHasGeometry: Bool {
+        trailCatalogSelection.trails(trails)
+            .contains { TrailGeometryStore.shared.metrics(for: $0).hasGeometry }
+    }
+
     private var mapConfiguration: RouteMapConfiguration? {
-        guard let visibleBounds else { return nil }
-        return RouteMapConfiguration(
-            bounds: visibleBounds,
-            boundary: TrailCatalogRegistry.resort(withID: activeCatalog.resortID)?.boundary)
+        let boundary = TrailCatalogRegistry.resort(withID: activeCatalog.resortID)?.boundary
+        if let visibleBounds {
+            return RouteMapConfiguration(bounds: visibleBounds, boundary: boundary)
+        }
+        // An empty filter still gets the resort map behind the list.
+        guard catalogHasGeometry, let boundary else { return nil }
+        return RouteMapConfiguration(points: [], boundary: boundary)
     }
 
     var body: some View {
@@ -166,20 +176,22 @@ struct TrailLibraryView: View {
                                 .accessibilityHint("Shows this trail on the map")
                             }
                         } header: {
-                            Text(section.title ?? "\(visibleTrails.count) trails · \(activeCatalog.resortName)")
+                            Text(section.title ?? "\(visibleTrails.count) trails")
                         }
                     }
                 }
             }
             .listSectionSpacing(.compact)
         }
-        .navigationTitle(activeCatalog.resortName)
+        .navigationTitle("Trail Library")
+        .navigationSubtitle(activeCatalog.resortName)
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $searchText, prompt: "Search trails")
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 Menu {
                     Picker("Resort", selection: catalogSelection) {
+                        Text("Automatic").tag(TrailCatalogRegistry.automaticSelectionID)
                         ForEach(selectableCatalogs) { catalog in
                             Text(catalog.resortName).tag(catalog.id)
                         }
@@ -188,7 +200,7 @@ struct TrailLibraryView: View {
                     Label("Resort", systemImage: "mountain.2")
                         .labelStyle(.iconOnly)
                 }
-                .accessibilityLabel("Resort, \(activeCatalog.resortName)")
+                .accessibilityLabel("Resort, \(trailCatalogSelection.selectionLabel)")
                 .accessibilityHint("Switches resorts")
             }
             ToolbarItem(placement: .topBarTrailing) {
@@ -225,15 +237,11 @@ struct TrailLibraryView: View {
 
     @ViewBuilder
     private var libraryMap: some View {
-        if mapConfiguration == nil {
-            ContentUnavailableView(
-                "No trail geometry", systemImage: "map",
-                description: Text("Trail routes will appear here when the catalog is available."))
-        } else {
+        if let mapConfiguration {
             ZStack(alignment: .topTrailing) {
                 ZStack {
                     Map(
-                        position: $mapPosition, bounds: mapConfiguration?.bounds,
+                        position: $mapPosition, bounds: mapConfiguration.bounds,
                         interactionModes: [.pan, .zoom, .rotate], selection: $selectedTrailID, scope: mapScope
                     ) {
                         if mapLayerPreferences.showsActualTrails {
@@ -269,7 +277,7 @@ struct TrailLibraryView: View {
                     .onMapCameraChange(frequency: .onEnd) { context in
                         // The map reports the previous framing after a resort or
                         // filter change, and trusting it culls every trail.
-                        guard mapConfiguration?.contains(cameraRegion: context.region) ?? true else { return }
+                        guard mapConfiguration.contains(cameraRegion: context.region) else { return }
                         visibleRegion = context.region
                     }
 
@@ -291,6 +299,10 @@ struct TrailLibraryView: View {
             }
             .mapScope(mapScope)
             .onAppear { recenterMap() }
+        } else {
+            ContentUnavailableView(
+                "No trail geometry", systemImage: "map",
+                description: Text("Trail routes will appear here when the catalog is available."))
         }
     }
 
