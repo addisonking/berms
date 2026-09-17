@@ -108,6 +108,7 @@ struct TrackView: View {
             withAnimation(reduceMotion ? nil : BermsMotion.recenter) {
                 mapPosition = configuration.initialPosition
             }
+            visibleRegion = configuration.framingRegion
         } else {
             mapPosition = .userLocation(followsHeading: false, fallback: .automatic)
         }
@@ -429,6 +430,9 @@ struct TrackView: View {
         .mapControls { MapScaleView() }
         .ignoresSafeArea()
         .onMapCameraChange(frequency: .onEnd) { context in
+            // The map reports the previous framing after a resort change, and
+            // trusting it culls every trail.
+            guard liveMapConfiguration?.contains(cameraRegion: context.region) ?? true else { return }
             visibleRegion = context.region
         }
         .overlay(alignment: .topLeading) {

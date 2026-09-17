@@ -208,20 +208,18 @@ struct TrailLibraryView: View {
             if let selectedTrailID, !ids.contains(selectedTrailID) {
                 self.selectedTrailID = nil
             }
-            // The region belongs to the old filter until the camera moves.
-            visibleRegion = nil
             recenterMap()
         }
         .onChange(of: selectedTrailID) { _, id in
             guard let trail = visibleTrails.first(where: { $0.id == id }),
                 let bounds = TrailGeometryStore.shared.metrics(for: trail).bounds
             else { return }
-            visibleRegion = nil
             let configuration = RouteMapConfiguration(bounds: bounds)
             mapLayerPreferences.showsActualTrails = true
             withAnimation(reduceMotion ? nil : BermsMotion.recenter) {
                 mapPosition = configuration.initialPosition
             }
+            visibleRegion = configuration.framingRegion
         }
     }
 
@@ -269,6 +267,9 @@ struct TrailLibraryView: View {
                     .mapStyle(.bermsMonochrome)
                     .mapControls { MapScaleView() }
                     .onMapCameraChange(frequency: .onEnd) { context in
+                        // The map reports the previous framing after a resort or
+                        // filter change, and trusting it culls every trail.
+                        guard mapConfiguration?.contains(cameraRegion: context.region) ?? true else { return }
                         visibleRegion = context.region
                     }
 
@@ -299,7 +300,13 @@ struct TrailLibraryView: View {
     }
 
     private func recenterMap() {
-        mapPosition = mapConfiguration?.initialPosition ?? .automatic
+        guard let configuration = mapConfiguration else {
+            mapPosition = .automatic
+            visibleRegion = nil
+            return
+        }
+        mapPosition = configuration.initialPosition
+        visibleRegion = configuration.framingRegion
     }
 }
 
