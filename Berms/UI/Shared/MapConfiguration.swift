@@ -6,6 +6,10 @@ import SwiftUI
 /// camera limits and the camera can never leave the resort.
 struct RouteMapConfiguration {
     let initialPosition: MapCameraPosition
+    /// The region `initialPosition` frames. Map views seed their own idea of the
+    /// visible region from this, so overlays never depend on a camera callback
+    /// arriving after a programmatic move.
+    let framingRegion: MKCoordinateRegion
     let initialDistance: CLLocationDistance
     let minimumDistance: CLLocationDistance
     let maximumDistance: CLLocationDistance
@@ -18,14 +22,25 @@ struct RouteMapConfiguration {
             maximumDistance: maximumDistance)
     }
 
+    /// True when a camera region sits inside the legal pan area. The map reports
+    /// the previous framing after a programmatic move, and trusting that region
+    /// hides every overlay, so callers filter camera changes through this.
+    func contains(cameraRegion: MKCoordinateRegion) -> Bool {
+        let halfLatitude = panRegion.span.latitudeDelta / 2
+        let halfLongitude = panRegion.span.longitudeDelta / 2
+        return abs(cameraRegion.center.latitude - panRegion.center.latitude) <= halfLatitude
+            && abs(cameraRegion.center.longitude - panRegion.center.longitude) <= halfLongitude
+    }
+
     private init(
-        initialPosition: MapCameraPosition,
+        framingRegion: MKCoordinateRegion,
         initialDistance: CLLocationDistance,
         minimumDistance: CLLocationDistance,
         maximumDistance: CLLocationDistance,
         panRegion: MKCoordinateRegion
     ) {
-        self.initialPosition = initialPosition
+        self.initialPosition = .region(framingRegion)
+        self.framingRegion = framingRegion
         self.initialDistance = initialDistance
         self.minimumDistance = minimumDistance
         self.maximumDistance = maximumDistance
@@ -72,11 +87,10 @@ struct RouteMapConfiguration {
         let positionLongitude = min(max((extent?.longitudeMeters ?? 0) * 1.25, diameter * 0.5), diameter * 1.15)
 
         return RouteMapConfiguration(
-            initialPosition: .region(
-                MKCoordinateRegion(
-                    center: positionCenter,
-                    latitudinalMeters: positionLatitude,
-                    longitudinalMeters: positionLongitude)),
+            framingRegion: MKCoordinateRegion(
+                center: positionCenter,
+                latitudinalMeters: positionLatitude,
+                longitudinalMeters: positionLongitude),
             initialDistance: max(positionLatitude, positionLongitude),
             minimumDistance: 60,
             // Enough distance that the whole resort boundary fits on screen.
@@ -96,11 +110,10 @@ struct RouteMapConfiguration {
             longitudinalMeters: max(2_500, longitudeMeters * 2.2))
 
         return RouteMapConfiguration(
-            initialPosition: .region(
-                MKCoordinateRegion(
-                    center: center,
-                    latitudinalMeters: latitudeMeters,
-                    longitudinalMeters: longitudeMeters)),
+            framingRegion: MKCoordinateRegion(
+                center: center,
+                latitudinalMeters: latitudeMeters,
+                longitudinalMeters: longitudeMeters),
             initialDistance: largestSpan,
             minimumDistance: max(60, largestSpan * 0.05),
             maximumDistance: min(max(2_500, largestSpan * 3.5), 15_000),
