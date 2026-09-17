@@ -368,9 +368,10 @@ struct TrackView: View {
     }
 
     /// Outside every resort the selection previews that resort, so a rider can
-    /// line up trails before they arrive. Inside a resort GPS always wins.
+    /// line up trails before they arrive. Inside a resort GPS always wins, and a
+    /// rider who is recording always follows their own position.
     private var isPreviewingResort: Bool {
-        riderResort == nil && selectedCatalog != nil
+        !recorder.isRecording && riderResort == nil && selectedCatalog != nil
     }
 
     private var liveCatalog: TrailCatalogDescriptor? {
@@ -382,9 +383,14 @@ struct TrackView: View {
         return selectedCatalog
     }
 
+    /// Only bound the camera to a resort the rider is actually looking at:
+    /// the previewed one, or the one they are standing in.
     private var liveResort: ResortDescriptor? {
-        guard let catalog = liveCatalog else { return nil }
-        return TrailCatalogRegistry.resort(withID: catalog.resortID)
+        if isPreviewingResort {
+            guard let catalog = selectedCatalog else { return nil }
+            return TrailCatalogRegistry.resort(withID: catalog.resortID)
+        }
+        return riderResort
     }
 
     private var liveMapConfiguration: RouteMapConfiguration? {
@@ -451,7 +457,7 @@ struct TrackView: View {
                 showsPreviousRunsControl: true,
                 onSettings: { showingSettings = true })
             if isPreviewingResort {
-                MapActionButton(title: "Show resort", systemImage: "map") {
+                MapActionButton(title: "Show resort", systemImage: "mountain.2") {
                     recenterMapPosition()
                 }
             } else {
