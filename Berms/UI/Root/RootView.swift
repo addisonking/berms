@@ -24,12 +24,15 @@ struct RootView: View {
         let message: String
     }
 
+    private static let storageProblemTitle = "Storage problem"
+    private static let trailImportProblemTitle = "Trail import problem"
+
     private static func initialStartupIssue() -> StartupIssue? {
         if let issue = PersistenceController.shared.storeIssue {
-            return StartupIssue(title: "Storage problem", message: issue.message)
+            return StartupIssue(title: storageProblemTitle, message: issue.message)
         }
         if let issue = PersistenceController.shared.catalogImportIssue {
-            return StartupIssue(title: "Trail import problem", message: issue)
+            return StartupIssue(title: trailImportProblemTitle, message: issue)
         }
         return nil
     }
@@ -66,8 +69,9 @@ struct RootView: View {
         }
         .onChange(of: persistence.catalogImportIssue) { _, issue in
             // The catalog import runs after launch, so its failure arrives late.
-            guard let issue else { return }
-            startupIssue = StartupIssue(title: "Trail import problem", message: issue)
+            // Never replace an alert the rider has not dismissed yet.
+            guard let issue, startupIssue == nil else { return }
+            startupIssue = StartupIssue(title: Self.trailImportProblemTitle, message: issue)
         }
         .alert(item: $startupIssue) { issue in
             Alert(
