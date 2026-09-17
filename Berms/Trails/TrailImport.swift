@@ -173,8 +173,6 @@ final class TrailCatalogSelection: ObservableObject {
         manualCatalogID = TrailCatalogRegistry.catalog(withID: stored)?.id
     }
 
-    var isAutomatic: Bool { manualCatalogID == nil }
-
     /// The catalog a browse surface shows. Browsing is deliberate, so the
     /// manual choice wins and GPS is ignored.
     var browseCatalog: TrailCatalogDescriptor {
