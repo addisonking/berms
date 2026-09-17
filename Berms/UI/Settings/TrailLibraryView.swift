@@ -280,6 +280,10 @@ struct TrailLibraryView: View {
                         guard mapConfiguration.contains(cameraRegion: context.region) else { return }
                         visibleRegion = context.region
                     }
+                    // A new catalog replaces every overlay at once, and MapKit
+                    // leaves the map empty when it takes that swap alongside a
+                    // camera change. A fresh map applies both.
+                    .id(activeCatalog.id)
 
                 }
 
