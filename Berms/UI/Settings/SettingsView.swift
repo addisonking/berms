@@ -22,6 +22,32 @@ struct SettingsView: View {
         )
     }
 
+    private var selectedCatalog: TrailCatalogDescriptor? {
+        trailCatalogSelection.manualCatalogID.flatMap(TrailCatalogRegistry.catalog(withID:))
+    }
+
+    /// Resorts that ship trails for the season the rider is in, plus a resort
+    /// they picked earlier so the menu can still show that selection.
+    private var selectableCatalogs: [TrailCatalogDescriptor] {
+        let mode = recorder.activeActivityMode
+        var catalogs = TrailCatalogRegistry.catalogs.filter { $0.season == mode.season }
+        if let selectedCatalog, !catalogs.contains(where: { $0.id == selectedCatalog.id }) {
+            catalogs.append(selectedCatalog)
+        }
+        return catalogs
+    }
+
+    private var catalogCaption: String {
+        guard let selectedCatalog else {
+            return "Automatic matches trails for the resort you are riding in, from GPS."
+        }
+        guard selectedCatalog.season == recorder.activeActivityMode.season else {
+            return
+                "This resort has no \(recorder.activeActivityMode.title.lowercased()) trails, so Automatic is used instead."
+        }
+        return "Using this resort until you switch back to Automatic."
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -40,18 +66,14 @@ struct SettingsView: View {
                         )
                     ) {
                         Text("Automatic").tag(TrailCatalogRegistry.automaticSelectionID)
-                        ForEach(TrailCatalogRegistry.catalogs) { catalog in
+                        ForEach(selectableCatalogs) { catalog in
                             Text(catalog.resortName).tag(catalog.id)
                         }
                     }
                     .pickerStyle(.menu)
-                    Text(
-                        trailCatalogSelection.isAutomatic
-                            ? "Automatic matches trails for the resort you are riding in, from GPS."
-                            : "Using this resort until you switch back to Automatic."
-                    )
-                    .font(.caption)
-                    .foregroundStyle(Color.bermsMuted)
+                    Text(catalogCaption)
+                        .font(.caption)
+                        .foregroundStyle(Color.bermsMuted)
                 }
                 Section("Jump detection") {
                     Picker("Sensitivity", selection: sensitivityBinding) {
