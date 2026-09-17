@@ -83,8 +83,12 @@ struct RouteMapConfiguration {
             longitudinalMeters: diameter * 1.4)
 
         let positionCenter = extent?.center ?? resortCenter
-        let positionLatitude = min(max((extent?.latitudeMeters ?? 0) * 1.25, diameter * 0.5), diameter * 1.15)
-        let positionLongitude = min(max((extent?.longitudeMeters ?? 0) * 1.25, diameter * 0.5), diameter * 1.15)
+        // Without an extent, which is what a resort preview looks like, frame the
+        // whole boundary. A small extent still opens out to half the resort so
+        // the camera is not too tight on a short ride.
+        let minimumSpan = extent == nil ? diameter : diameter * 0.5
+        let positionLatitude = min(max((extent?.latitudeMeters ?? 0) * 1.25, minimumSpan), diameter * 1.15)
+        let positionLongitude = min(max((extent?.longitudeMeters ?? 0) * 1.25, minimumSpan), diameter * 1.15)
 
         return RouteMapConfiguration(
             framingRegion: MKCoordinateRegion(
