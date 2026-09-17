@@ -585,7 +585,7 @@ struct TrackView: View {
             latitude: visibleRegion.center.latitude,
             longitude: visibleRegion.center.longitude)
         return
-            renderedTrails
+            trailMapLabelRepresentatives(renderedTrails)
             .compactMap { trail -> (trail: Trail, distance: Double)? in
                 guard let coordinate = TrailGeometryStore.shared.metrics(for: trail).labelCoordinate,
                     coordinateIsVisible(coordinate, in: visibleRegion)
@@ -593,7 +593,7 @@ struct TrackView: View {
                 return (trail, center.distance(to: coordinate))
             }
             .sorted { $0.distance < $1.distance }
-            .prefix(8)
+            .prefix(TrailMapRendering.labelLimit)
             .map(\.trail)
     }
 

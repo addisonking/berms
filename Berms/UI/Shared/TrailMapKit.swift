@@ -62,6 +62,8 @@ enum TrailMapRendering {
     /// Dots, so an unrated trail never borrows the double black dash.
     static let unratedDash: [CGFloat] = [2, 4]
     static let accentDash: [CGFloat] = [3, 5]
+    /// Trail names a map shows at once, on any surface.
+    static let labelLimit = 12
 }
 
 func trailMapDash(for difficulty: TrailDifficulty) -> [CGFloat] {
@@ -126,7 +128,7 @@ struct TrailMapLabelItem: Identifiable {
 /// pills. The longest matched slice represents the trail.
 func trailMapLabelItems(
     for overlays: [TrailMapOverlay],
-    limit: Int = 12
+    limit: Int = TrailMapRendering.labelLimit
 ) -> [TrailMapLabelItem] {
     var order: [String] = []
     var representatives: [String: TrailMapOverlay] = [:]
@@ -182,6 +184,26 @@ func trailMapContent(
         MapPolyline(coordinates: coordinates)
             .stroke(.red, style: trailMapAccentStrokeStyle())
     }
+}
+
+/// Collapses trails that share a name so labels do not stack, keeping the
+/// longest geometry as the trail's representative.
+func trailMapLabelRepresentatives(_ trails: [Trail]) -> [Trail] {
+    var order: [String] = []
+    var representatives: [String: Trail] = [:]
+    for trail in trails {
+        let key = trail.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !key.isEmpty else { continue }
+        if let current = representatives[key] {
+            if trail.points.count > current.points.count {
+                representatives[key] = trail
+            }
+        } else {
+            representatives[key] = trail
+            order.append(key)
+        }
+    }
+    return order.compactMap { representatives[$0] }
 }
 
 func trailDistance(from coordinate: Coordinate, to points: [RoutePoint]) -> Double {
