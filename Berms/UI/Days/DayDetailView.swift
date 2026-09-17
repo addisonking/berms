@@ -40,8 +40,14 @@ struct DayDetailView: View {
             + SessionDetailPresentationPreheater.trailRevision(for: trails)
     }
 
+    /// The catalog the day presents with: the manual choice, else the resort its
+    /// first GPS point lands in. Nil means no resort, so nothing is assumed.
+    private var resolvedCatalog: TrailCatalogDescriptor? {
+        TrailCatalogRegistry.resolvedCatalog(for: day)
+    }
+
     private var dayCatalogID: String? {
-        day.catalogID ?? TrailCatalogRegistry.catalog(for: day.activityMode)?.id
+        resolvedCatalog?.id
     }
 
     private var catalogSelectionID: String {
@@ -68,33 +74,27 @@ struct DayDetailView: View {
             })
     }
 
-    private var detectedResortName: String? {
-        let resortIDs = Set((detailBase?.runs ?? []).compactMap(\.resortID))
-        guard resortIDs.count == 1, let resortID = resortIDs.first else { return nil }
-        return TrailCatalogRegistry.resort(withID: resortID)?.name
-    }
-
-    /// What the day would resolve to with no manual choice, so the caption can
-    /// tell a GPS result apart from a resort the rider picked.
-    private var autoResolvedCatalogID: String? {
+    /// What the day resolves to from GPS alone, so the caption can tell a
+    /// detected resort apart from one the rider picked.
+    private var gpsCatalog: TrailCatalogDescriptor? {
         TrailCatalogRegistry.resolvedCatalogID(
             mode: day.activityMode,
             manualSelectionID: nil,
-            firstPoint: firstRecordedCoordinate)
-    }
-
-    private var firstRecordedCoordinate: Coordinate? {
-        day.firstRecordedCoordinate
+            firstPoint: day.firstRecordedCoordinate
+        ).flatMap(TrailCatalogRegistry.catalog(withID:))
     }
 
     private var resortCaption: String {
-        guard let catalogID = day.catalogID else {
+        if let manualID = day.catalogID {
+            guard manualID == gpsCatalog?.id else {
+                return "Using this resort until you switch back to Automatic."
+            }
+            return "Detected from GPS: \(gpsCatalog?.resortName ?? "this resort")."
+        }
+        guard let gpsCatalog else {
             return "No resort detected from GPS. Pick one if this ride was at a resort."
         }
-        if catalogID == autoResolvedCatalogID {
-            return "Detected from GPS: \(detectedResortName ?? "this resort")."
-        }
-        return "Using this resort until you switch back to Automatic."
+        return "Detected from GPS: \(gpsCatalog.resortName)."
     }
 
     private func preparationCacheKey(for trails: [Trail]) -> String {
@@ -125,18 +125,18 @@ struct DayDetailView: View {
                 } else {
                     summary
                 }
-                VStack(alignment: .leading, spacing: BermsSpacing.compact) {
-                    Picker("Resort", selection: resortSelection) {
-                        Text("Automatic").tag(String?.none)
-                        ForEach(selectableCatalogs) { catalog in
-                            Text(catalog.resortName).tag(Optional(catalog.id))
-                        }
+            }
+            Section {
+                Picker("Resort", selection: resortSelection) {
+                    Text("Automatic").tag(String?.none)
+                    ForEach(selectableCatalogs) { catalog in
+                        Text(catalog.resortName).tag(Optional(catalog.id))
                     }
-                    .pickerStyle(.menu)
-                    Text(resortCaption)
-                        .font(.caption)
-                        .foregroundStyle(Color.bermsMuted)
                 }
+                .pickerStyle(.menu)
+                Text(resortCaption)
+                    .font(.caption)
+                    .foregroundStyle(Color.bermsMuted)
             }
             if !runs.isEmpty {
                 Section {

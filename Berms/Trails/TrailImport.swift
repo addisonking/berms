@@ -142,6 +142,19 @@ enum TrailCatalogRegistry {
     }
 }
 
+extension TrailCatalogRegistry {
+    /// The catalog a recorded day presents with: the manual choice when its
+    /// season matches, otherwise the resort the day's first GPS point lands in.
+    /// Nil means the day is not tied to any resort, so nothing is assumed.
+    static func resolvedCatalog(for day: RideDay) -> TrailCatalogDescriptor? {
+        resolvedCatalogID(
+            mode: day.activityMode,
+            manualSelectionID: day.catalogID,
+            firstPoint: day.firstRecordedCoordinate
+        ).flatMap(catalog(withID:))
+    }
+}
+
 @MainActor
 final class TrailCatalogSelection: ObservableObject {
     static let selectionKey = "berms.trailCatalog.activeSelection"

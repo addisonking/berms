@@ -164,10 +164,8 @@ struct RunMapView: View {
     private func prepareIfNeeded(force: Bool = false) async {
         guard preparedDetail == nil, activeDetail == nil, !isPreparing || force else { return }
         if force { prepareFailed = false }
-        let activityMode = segment.day?.activityMode ?? .bikePark
         let catalogID =
-            segment.day?.catalogID
-            ?? TrailCatalogRegistry.catalog(for: activityMode)?.id
+            segment.day.flatMap(TrailCatalogRegistry.resolvedCatalog(for:))?.id
         let selectionID = catalogID ?? TrailCatalogRegistry.automaticSelectionID
         var runKey: String?
         if let dayID = segment.day?.id {
