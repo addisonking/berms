@@ -179,8 +179,7 @@ struct DaysView: View {
             guard
                 let entry = try await SessionDetailPresentationPreheater.prepareRun(
                     segmentID: latestRun.id,
-                    manualCatalogID: day.catalogID
-                        ?? TrailCatalogRegistry.catalog(for: day.activityMode)?.id,
+                    manualCatalogID: TrailCatalogRegistry.resolvedCatalog(for: day)?.id,
                     container: modelContext.container
                 )
             else { return }
@@ -194,8 +193,7 @@ struct DaysView: View {
     }
 
     private func catalogSelectionID(for day: RideDay) -> String {
-        day.catalogID
-            ?? TrailCatalogRegistry.catalog(for: day.activityMode)?.id
+        TrailCatalogRegistry.resolvedCatalog(for: day)?.id
             ?? TrailCatalogRegistry.automaticSelectionID
     }
 
