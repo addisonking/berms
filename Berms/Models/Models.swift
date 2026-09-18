@@ -688,6 +688,35 @@ enum SegmentKind: String, Codable, Sendable {
     }
 }
 
+/// Stats the live tracking panel on the Track screen can show.
+enum LiveStatMetric: String, CaseIterable, Identifiable, Sendable {
+    case topSpeed
+    case distance
+    case longestJump
+    case highestAir
+    case biggestDrop
+    case jumps
+    case bestAirtime
+
+    static let defaultSelection: [LiveStatMetric] = [
+        .topSpeed, .distance, .longestJump, .highestAir, .biggestDrop, .jumps,
+    ]
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .topSpeed: "Top speed"
+        case .distance: "Distance"
+        case .longestJump: "Longest jump"
+        case .highestAir: "Highest air"
+        case .biggestDrop: "Biggest drop"
+        case .jumps: "Jumps"
+        case .bestAirtime: "Best airtime"
+        }
+    }
+}
+
 struct RoutePoint: Codable, Hashable, Sendable {
     let latitude: Double
     let longitude: Double
