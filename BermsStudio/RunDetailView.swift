@@ -40,6 +40,14 @@ struct RunDetailView: View {
             }
             Spacer()
             Button {
+                rename()
+            } label: {
+                Label("Rename clips", systemImage: "pencil")
+            }
+            .buttonStyle(.bordered)
+            .disabled(clipCount == 0 || library.busy != nil)
+            .help("Copy each clip to the export folder with this run's trails in its name")
+            Button {
                 export()
             } label: {
                 Label("Export video", systemImage: "film.stack")
@@ -95,6 +103,10 @@ struct RunDetailView: View {
                 .font(.title3)
                 .monospacedDigit()
         }
+    }
+
+    private func rename() {
+        library.renameClips(for: [run])
     }
 
     private func export() {

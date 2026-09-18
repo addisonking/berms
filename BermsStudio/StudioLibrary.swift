@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import Observation
 
@@ -21,6 +22,13 @@ struct ExportPlan: Identifiable, Sendable {
     let trimEnd: TimeInterval
 
     var id: String { runID }
+}
+
+struct ClipRenameFile: Identifiable, Sendable {
+    let source: URL
+    let destination: URL
+
+    var id: String { "\(source.path)→\(destination.path)" }
 }
 
 /// A session is one ride day rebuilt from a Berms log, plus the footage that
@@ -179,7 +187,9 @@ final class StudioLibrary {
     var defaultOutputDirectory: URL { outputRoot.appendingPathComponent("Berms Exports") }
 
     func outputDirectory(for sessionID: String) -> URL {
-        outputDirectories[sessionID] ?? defaultOutputDirectory
+        if let custom = outputDirectories[sessionID] { return custom }
+        guard let session = session(id: sessionID) else { return defaultOutputDirectory }
+        return defaultOutputDirectory.appendingPathComponent(slug(session.title))
     }
 
     func hasCustomOutputDirectory(for sessionID: String) -> Bool {
@@ -290,6 +300,173 @@ final class StudioLibrary {
     func exportableRunCount(in session: StudioSession) -> Int {
         runRefs(in: session).reduce(0) { count, ref in
             exportPlan(for: ref) == nil ? count : count + 1
+        }
+    }
+
+    /// Every part of every clip on the run, paired with a rich destination name
+    /// beside the stitched exports.
+    func renamePlan(for ref: RunRef) -> [ClipRenameFile]? {
+        guard let session = session(id: ref.sessionID),
+            let segment = run(for: ref)
+        else { return nil }
+        let orderedClips = orderedClips(forRun: segment, in: session)
+        guard !orderedClips.isEmpty else { return nil }
+
+        return orderedClips.enumerated().flatMap { clipIndex, clip in
+            clipRenameFiles(
+                for: clip, ref: ref, segment: segment,
+                session: session, position: clipIndex + 1)
+        }
+    }
+
+    /// One copy per clip, even when a clip overlaps several runs: each clip goes
+    /// to the run it overlaps most.
+    func renameFiles(for refs: [RunRef]) -> [ClipRenameFile] {
+        var files: [ClipRenameFile] = []
+        for sessionID in Set(refs.map(\.sessionID)) {
+            guard let session = session(id: sessionID) else { continue }
+            let runs = refs.filter { $0.sessionID == sessionID }.compactMap { ref in
+                run(for: ref).map { (ref, $0) }
+            }
+            guard !runs.isEmpty else { continue }
+
+            var assignments: [Int: (ref: RunRef, segment: StudioSegment)] = [:]
+            for index in session.clipIndices {
+                guard clips.indices.contains(index), let recordedAt = clips[index].recordedAt else {
+                    continue
+                }
+                let clip = clips[index]
+                let clipStart = recordedAt.addingTimeInterval(TimeInterval(session.offsetSeconds))
+                let clipEnd = clipStart.addingTimeInterval(clip.duration)
+                var best: (ref: RunRef, segment: StudioSegment, overlap: TimeInterval)?
+                for (ref, segment) in runs {
+                    let overlap = min(clipEnd, segment.endedAt)
+                        .timeIntervalSince(max(clipStart, segment.startedAt))
+                    guard overlap > 0, overlap > (best?.overlap ?? -.infinity) else { continue }
+                    best = (ref, segment, overlap)
+                }
+                if let best { assignments[index] = (best.ref, best.segment) }
+            }
+
+            var positions: [String: Int] = [:]
+            let ordered = assignments.keys.sorted {
+                (clips[$0].recordedAt ?? .distantFuture) < (clips[$1].recordedAt ?? .distantFuture)
+            }
+            for index in ordered {
+                guard let assignment = assignments[index] else { continue }
+                let position = (positions[assignment.ref.id] ?? 0) + 1
+                positions[assignment.ref.id] = position
+                files.append(
+                    contentsOf: clipRenameFiles(
+                        for: clips[index], ref: assignment.ref,
+                        segment: assignment.segment, session: session, position: position))
+            }
+        }
+        return files
+    }
+
+    private func clipRenameFiles(
+        for clip: Clip, ref: RunRef, segment: StudioSegment,
+        session: StudioSession, position: Int
+    ) -> [ClipRenameFile] {
+        let directory = outputDirectory(for: session.id)
+        let day = slug(StudioFormat.dayLabel(session.day.startedAt))
+        let trail = segment.trails.isEmpty ? "" : "-\(slug(ref.title))"
+        let run = String(format: "run-%02d", ref.runNumber)
+        let positionPart = String(format: "clip-%02d", position)
+        let time = StudioFormat.filenameClock(clip.recordedAt)
+        return clip.parts.enumerated().map { partIndex, part in
+            var name = "\(day)-\(run)\(trail)-\(positionPart)-\(time)"
+            if clip.parts.count > 1 {
+                name += String(format: "-ch-%02d", partIndex + 1)
+            }
+            let ext = part.path.pathExtension.isEmpty ? "mp4" : part.path.pathExtension.lowercased()
+            return ClipRenameFile(
+                source: part.path,
+                destination: directory.appendingPathComponent("\(name).\(ext)"))
+        }
+    }
+
+    func renameableRunCount(in session: StudioSession) -> Int {
+        runRefs(in: session).reduce(0) { count, ref in
+            renamePlan(for: ref) == nil ? count : count + 1
+        }
+    }
+
+    /// Copies each clip once into the export folder with its run and trail in the
+    /// name. Clips that never land on a run are skipped, and the source footage is
+    /// left alone.
+    func renameClips(for refs: [RunRef]) {
+        let files = renameFiles(for: refs)
+        guard !files.isEmpty else {
+            message = "No clips to rename"
+            messageIsError = true
+            return
+        }
+
+        busy = "Renaming clips…"
+        messageIsError = false
+        Task {
+            let outcome = await Task.detached { Self.copyRenames(files) }.value
+            let noun = outcome.renamed == 1 ? "clip" : "clips"
+            if outcome.failed > 0 {
+                message = "Renamed \(outcome.renamed) of \(files.count) clips · \(outcome.failed) failed"
+                messageIsError = true
+            } else {
+                let directory = files[0].destination.deletingLastPathComponent().path
+                message = "Renamed \(outcome.renamed) \(noun) → \(directory)"
+            }
+            busy = nil
+        }
+    }
+
+    private nonisolated static func copyRenames(
+        _ files: [ClipRenameFile]
+    ) -> (renamed: Int, failed: Int) {
+        let manager = FileManager.default
+        var claimed: Set<String> = []
+        var renamed = 0
+        var failed = 0
+        for file in files {
+            let source = file.source.standardizedFileURL
+            guard source != file.destination.standardizedFileURL else { continue }
+            let destination = uniqueDestination(file.destination, claimed: &claimed)
+            do {
+                try manager.createDirectory(
+                    at: destination.deletingLastPathComponent(),
+                    withIntermediateDirectories: true)
+                if manager.fileExists(atPath: destination.path) {
+                    try manager.removeItem(at: destination)
+                }
+                if clonefile(source.path, destination.path, 0) != 0 {
+                    try manager.copyItem(at: source, to: destination)
+                }
+                renamed += 1
+            } catch {
+                failed += 1
+            }
+        }
+        return (renamed, failed)
+    }
+
+    private nonisolated static func uniqueDestination(
+        _ url: URL, claimed: inout Set<String>
+    ) -> URL {
+        guard claimed.contains(url.path) else {
+            claimed.insert(url.path)
+            return url
+        }
+        let directory = url.deletingLastPathComponent()
+        let name = url.deletingPathExtension().lastPathComponent
+        let ext = url.pathExtension
+        var attempt = 2
+        while true {
+            let candidate = directory.appendingPathComponent("\(name)-\(attempt).\(ext)")
+            if !claimed.contains(candidate.path) {
+                claimed.insert(candidate.path)
+                return candidate
+            }
+            attempt += 1
         }
     }
 
