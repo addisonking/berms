@@ -12,7 +12,7 @@ struct JumpTrackContext: Sendable, Equatable {
 
 /// Measured jump size. Length is the horizontal gap between takeoff and
 /// landing, drop is the elevation lost across the jump, and height is the
-/// estimated peak height above takeoff.
+/// estimated peak height above the landing.
 struct JumpMetrics: Hashable, Sendable {
     let takeoffCoordinate: Coordinate
     let landingCoordinate: Coordinate
@@ -39,11 +39,15 @@ struct JumpMetrics: Hashable, Sendable {
         let takeoffCoordinate = Coordinate(latitude: takeoff.latitude, longitude: takeoff.longitude)
         let landingCoordinate = Coordinate(latitude: landing.latitude, longitude: landing.longitude)
         let drop = takeoff.altitude - landing.altitude
+        // Height is peak height above the landing, the number riders compare to
+        // the size of the drop or booter they hit. On a pure drop-off the arc
+        // adds almost nothing and the height is the drop itself.
+        let height = airHeight(airtime: airtime, dropMeters: drop) + max(drop, 0)
         return JumpMetrics(
             takeoffCoordinate: takeoffCoordinate,
             landingCoordinate: landingCoordinate,
             lengthMeters: takeoffCoordinate.distance(to: landingCoordinate),
-            heightMeters: airHeight(airtime: airtime, dropMeters: drop),
+            heightMeters: height,
             dropMeters: drop)
     }
 

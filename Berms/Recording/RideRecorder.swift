@@ -678,7 +678,9 @@ final class RideRecorder: ObservableObject {
     func setLiveStatMetric(_ metric: LiveStatMetric, enabled: Bool) {
         var metrics = liveStatMetrics
         if enabled {
-            guard !metrics.contains(metric) else { return }
+            guard !metrics.contains(metric),
+                metrics.count < LiveStatMetric.selectionLimit
+            else { return }
             metrics.append(metric)
         } else {
             guard metrics.contains(metric) else { return }
@@ -698,7 +700,9 @@ final class RideRecorder: ObservableObject {
             return LiveStatMetric.defaultSelection
         }
         let stored = UserDefaults.standard.stringArray(forKey: liveStatMetricsKey) ?? []
-        return stored.compactMap(LiveStatMetric.init(rawValue:))
+        return Array(
+            stored.compactMap(LiveStatMetric.init(rawValue:))
+                .prefix(LiveStatMetric.selectionLimit))
     }
 
     private static func pruneOldDiagnosticLogs() {
@@ -1445,7 +1449,7 @@ final class RideRecorder: ObservableObject {
         let gpsAltitude = location.verticalAccuracy >= 0 ? location.altitude : nil
         let hasFreshBarometer =
             motionService.relativeAltitudeTimestamp.map {
-                abs(location.timestamp.timeIntervalSince($0)) <= 10
+                abs(location.timestamp.timeIntervalSince($0)) <= 2.5
             } ?? false
         guard
             let altitude = altitudeFusion.update(
@@ -1479,7 +1483,7 @@ final class RideRecorder: ObservableObject {
             isAutomotive: automotive
         )
         let phaseBefore = detector.phase
-        guard let sample = normalizer.normalize(rawSample) else {
+        guard let sample = normalizer.normalize(rawSample, smoothAltitude: !hasFreshBarometer) else {
             diagnosticLogger?.append(
                 RawDiagnosticRecord(
                     kind: "gps_rejected",

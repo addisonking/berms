@@ -322,8 +322,9 @@ struct TrackView: View {
 
     private var statRows: [[LiveStatMetric]] {
         let metrics = recorder.liveStatMetrics
-        return stride(from: 0, to: metrics.count, by: 2).map { index in
-            Array(metrics[index..<min(index + 2, metrics.count)])
+        let columnCount = 3
+        return stride(from: 0, to: metrics.count, by: columnCount).map { index in
+            Array(metrics[index..<min(index + columnCount, metrics.count)])
         }
     }
 
