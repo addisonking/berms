@@ -98,8 +98,9 @@ struct TrackView: View {
             case .background:
                 mapWasBackgrounded = true
             case .active:
-                guard mapWasBackgrounded, recorder.isRecording else { return }
+                guard mapWasBackgrounded else { return }
                 mapWasBackgrounded = false
+                guard recorder.isRecording else { return }
                 recenterMapPosition()
             default:
                 break
