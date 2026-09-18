@@ -301,7 +301,6 @@ struct RunStatsCard: View {
                 SummaryStat(label: "Best airtime", value: bestAirtime)
                 SummaryStat(label: "Longest jump", value: longestJump)
                 SummaryStat(label: "Highest air", value: highestAir)
-                SummaryStat(label: "Biggest drop", value: biggestDrop)
             }
         }
         .accessibilityElement(children: .contain)
@@ -322,11 +321,6 @@ struct RunStatsCard: View {
         guard let detail else { return "…" }
         return BermsFormat.jumpSize(detail.jumps.compactMap(\.heightMeters).max())
     }
-
-    private var biggestDrop: String {
-        guard let detail else { return "…" }
-        return BermsFormat.jumpSize(detail.jumps.compactMap(\.dropMeters).max())
-    }
 }
 
 struct JumpStatsGrid: View {
@@ -340,7 +334,6 @@ struct JumpStatsGrid: View {
         ) {
             SummaryStat(label: "Length", value: BermsFormat.jumpSize(jump.lengthMeters))
             SummaryStat(label: "Highest air", value: BermsFormat.jumpSize(jump.heightMeters))
-            SummaryStat(label: "Drop", value: BermsFormat.jumpSize(jump.dropMeters))
             SummaryStat(label: "Airtime", value: BermsFormat.airtime(jump.airtime))
         }
         .accessibilityElement(children: .contain)
@@ -463,9 +456,6 @@ private func jumpStatsLine(_ jump: JumpEvent) -> String {
     }
     if let height = jump.heightMeters {
         parts.append("\(BermsFormat.jumpSize(height)) air")
-    }
-    if let drop = jump.dropMeters, drop > 0 {
-        parts.append("\(BermsFormat.jumpSize(drop)) drop")
     }
     parts.append(BermsFormat.airtime(jump.airtime))
     return parts.joined(separator: " · ")

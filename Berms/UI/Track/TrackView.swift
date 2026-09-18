@@ -347,10 +347,6 @@ struct TrackView: View {
             SummaryStat(
                 animatesValue: true, numericValue: true, label: metric.title,
                 value: BermsFormat.jumpSize(recorder.activeHighestJump))
-        case .biggestDrop:
-            SummaryStat(
-                animatesValue: true, numericValue: true, label: metric.title,
-                value: BermsFormat.jumpSize(recorder.activeBiggestJumpDrop))
         case .jumps:
             SummaryStat(
                 animatesValue: true, numericValue: true, label: metric.title,

@@ -402,16 +402,13 @@ struct DayDetailView: View {
                 }
                 AdaptiveStatRow {
                     SummaryStat(
-                        label: "Biggest drop",
-                        value: detailBase.map { BermsFormat.jumpSize($0.biggestJumpDropMeters) } ?? "…")
-                    SummaryStat(
                         label: "Total jumps",
                         value: detailBase.map { "\($0.jumpCount)" } ?? "…")
-                }
-                AdaptiveStatRow {
                     SummaryStat(
                         label: "Total airtime",
                         value: detailBase.map { BermsFormat.airtime($0.totalJumpAirtime) } ?? "…")
+                }
+                AdaptiveStatRow {
                     SummaryStat(
                         label: "Total jump distance",
                         value: detailBase.map { BermsFormat.distance($0.totalJumpDistanceMeters) } ?? "…")
