@@ -422,6 +422,15 @@ struct SessionDetailView: View {
             .help("Export every run that has footage, three at a time")
 
             Button {
+                library.renameClips(for: library.runRefs(in: session))
+            } label: {
+                Label("Rename clips", systemImage: "pencil")
+            }
+            .buttonStyle(.bordered)
+            .disabled(library.renameableRunCount(in: session) == 0 || library.busy != nil)
+            .help("Copy every matched clip to the session folder named for its run and trails")
+
+            Button {
                 showSettings = true
             } label: {
                 Label("Session settings", systemImage: "gearshape")

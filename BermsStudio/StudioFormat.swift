@@ -13,6 +13,12 @@ enum StudioFormat {
         return formatter
     }()
 
+    private static let filenameClockFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HHmm"
+        return formatter
+    }()
+
     static func clock(_ date: Date?) -> String {
         guard let date else { return "no timestamp" }
         return clockFormatter.string(from: date)
@@ -24,6 +30,11 @@ enum StudioFormat {
 
     static func dayLabel(_ date: Date) -> String {
         dayFormatter.string(from: date)
+    }
+
+    static func filenameClock(_ date: Date?) -> String {
+        guard let date else { return "untimed" }
+        return filenameClockFormatter.string(from: date)
     }
 
     static func duration(_ seconds: TimeInterval) -> String {
