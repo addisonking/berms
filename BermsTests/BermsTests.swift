@@ -3001,11 +3001,31 @@ final class BermsTests: XCTestCase {
         // Half a second at roughly 10 m/s per latitude step.
         XCTAssertEqual(metrics.lengthMeters, 5, accuracy: 0.6)
         XCTAssertEqual(metrics.dropMeters, 0.5, accuracy: 0.05)
+        // Height is the arc's rise plus the measured drop to the landing.
         XCTAssertEqual(
             metrics.heightMeters,
-            JumpMetrics.airHeight(airtime: 0.5, dropMeters: 0.5),
+            JumpMetrics.airHeight(airtime: 0.5, dropMeters: 0.5) + 0.5,
             accuracy: 0.001)
         XCTAssertEqual(resolved.resolved(in: []), resolved, "Resolving is idempotent")
+    }
+
+    func testNormalizerPreservesBarometerAltitudeForJumpDrops() {
+        var normalizer = TrackSampleNormalizer()
+        let base = Date(timeIntervalSince1970: 95_000)
+        func sample(altitude: Double, at seconds: Double) -> TrackSample {
+            TrackSample(
+                coordinate: Coordinate(latitude: 50 + seconds * 0.00009, longitude: -122.9),
+                altitude: altitude, speed: 8, timestamp: base.addingTimeInterval(seconds))
+        }
+
+        XCTAssertNotNil(normalizer.normalize(sample(altitude: 100, at: 0), smoothAltitude: false))
+        let dropped = normalizer.normalize(sample(altitude: 98, at: 1), smoothAltitude: false)
+        XCTAssertEqual(dropped?.altitude ?? 0, 98, accuracy: 0.001)
+
+        var smoothingNormalizer = TrackSampleNormalizer()
+        XCTAssertNotNil(smoothingNormalizer.normalize(sample(altitude: 100, at: 10)))
+        let smoothed = smoothingNormalizer.normalize(sample(altitude: 98, at: 11))
+        XCTAssertEqual(smoothed?.altitude ?? 0, 99.4, accuracy: 0.001)
     }
 
     func testJumpAirHeightFollowsBallisticModel() {

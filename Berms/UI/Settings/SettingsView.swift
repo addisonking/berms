@@ -109,12 +109,17 @@ struct SettingsView: View {
                                 set: { recorder.setLiveStatMetric(metric, enabled: $0) }
                             )
                         )
+                        .tint(.green)
+                        .disabled(
+                            !recorder.liveStatMetrics.contains(metric)
+                                && recorder.liveStatMetrics.count >= LiveStatMetric.selectionLimit
+                        )
                     }
                 } header: {
                     Text("Live tracking panel")
                 } footer: {
                     Text(
-                        "Stats shown above the buttons on the Track screen while recording. Run status, GPS status, Pause, and Finish always appear."
+                        "Choose up to \(LiveStatMetric.selectionLimit) stats for the Track screen while recording. Run status, GPS status, Pause, and Finish always appear."
                     )
                 }
                 Section {

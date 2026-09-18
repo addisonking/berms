@@ -701,6 +701,8 @@ enum LiveStatMetric: String, CaseIterable, Identifiable, Sendable {
     static let defaultSelection: [LiveStatMetric] = [
         .topSpeed, .distance, .longestJump, .highestAir, .biggestDrop, .jumps,
     ]
+    /// Fills the panel's 3-wide, 2-tall grid without crowding.
+    static let selectionLimit = 6
 
     var id: String { rawValue }
 
@@ -860,7 +862,7 @@ struct TrackSampleNormalizer: Sendable {
         return previous.coordinate.distance(to: current.coordinate) > maximumLowSpeedDriftMeters
     }
 
-    mutating func normalize(_ sample: TrackSample) -> TrackSample? {
+    mutating func normalize(_ sample: TrackSample, smoothAltitude: Bool = true) -> TrackSample? {
         guard sample.coordinate.latitude.isFinite,
             sample.coordinate.longitude.isFinite,
             (-90...90).contains(sample.coordinate.latitude),
@@ -915,15 +917,21 @@ struct TrackSampleNormalizer: Sendable {
         }
 
         let smoothedAltitude: Double?
-        switch (previous?.altitude, sample.altitude, lowSpeed) {
-        case (let old?, _, true):
-            smoothedAltitude = old
-        case (let old?, let new?, _):
-            smoothedAltitude = old * 0.7 + new * 0.3
-        case (nil, let altitude?, _), (let altitude?, nil, _):
-            smoothedAltitude = altitude
-        case (_, _, _):
-            smoothedAltitude = nil
+        if !smoothAltitude {
+            // Barometer-fused altitude is already stable, and low-passing it
+            // averages away the fast drops jump measurements depend on.
+            smoothedAltitude = sample.altitude ?? previous?.altitude
+        } else {
+            switch (previous?.altitude, sample.altitude, lowSpeed) {
+            case (let old?, _, true):
+                smoothedAltitude = old
+            case (let old?, let new?, _):
+                smoothedAltitude = old * 0.7 + new * 0.3
+            case (nil, let altitude?, _), (let altitude?, nil, _):
+                smoothedAltitude = altitude
+            case (_, _, _):
+                smoothedAltitude = nil
+            }
         }
 
         let normalized = TrackSample(
