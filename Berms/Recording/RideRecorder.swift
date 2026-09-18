@@ -252,7 +252,8 @@ enum DiagnosticSummaryRebuilder {
                 distanceMeters: cleaned.distance,
                 verticalMeters: cleaned.vertical,
                 maximumSpeedMetersPerSecond: cleaned.maximumSpeed,
-                jumps: draft.jumps.map { $0.resolved(in: cleaned.points) }
+                // Raw samples: cleanup smoothing would shrink measured drops.
+                jumps: draft.jumps.map { $0.resolved(in: draft.points.map(\.routePoint)) }
             )
         }
         guard !summaries.isEmpty else { return nil }
@@ -343,7 +344,7 @@ enum DiagnosticSummaryRebuilder {
         kind: SegmentKind
     ) -> (
         routeData: Data, distance: Double,
-        vertical: Double, maximumSpeed: Double, points: [RoutePoint]
+        vertical: Double, maximumSpeed: Double
     )? {
         let cleanedPoints = RouteCleaner().clean(samples).map(\.routePoint)
         guard cleanedPoints.count >= 2, let routeData = try? RouteCodec.encode(cleanedPoints) else {
@@ -353,8 +354,7 @@ enum DiagnosticSummaryRebuilder {
             routeData,
             RouteMetrics.distance(of: cleanedPoints),
             RouteMetrics.vertical(of: cleanedPoints, kind: kind),
-            RouteMetrics.maximumSpeed(of: cleanedPoints),
-            cleanedPoints
+            RouteMetrics.maximumSpeed(of: cleanedPoints)
         )
     }
 
@@ -1681,10 +1681,15 @@ final class RideRecorder: ObservableObject {
     }
 
     private func save(_ draft: SegmentDraft, to day: RideDay) {
+        let rawPoints = draft.points.map(\.routePoint)
         let cleanedPoints = RouteCleaner().clean(draft.points).map(\.routePoint)
-        guard cleanedPoints.count >= 2, let data = try? RouteCodec.encode(cleanedPoints) else { return }
+        guard cleanedPoints.count >= 2, rawPoints.count >= 2,
+            let data = try? RouteCodec.encode(cleanedPoints)
+        else { return }
         let rawJumps = draft.kind == .run ? (draft.jumps.isEmpty ? jumpsForCurrentRun : draft.jumps) : []
-        let jumps = rawJumps.map { $0.resolved(in: cleanedPoints) }
+        // Measure jumps from the raw accepted samples. The cleaned route is for
+        // the map; its smoothing would quietly shrink drops the live panel showed.
+        let jumps = rawJumps.map { $0.resolved(in: rawPoints) }
         let segment = RideSegment(
             kind: draft.kind, startedAt: draft.startedAt,
             endedAt: draft.endedAt, routeData: data, jumps: jumps)
