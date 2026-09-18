@@ -15,7 +15,6 @@ struct ShareCardSheet: View {
     @State private var mapUnavailable = false
     @State private var isRendering = false
     @State private var renderTask: Task<Void, Never>?
-    @State private var shareItem: ShareImageItem?
     @State private var isSaving = false
     @State private var showingSaved = false
     @State private var saveErrorMessage: String?
@@ -125,9 +124,6 @@ struct ShareCardSheet: View {
         .onDisappear {
             renderTask?.cancel()
         }
-        .sheet(item: $shareItem) { item in
-            ShareSheet(items: [item.url])
-        }
         .alert(
             "Couldn't save",
             isPresented: Binding(
@@ -194,8 +190,21 @@ struct ShareCardSheet: View {
     }
 
     private func share() {
-        guard let exportURL else { return }
-        shareItem = ShareImageItem(url: exportURL)
+        guard let url = shareableExportURL() else { return }
+        SharePresenter.present(fileURL: url)
+    }
+
+    /// A share item the system can no longer read makes every activity fail
+    /// silently, so rewrite the export if the file went missing.
+    private func shareableExportURL() -> URL? {
+        guard let exportURL else { return nil }
+        if FileManager.default.fileExists(atPath: exportURL.path) {
+            return exportURL
+        }
+        guard let previewImage else { return nil }
+        return try? ShareCardRenderer.writePNG(
+            previewImage,
+            fileName: exportURL.lastPathComponent)
     }
 
     private func saveToPhotos() {
@@ -288,9 +297,4 @@ struct ShareCardSheet: View {
                 date: day.startedAt))
         isRendering = false
     }
-}
-
-struct ShareImageItem: Identifiable {
-    let id = UUID()
-    let url: URL
 }

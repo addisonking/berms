@@ -13,6 +13,7 @@ struct TrackView: View {
     @Namespace private var mapScope
     @State private var mapPosition: MapCameraPosition = .userLocation(followsHeading: false, fallback: .automatic)
     @State private var visibleRegion: MKCoordinateRegion?
+    @State private var mapWasBackgrounded = false
     @State private var liveStatsHeight: CGFloat = 320
     @State private var showingStopConfirmation = false
     @State private var showingSettings = false
@@ -88,6 +89,22 @@ struct TrackView: View {
                 recenterMapPosition()
             }
         }
+        // The live map leaves the hierarchy while the app is backgrounded, so
+        // the camera is rebuilt on the way back. Assert the follow position
+        // again, otherwise reopening the app leaves the map where MapKit last
+        // put it instead of on the rider.
+        .onChange(of: scenePhase) { _, phase in
+            switch phase {
+            case .background:
+                mapWasBackgrounded = true
+            case .active:
+                guard mapWasBackgrounded, recorder.isRecording else { return }
+                mapWasBackgrounded = false
+                recenterMapPosition()
+            default:
+                break
+            }
+        }
         .onChange(of: isPreviewingResort) { _, _ in
             recenterMapPosition()
         }
@@ -110,7 +127,9 @@ struct TrackView: View {
             }
             visibleRegion = configuration.framingRegion
         } else {
-            mapPosition = .userLocation(followsHeading: false, fallback: .automatic)
+            mapPosition = .userLocation(
+                followsHeading: mapPosition.followsUserHeading,
+                fallback: .automatic)
         }
     }
 

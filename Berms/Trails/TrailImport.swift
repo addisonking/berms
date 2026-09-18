@@ -96,7 +96,7 @@ enum TrailCatalogRegistry {
         resortID: mountainCreekResortID,
         resortName: "Mountain Creek Resort",
         bundledResourceName: nil,
-        importVersion: "mountain-creek-ridepal-v3",
+        importVersion: "mountain-creek-ridepal-v4",
         stableIDNamespace: "berms:ridepal",
         legacyImportVersionKeys: [],
         difficultyOverrides: [:],

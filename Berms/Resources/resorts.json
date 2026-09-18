@@ -14,7 +14,7 @@
           "id": "mountain-creek-resort",
           "season": "summer",
           "resource": "mountain-creek-ridepal-trails-with-metadata",
-          "version": "mountain-creek-ridepal-v3",
+          "version": "mountain-creek-ridepal-v4",
           "stableIDNamespace": "berms:ridepal",
           "legacyVersionKeys": ["berms.trailSeedImport.version"],
           "difficultyOverrides": {
