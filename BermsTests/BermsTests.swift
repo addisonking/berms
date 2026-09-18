@@ -3093,7 +3093,6 @@ final class BermsTests: XCTestCase {
         let saved = try XCTUnwrap(context.fetch(FetchDescriptor<RideDay>()).first)
         XCTAssertEqual(saved.maximumJumpLengthMeters, 12, accuracy: 0.001)
         XCTAssertEqual(saved.maximumJumpHeightMeters, 1.2, accuracy: 0.001)
-        XCTAssertEqual(saved.maximumJumpDropMeters, 0.8, accuracy: 0.001)
         XCTAssertEqual(saved.totalJumpDistanceMeters, 12, accuracy: 0.001)
         XCTAssertEqual(saved.totalJumpAirtime, 0.6, accuracy: 0.001)
     }

@@ -605,10 +605,6 @@ final class RideRecorder: ObservableObject {
         max(completedJumpMaximum(\.heightMeters), currentRunJumpMaximum(\.heightMeters))
     }
 
-    var activeBiggestJumpDrop: Double {
-        max(completedJumpMaximum(\.dropMeters), currentRunJumpMaximum(\.dropMeters))
-    }
-
     /// Jumps from the in-progress run, measured against the route so far. A jump
     /// detected seconds ago gains its landing point as GPS catches up.
     private var resolvedLiveJumps: [JumpEvent] {

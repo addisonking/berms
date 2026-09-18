@@ -200,10 +200,6 @@ final class RideDay {
         segments.filter { $0.kind == .run }.flatMap(\.jumps).compactMap(\.heightMeters).max() ?? 0
     }
 
-    var maximumJumpDropMeters: Double {
-        segments.filter { $0.kind == .run }.flatMap(\.jumps).compactMap(\.dropMeters).max() ?? 0
-    }
-
     func recalculateTotals() {
         let runs = segments.filter { $0.kind == .run }
         let lifts = segments.filter { $0.kind == .lift }
@@ -694,12 +690,11 @@ enum LiveStatMetric: String, CaseIterable, Identifiable, Sendable {
     case distance
     case longestJump
     case highestAir
-    case biggestDrop
     case jumps
     case bestAirtime
 
     static let defaultSelection: [LiveStatMetric] = [
-        .topSpeed, .distance, .longestJump, .highestAir, .biggestDrop, .jumps,
+        .topSpeed, .distance, .longestJump, .highestAir, .jumps,
     ]
     /// Fills the panel's 3-wide, 2-tall grid without crowding.
     static let selectionLimit = 6
@@ -712,7 +707,6 @@ enum LiveStatMetric: String, CaseIterable, Identifiable, Sendable {
         case .distance: "Distance"
         case .longestJump: "Longest jump"
         case .highestAir: "Highest air"
-        case .biggestDrop: "Biggest drop"
         case .jumps: "Jumps"
         case .bestAirtime: "Best airtime"
         }

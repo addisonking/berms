@@ -368,10 +368,6 @@ struct SessionDetailBase: Sendable {
     var highestJumpMeters: Double? {
         jumps.compactMap(\.heightMeters).max()
     }
-
-    var biggestJumpDropMeters: Double? {
-        jumps.compactMap(\.dropMeters).max()
-    }
 }
 
 struct SessionJumpAttempt: Identifiable, Sendable, Hashable {
