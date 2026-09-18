@@ -385,7 +385,7 @@ final class RideRecorder: ObservableObject {
     private static let diagnosticSummaryVersionKey = "berms.diagnosticSummaryVersion"
     private static let rawMotionLoggingKey = "berms.rawMotionLogging"
     private static let liveActivityMetricKey = "berms.liveActivityMetric"
-    private static let liveActivityMetricsKey = "berms.liveActivityMetrics"
+    private static let liveStatMetricsKey = "berms.liveStatMetrics"
     private static let activityModeKey = "berms.activityMode"
 
     @Published private(set) var activeDay: RideDay?
@@ -396,7 +396,8 @@ final class RideRecorder: ObservableObject {
     @Published private(set) var motionAvailable = true
     @Published private(set) var jumpSensitivity: JumpSensitivity
     @Published private(set) var rawMotionLoggingEnabled: Bool
-    @Published private(set) var liveActivityMetrics: [BermsLiveActivityMetric]
+    @Published private(set) var liveActivityMetric: BermsLiveActivityMetric
+    @Published private(set) var liveStatMetrics: [LiveStatMetric]
     @Published private(set) var selectedActivityMode: ActivityMode
     @Published private(set) var isRestoring = false
     @Published private(set) var needsRecoveryPrompt = false
@@ -440,7 +441,11 @@ final class RideRecorder: ObservableObject {
             ?? .standard
         jumpSensitivity = storedSensitivity
         rawMotionLoggingEnabled = UserDefaults.standard.bool(forKey: Self.rawMotionLoggingKey)
-        liveActivityMetrics = Self.storedLiveActivityMetrics()
+        liveActivityMetric =
+            BermsLiveActivityMetric(
+                rawValue: UserDefaults.standard.string(forKey: Self.liveActivityMetricKey) ?? ""
+            ) ?? .descent
+        liveStatMetrics = Self.storedLiveStatMetrics()
         jumpDetector = JumpDetector(configuration: storedSensitivity.configuration)
         self.context = context ?? PersistenceController.shared.container.mainContext
         self.watchStateSink = watchStateSink
@@ -663,36 +668,37 @@ final class RideRecorder: ObservableObject {
             ))
     }
 
-    func setLiveActivityMetric(_ metric: BermsLiveActivityMetric, enabled: Bool) {
-        var metrics = liveActivityMetrics
+    func setLiveActivityMetric(_ metric: BermsLiveActivityMetric) {
+        guard metric != liveActivityMetric else { return }
+        liveActivityMetric = metric
+        UserDefaults.standard.set(metric.rawValue, forKey: Self.liveActivityMetricKey)
+        updateLiveActivity(force: true)
+    }
+
+    func setLiveStatMetric(_ metric: LiveStatMetric, enabled: Bool) {
+        var metrics = liveStatMetrics
         if enabled {
-            guard !metrics.contains(metric),
-                metrics.count < BermsLiveActivityMetric.selectionLimit
-            else { return }
+            guard !metrics.contains(metric) else { return }
             metrics.append(metric)
         } else {
             guard metrics.contains(metric) else { return }
             metrics.removeAll { $0 == metric }
         }
-        liveActivityMetrics = metrics
-        UserDefaults.standard.set(metrics.map(\.rawValue), forKey: Self.liveActivityMetricsKey)
-        updateLiveActivity(force: true)
+        metrics.sort { lhs, rhs in
+            let left = LiveStatMetric.allCases.firstIndex(of: lhs) ?? 0
+            let right = LiveStatMetric.allCases.firstIndex(of: rhs) ?? 0
+            return left < right
+        }
+        liveStatMetrics = metrics
+        UserDefaults.standard.set(metrics.map(\.rawValue), forKey: Self.liveStatMetricsKey)
     }
 
-    private static func storedLiveActivityMetrics() -> [BermsLiveActivityMetric] {
-        if UserDefaults.standard.object(forKey: liveActivityMetricsKey) != nil {
-            let stored = UserDefaults.standard.stringArray(forKey: liveActivityMetricsKey) ?? []
-            return Array(
-                stored.compactMap(BermsLiveActivityMetric.init(rawValue:))
-                    .prefix(BermsLiveActivityMetric.selectionLimit))
+    private static func storedLiveStatMetrics() -> [LiveStatMetric] {
+        guard UserDefaults.standard.object(forKey: liveStatMetricsKey) != nil else {
+            return LiveStatMetric.defaultSelection
         }
-        // Before multiple stats were selectable there was a single choice.
-        if let legacy = BermsLiveActivityMetric(
-            rawValue: UserDefaults.standard.string(forKey: liveActivityMetricKey) ?? "")
-        {
-            return [legacy]
-        }
-        return [.descent]
+        let stored = UserDefaults.standard.stringArray(forKey: liveStatMetricsKey) ?? []
+        return stored.compactMap(LiveStatMetric.init(rawValue:))
     }
 
     private static func pruneOldDiagnosticLogs() {
@@ -768,7 +774,7 @@ final class RideRecorder: ObservableObject {
             BermsLiveActivityCoordinator.shared.start(
                 rideID: day.id,
                 startedAt: day.startedAt,
-                metrics: liveActivityMetrics,
+                metric: liveActivityMetric,
                 activityModeRawValue: day.activityMode.rawValue
             )
             startSensors()
@@ -1235,7 +1241,7 @@ final class RideRecorder: ObservableObject {
         BermsLiveActivityCoordinator.shared.start(
             rideID: day.id,
             startedAt: day.startedAt,
-            metrics: liveActivityMetrics,
+            metric: liveActivityMetric,
             activityModeRawValue: day.activityMode.rawValue
         )
         if day.isPaused {
@@ -1569,14 +1575,11 @@ final class RideRecorder: ObservableObject {
             distance: day.distanceMeters,
             descent: day.descentMeters,
             topSpeed: activeTopSpeed,
-            metrics: liveActivityMetrics,
+            metric: liveActivityMetric,
             jumpCount: activeJumpCount,
             liftCount: completedLiftCount,
             longestAirtime: activeLongestJumpAirtime,
             totalAirtime: activeTotalJumpAirtime,
-            maximumJumpLength: activeLongestJumpLength,
-            maximumJumpHeight: activeHighestJump,
-            maximumJumpDrop: activeBiggestJumpDrop,
             activityModeRawValue: day.activityMode.rawValue,
             force: force
         )

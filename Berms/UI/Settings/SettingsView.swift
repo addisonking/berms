@@ -15,6 +15,13 @@ struct SettingsView: View {
         )
     }
 
+    private var liveActivityMetricBinding: Binding<BermsLiveActivityMetric> {
+        Binding(
+            get: { recorder.liveActivityMetric },
+            set: { recorder.setLiveActivityMetric($0) }
+        )
+    }
+
     private var selectedCatalog: TrailCatalogDescriptor? {
         trailCatalogSelection.manualCatalogID.flatMap(TrailCatalogRegistry.catalog(withID:))
     }
@@ -82,25 +89,32 @@ struct SettingsView: View {
                     .pickerStyle(.inline)
                 }
                 Section {
-                    ForEach(BermsLiveActivityMetric.allCases) { metric in
-                        Toggle(
-                            metric.title,
-                            isOn: Binding(
-                                get: { recorder.liveActivityMetrics.contains(metric) },
-                                set: { recorder.setLiveActivityMetric(metric, enabled: $0) }
-                            )
-                        )
-                        .disabled(
-                            !recorder.liveActivityMetrics.contains(metric)
-                                && recorder.liveActivityMetrics.count
-                                    >= BermsLiveActivityMetric.selectionLimit
-                        )
+                    Picker("Right field", selection: liveActivityMetricBinding) {
+                        ForEach(BermsLiveActivityMetric.allCases) { metric in
+                            Text(metric.title).tag(metric)
+                        }
                     }
+                    .pickerStyle(.menu)
                 } header: {
                     Text("Live Activity")
                 } footer: {
+                    Text("Shown at the right of the Live Activity and Dynamic Island while recording.")
+                }
+                Section {
+                    ForEach(LiveStatMetric.allCases) { metric in
+                        Toggle(
+                            metric.title,
+                            isOn: Binding(
+                                get: { recorder.liveStatMetrics.contains(metric) },
+                                set: { recorder.setLiveStatMetric(metric, enabled: $0) }
+                            )
+                        )
+                    }
+                } header: {
+                    Text("Live tracking panel")
+                } footer: {
                     Text(
-                        "Choose up to \(BermsLiveActivityMetric.selectionLimit) stats for the Live Activity and Dynamic Island while recording. Time and runs are always shown."
+                        "Stats shown above the buttons on the Track screen while recording. Run status, GPS status, Pause, and Finish always appear."
                     )
                 }
                 Section {

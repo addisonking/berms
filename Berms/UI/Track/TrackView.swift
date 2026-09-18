@@ -240,9 +240,6 @@ struct TrackView: View {
             run.map {
                 recorder.activeSegmentKind == .run ? "Run \($0.number)" : "Last run \($0.number)"
             } ?? "Waiting for a run"
-        let bestLength = recorder.activeLongestJumpLength
-        let bestHeight = recorder.activeHighestJump
-        let biggestDrop = recorder.activeBiggestJumpDrop
 
         return VStack(spacing: BermsSpacing.control) {
             AdaptiveStatRow {
@@ -264,29 +261,12 @@ struct TrackView: View {
             }
 
             VStack(spacing: BermsSpacing.control) {
-                AdaptiveStatRow {
-                    SummaryStat(
-                        animatesValue: true, numericValue: true, label: "Top speed",
-                        value: run.map { BermsFormat.speed($0.topSpeedMetersPerSecond) } ?? "—")
-                    SummaryStat(
-                        animatesValue: true, numericValue: true, label: "Distance",
-                        value: run.map { BermsFormat.distance($0.distanceMeters) } ?? "—")
-                }
-                AdaptiveStatRow {
-                    SummaryStat(
-                        animatesValue: true, numericValue: true, label: "Longest jump",
-                        value: BermsFormat.jumpSize(bestLength))
-                    SummaryStat(
-                        animatesValue: true, numericValue: true, label: "Highest air",
-                        value: BermsFormat.jumpSize(bestHeight))
-                }
-                AdaptiveStatRow {
-                    SummaryStat(
-                        animatesValue: true, numericValue: true, label: "Biggest drop",
-                        value: BermsFormat.jumpSize(biggestDrop))
-                    SummaryStat(
-                        animatesValue: true, numericValue: true, label: "Jumps",
-                        value: run?.jumpCount.map { String($0) } ?? "—")
+                ForEach(statRows, id: \.self) { row in
+                    AdaptiveStatRow {
+                        ForEach(row) { metric in
+                            statView(metric, run: run)
+                        }
+                    }
                 }
             }
 
@@ -338,6 +318,54 @@ struct TrackView: View {
         .padding(.horizontal, BermsSpacing.content)
         .padding(.vertical, BermsSpacing.content)
 
+    }
+
+    private var statRows: [[LiveStatMetric]] {
+        let metrics = recorder.liveStatMetrics
+        return stride(from: 0, to: metrics.count, by: 2).map { index in
+            Array(metrics[index..<min(index + 2, metrics.count)])
+        }
+    }
+
+    @ViewBuilder
+    private func statView(_ metric: LiveStatMetric, run: WatchRideState.RunMetrics?) -> some View {
+        switch metric {
+        case .topSpeed:
+            SummaryStat(
+                animatesValue: true, numericValue: true, label: metric.title,
+                value: run.map { BermsFormat.speed($0.topSpeedMetersPerSecond) } ?? "—")
+        case .distance:
+            SummaryStat(
+                animatesValue: true, numericValue: true, label: metric.title,
+                value: run.map { BermsFormat.distance($0.distanceMeters) } ?? "—")
+        case .longestJump:
+            SummaryStat(
+                animatesValue: true, numericValue: true, label: metric.title,
+                value: BermsFormat.jumpSize(recorder.activeLongestJumpLength))
+        case .highestAir:
+            SummaryStat(
+                animatesValue: true, numericValue: true, label: metric.title,
+                value: BermsFormat.jumpSize(recorder.activeHighestJump))
+        case .biggestDrop:
+            SummaryStat(
+                animatesValue: true, numericValue: true, label: metric.title,
+                value: BermsFormat.jumpSize(recorder.activeBiggestJumpDrop))
+        case .jumps:
+            SummaryStat(
+                animatesValue: true, numericValue: true, label: metric.title,
+                value: run?.jumpCount.map { String($0) } ?? "—")
+        case .bestAirtime:
+            SummaryStat(
+                animatesValue: true, numericValue: true, label: metric.title,
+                value: bestAirtime)
+        }
+    }
+
+    private var bestAirtime: String {
+        guard let airtime = recorder.currentRunMetrics?.longestJumpAirtime, airtime > 0 else {
+            return "—"
+        }
+        return BermsFormat.airtime(airtime)
     }
 
     private func gpsStatusText(at date: Date) -> String {

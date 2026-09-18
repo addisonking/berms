@@ -27,7 +27,7 @@ final class BermsLiveActivityCoordinator {
 
     func start(
         rideID: UUID, startedAt: Date,
-        metrics: [BermsLiveActivityMetric],
+        metric: BermsLiveActivityMetric,
         activityModeRawValue: String? = nil
     ) {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
@@ -50,8 +50,7 @@ final class BermsLiveActivityCoordinator {
             distanceMeters: 0,
             descentMeters: 0,
             topSpeedMetersPerSecond: 0,
-            metric: metrics.first ?? .descent,
-            metrics: metrics,
+            metric: metric,
             activityModeRawValue: activityModeRawValue
         )
         do {
@@ -81,9 +80,8 @@ final class BermsLiveActivityCoordinator {
     func update(
         phase: DetectorPhase, isPaused: Bool, runCount: Int, startedAt: Date,
         elapsed: TimeInterval, distance: Double, descent: Double, topSpeed: Double,
-        metrics: [BermsLiveActivityMetric], jumpCount: Int, liftCount: Int,
+        metric: BermsLiveActivityMetric, jumpCount: Int, liftCount: Int,
         longestAirtime: TimeInterval, totalAirtime: TimeInterval,
-        maximumJumpLength: Double, maximumJumpHeight: Double, maximumJumpDrop: Double,
         activityModeRawValue: String? = nil, force: Bool = false
     ) {
         guard let handle = activity,
@@ -99,15 +97,11 @@ final class BermsLiveActivityCoordinator {
             distanceMeters: distance,
             descentMeters: descent,
             topSpeedMetersPerSecond: topSpeed,
-            metric: metrics.first ?? .descent,
+            metric: metric,
             jumpCount: jumpCount,
             liftCount: liftCount,
             longestAirtime: longestAirtime,
             totalAirtime: totalAirtime,
-            maximumJumpLengthMeters: maximumJumpLength,
-            maximumJumpHeightMeters: maximumJumpHeight,
-            maximumJumpDropMeters: maximumJumpDrop,
-            metrics: metrics,
             activityModeRawValue: activityModeRawValue
         )
         let content = ActivityContent(state: state, staleDate: .now.addingTimeInterval(30))

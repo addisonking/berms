@@ -3133,31 +3133,38 @@ final class BermsTests: XCTestCase {
         XCTAssertEqual(farJump.attempts.map(\.runNumber), [3])
     }
 
-    func testLiveActivityShownMetricsFallsBackAndCapsSelection() {
-        let legacy = BermsActivityAttributes.ContentState(
-            phase: "run", isPaused: false, runCount: 2, startedAt: Date(timeIntervalSince1970: 80_000),
-            elapsedSeconds: 30, distanceMeters: 0, descentMeters: 100, topSpeedMetersPerSecond: 0,
-            metric: .descent)
-        XCTAssertEqual(legacy.shownMetrics, [.descent])
+    @MainActor
+    func testLiveStatMetricsDefaultAndToggle() throws {
+        let key = "berms.liveStatMetrics"
+        let previous = UserDefaults.standard.object(forKey: key)
+        defer {
+            if let previous {
+                UserDefaults.standard.set(previous, forKey: key)
+            } else {
+                UserDefaults.standard.removeObject(forKey: key)
+            }
+        }
+        UserDefaults.standard.removeObject(forKey: key)
 
-        let decoded = try? JSONDecoder().decode(
-            BermsActivityAttributes.ContentState.self,
-            from: JSONEncoder().encode(legacy))
-        XCTAssertEqual(decoded?.shownMetrics, [.descent])
+        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try ModelContainer(
+            for: RideDay.self, RideSegment.self, configurations: configuration)
+        let recorder = RideRecorder(
+            context: ModelContext(container),
+            watchStateSink: nil,
+            authorizationOverride: .authorizedAlways)
 
-        let capped = BermsActivityAttributes.ContentState(
-            phase: "run", isPaused: false, runCount: 2, startedAt: Date(timeIntervalSince1970: 80_000),
-            elapsedSeconds: 30, distanceMeters: 0, descentMeters: 100, topSpeedMetersPerSecond: 0,
-            metric: .longestJump,
-            metrics: [.longestJump, .highestJump, .biggestDrop, .jumps])
-        XCTAssertEqual(capped.shownMetrics, [.longestJump, .highestJump, .biggestDrop])
+        XCTAssertEqual(recorder.liveStatMetrics, LiveStatMetric.defaultSelection)
+        recorder.setLiveStatMetric(.topSpeed, enabled: false)
+        XCTAssertFalse(recorder.liveStatMetrics.contains(.topSpeed))
+        recorder.setLiveStatMetric(.bestAirtime, enabled: true)
+        XCTAssertEqual(recorder.liveStatMetrics.last, .bestAirtime, "Selection stays in case order")
 
-        let none = BermsActivityAttributes.ContentState(
-            phase: "run", isPaused: false, runCount: 2, startedAt: Date(timeIntervalSince1970: 80_000),
-            elapsedSeconds: 30, distanceMeters: 0, descentMeters: 100, topSpeedMetersPerSecond: 0,
-            metric: .descent,
-            metrics: [])
-        XCTAssertTrue(none.shownMetrics.isEmpty, "Deselecting every stat shows only time and runs")
+        let restored = RideRecorder(
+            context: ModelContext(container),
+            watchStateSink: nil,
+            authorizationOverride: .authorizedAlways)
+        XCTAssertEqual(restored.liveStatMetrics, recorder.liveStatMetrics)
     }
 
     private func runContext(
