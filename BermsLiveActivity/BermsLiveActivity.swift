@@ -37,15 +37,15 @@ struct BermsLiveActivity: Widget {
                     }
                 }
             } compactLeading: {
-                Image(systemName: "mountain.2.fill")
-                    .accessibilityHidden(true)
+                Image(systemName: context.state.isPaused ? "pause.fill" : "mountain.2.fill")
+                    .accessibilityLabel(context.state.isPaused ? "Paused" : context.state.activityTitle)
             } compactTrailing: {
                 Text("\(context.state.runCount)")
                     .monospacedDigit()
                     .accessibilityLabel("\(context.state.runCount) runs")
             } minimal: {
-                Image(systemName: "mountain.2.fill")
-                    .accessibilityLabel(context.state.isSkiDay ? "Berms ski day" : "Berms ride")
+                Image(systemName: context.state.isPaused ? "pause.fill" : "mountain.2.fill")
+                    .accessibilityLabel(context.state.isPaused ? "Paused" : context.state.activityTitle)
             }
             .widgetURL(URL(string: "berms://track"))
         }
