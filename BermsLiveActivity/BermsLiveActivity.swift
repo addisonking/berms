@@ -23,11 +23,13 @@ struct BermsLiveActivity: Widget {
                         .font(.title3.weight(.semibold))
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    HStack {
+                    HStack(spacing: 12) {
                         metric("Time", duration(context.state.elapsedSeconds))
-                        Spacer()
-                        detailMetric(context)
-                        Spacer()
+                        Spacer(minLength: 0)
+                        ForEach(context.state.shownMetrics) { metricKind in
+                            detailMetric(metricKind, context: context)
+                            Spacer(minLength: 0)
+                        }
                         Button(intent: ToggleBermsPauseIntent()) {
                             Image(systemName: context.state.isPaused ? "play.fill" : "pause.fill")
                                 .frame(width: 44, height: 44)
@@ -66,11 +68,16 @@ struct BermsLiveActivity: Widget {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 metric("Runs", "\(context.state.runCount)")
                     .frame(maxWidth: .infinity, alignment: .center)
-                HStack(spacing: 8) {
-                    metric(context.state.metric.title, detailValue(context))
-                    pauseButton(context)
+                pauseButton(context)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+            }
+            if !context.state.shownMetrics.isEmpty {
+                HStack(alignment: .top, spacing: 8) {
+                    ForEach(context.state.shownMetrics) { metricKind in
+                        detailMetric(metricKind, context: context)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                 }
-                .frame(maxWidth: .infinity, alignment: .trailing)
             }
         }
         .padding(16)
@@ -125,13 +132,19 @@ struct BermsLiveActivity: Widget {
         .accessibilityElement(children: .combine)
     }
 
-    private func detailMetric(_ context: ActivityViewContext<BermsActivityAttributes>) -> some View {
-        metric(context.state.metric.title, detailValue(context))
+    private func detailMetric(
+        _ metricKind: BermsLiveActivityMetric,
+        context: ActivityViewContext<BermsActivityAttributes>
+    ) -> some View {
+        metric(metricKind.title, detailValue(metricKind, context: context))
     }
 
-    private func detailValue(_ context: ActivityViewContext<BermsActivityAttributes>) -> String {
+    private func detailValue(
+        _ metricKind: BermsLiveActivityMetric,
+        context: ActivityViewContext<BermsActivityAttributes>
+    ) -> String {
         let state = context.state
-        switch state.metric {
+        switch metricKind {
         case .descent: return elevation(state.descentMeters)
         case .jumps: return "\(state.jumpCount)"
         case .distance: return distance(state.distanceMeters)
@@ -139,6 +152,9 @@ struct BermsLiveActivity: Widget {
         case .lifts: return "\(state.liftCount)"
         case .longestAirtime: return airtime(state.longestAirtime)
         case .totalAirtime: return airtime(state.totalAirtime)
+        case .longestJump: return jumpSize(state.maximumJumpLengthMeters)
+        case .highestJump: return jumpSize(state.maximumJumpHeightMeters)
+        case .biggestDrop: return jumpSize(state.maximumJumpDropMeters)
         }
     }
 
@@ -176,6 +192,13 @@ struct BermsLiveActivity: Widget {
 
     private func airtime(_ seconds: TimeInterval) -> String {
         String(format: "%.2fs", max(0, seconds))
+    }
+
+    private func jumpSize(_ meters: Double?) -> String {
+        guard let meters, meters > 0 else { return "—" }
+        return isMetric
+            ? String(format: "%.1f m", meters)
+            : String(format: "%.1f ft", meters * 3.28084)
     }
 
     private var isMetric: Bool { Locale.current.measurementSystem == .metric }

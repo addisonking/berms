@@ -240,7 +240,9 @@ struct TrackView: View {
             run.map {
                 recorder.activeSegmentKind == .run ? "Run \($0.number)" : "Last run \($0.number)"
             } ?? "Waiting for a run"
-        let bestJump = run?.longestJumpAirtime ?? 0
+        let bestLength = recorder.activeLongestJumpLength
+        let bestHeight = recorder.activeHighestJump
+        let biggestDrop = recorder.activeBiggestJumpDrop
 
         return VStack(spacing: BermsSpacing.control) {
             AdaptiveStatRow {
@@ -267,18 +269,24 @@ struct TrackView: View {
                         animatesValue: true, numericValue: true, label: "Top speed",
                         value: run.map { BermsFormat.speed($0.topSpeedMetersPerSecond) } ?? "—")
                     SummaryStat(
-                        animatesValue: true, numericValue: true, label: "Best jump",
-                        value: bestJump > 0 ? BermsFormat.airtime(bestJump) : "—"
-                    )
-                    .accessibilityLabel("Best jump airtime")
+                        animatesValue: true, numericValue: true, label: "Distance",
+                        value: run.map { BermsFormat.distance($0.distanceMeters) } ?? "—")
                 }
                 AdaptiveStatRow {
                     SummaryStat(
+                        animatesValue: true, numericValue: true, label: "Longest jump",
+                        value: BermsFormat.jumpSize(bestLength))
+                    SummaryStat(
+                        animatesValue: true, numericValue: true, label: "Highest air",
+                        value: BermsFormat.jumpSize(bestHeight))
+                }
+                AdaptiveStatRow {
+                    SummaryStat(
+                        animatesValue: true, numericValue: true, label: "Biggest drop",
+                        value: BermsFormat.jumpSize(biggestDrop))
+                    SummaryStat(
                         animatesValue: true, numericValue: true, label: "Jumps",
                         value: run?.jumpCount.map { String($0) } ?? "—")
-                    SummaryStat(
-                        animatesValue: true, numericValue: true, label: "Distance",
-                        value: run.map { BermsFormat.distance($0.distanceMeters) } ?? "—")
                 }
             }
 

@@ -10,22 +10,143 @@ struct JumpTrackContext: Sendable, Equatable {
     let isAutomotive: Bool
 }
 
+/// Measured jump size. Length is the horizontal gap between takeoff and
+/// landing, drop is the elevation lost across the jump, and height is the
+/// estimated peak height above takeoff.
+struct JumpMetrics: Hashable, Sendable {
+    let takeoffCoordinate: Coordinate
+    let landingCoordinate: Coordinate
+    let lengthMeters: Double
+    let heightMeters: Double
+    let dropMeters: Double
+
+    static let gravity = 9.80665
+    /// The longest route gap that still counts as a bracket for interpolation.
+    static let maximumInterpolationGap: TimeInterval = 5
+    static let maximumHeightMeters: Double = 25
+
+    static func resolve(
+        takeoffTimestamp: Date,
+        landingTimestamp: Date,
+        airtime: TimeInterval,
+        in routePoints: [RoutePoint]
+    ) -> JumpMetrics? {
+        guard routePoints.count >= 2,
+            let takeoff = interpolatedPoint(at: takeoffTimestamp, in: routePoints),
+            let landing = interpolatedPoint(at: landingTimestamp, in: routePoints)
+        else { return nil }
+
+        let takeoffCoordinate = Coordinate(latitude: takeoff.latitude, longitude: takeoff.longitude)
+        let landingCoordinate = Coordinate(latitude: landing.latitude, longitude: landing.longitude)
+        let drop = takeoff.altitude - landing.altitude
+        return JumpMetrics(
+            takeoffCoordinate: takeoffCoordinate,
+            landingCoordinate: landingCoordinate,
+            lengthMeters: takeoffCoordinate.distance(to: landingCoordinate),
+            heightMeters: airHeight(airtime: airtime, dropMeters: drop),
+            dropMeters: drop)
+    }
+
+    /// Peak height of a ballistic arc that is airborne for `airtime` and lands
+    /// `dropMeters` below the takeoff. A launch aimed downward earns no height.
+    static func airHeight(airtime: TimeInterval, dropMeters: Double) -> Double {
+        guard airtime.isFinite, airtime > 0, dropMeters.isFinite else { return 0 }
+        let launchVelocity = (gravity * airtime * airtime / 2 - dropMeters) / airtime
+        guard launchVelocity > 0 else { return 0 }
+        let height = launchVelocity * launchVelocity / (2 * gravity)
+        return min(height, maximumHeightMeters)
+    }
+
+    static func interpolatedPoint(at date: Date, in points: [RoutePoint]) -> RoutePoint? {
+        guard let first = points.first, let last = points.last else { return nil }
+        if date <= first.timestamp {
+            return first.timestamp.timeIntervalSince(date) <= maximumInterpolationGap ? first : nil
+        }
+        if date >= last.timestamp {
+            return date.timeIntervalSince(last.timestamp) <= maximumInterpolationGap ? last : nil
+        }
+
+        for index in 0..<(points.count - 1) {
+            let start = points[index]
+            let end = points[index + 1]
+            guard date >= start.timestamp, date <= end.timestamp else { continue }
+            let interval = end.timestamp.timeIntervalSince(start.timestamp)
+            guard interval <= maximumInterpolationGap else { return nil }
+            let fraction = interval > 0 ? date.timeIntervalSince(start.timestamp) / interval : 0
+            return RoutePoint(
+                latitude: interpolate(start.latitude, end.latitude, fraction),
+                longitude: interpolate(start.longitude, end.longitude, fraction),
+                altitude: interpolate(start.altitude, end.altitude, fraction),
+                speed: interpolate(start.speed, end.speed, fraction),
+                timestamp: date)
+        }
+        return nil
+    }
+
+    private static func interpolate(_ start: Double, _ end: Double, _ fraction: Double) -> Double {
+        start + (end - start) * fraction
+    }
+}
+
 struct JumpEvent: Codable, Hashable, Sendable {
     let takeoffTimestamp: Date
     let landingTimestamp: Date
     let takeoffMonotonicSeconds: Double
     let landingMonotonicSeconds: Double
     let airtime: TimeInterval
+    let takeoffCoordinate: Coordinate?
+    let landingCoordinate: Coordinate?
+    let lengthMeters: Double?
+    let heightMeters: Double?
+    let dropMeters: Double?
 
     init(
         takeoffTimestamp: Date, landingTimestamp: Date,
-        takeoffMonotonicSeconds: Double, landingMonotonicSeconds: Double
+        takeoffMonotonicSeconds: Double, landingMonotonicSeconds: Double,
+        metrics: JumpMetrics? = nil
     ) {
         self.takeoffTimestamp = takeoffTimestamp
         self.landingTimestamp = landingTimestamp
         self.takeoffMonotonicSeconds = takeoffMonotonicSeconds
         self.landingMonotonicSeconds = landingMonotonicSeconds
         self.airtime = max(0, landingMonotonicSeconds - takeoffMonotonicSeconds)
+        self.takeoffCoordinate = metrics?.takeoffCoordinate
+        self.landingCoordinate = metrics?.landingCoordinate
+        self.lengthMeters = metrics?.lengthMeters
+        self.heightMeters = metrics?.heightMeters
+        self.dropMeters = metrics?.dropMeters
+    }
+
+    var metrics: JumpMetrics? {
+        guard let takeoffCoordinate, let landingCoordinate,
+            let lengthMeters, let heightMeters, let dropMeters
+        else { return nil }
+        return JumpMetrics(
+            takeoffCoordinate: takeoffCoordinate,
+            landingCoordinate: landingCoordinate,
+            lengthMeters: lengthMeters,
+            heightMeters: heightMeters,
+            dropMeters: dropMeters)
+    }
+
+    var isResolved: Bool { metrics != nil }
+
+    /// Returns a copy carrying measured size when the route around the jump is
+    /// known. Already-resolved jumps are returned untouched.
+    func resolved(in routePoints: [RoutePoint]) -> JumpEvent {
+        guard !isResolved,
+            let metrics = JumpMetrics.resolve(
+                takeoffTimestamp: takeoffTimestamp,
+                landingTimestamp: landingTimestamp,
+                airtime: airtime,
+                in: routePoints)
+        else { return self }
+        return JumpEvent(
+            takeoffTimestamp: takeoffTimestamp,
+            landingTimestamp: landingTimestamp,
+            takeoffMonotonicSeconds: takeoffMonotonicSeconds,
+            landingMonotonicSeconds: landingMonotonicSeconds,
+            metrics: metrics)
     }
 }
 
