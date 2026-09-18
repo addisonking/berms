@@ -7600,6 +7600,60 @@
           ]
         ]
       }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Lower Dominion",
+        "slug": "lower-dominion",
+        "difficultyLabel": "Black Diamond",
+        "difficulty": "black",
+        "distanceMiles": 0.087744,
+        "isLoop": false,
+        "source": "openstreetmap",
+        "osmWayId": 1199324216
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            -74.5082104,
+            41.1804032
+          ],
+          [
+            -74.5082988,
+            41.1804866
+          ],
+          [
+            -74.5083051,
+            41.1805481
+          ],
+          [
+            -74.5082793,
+            41.1806368
+          ],
+          [
+            -74.5081614,
+            41.1808158
+          ],
+          [
+            -74.5080171,
+            41.1809443
+          ],
+          [
+            -74.5078179,
+            41.1811937
+          ],
+          [
+            -74.5077044,
+            41.1813276
+          ],
+          [
+            -74.5075421,
+            41.1814769
+          ]
+        ]
+      }
     }
   ],
   "errors": [],

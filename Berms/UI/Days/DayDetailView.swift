@@ -22,7 +22,6 @@ struct DayDetailView: View {
     @State private var saveErrorMessage: String?
     @State private var prepareFailed = false
     @State private var diagnosticLogURLs: [URL] = []
-    @State private var exportedArchive: ExportArchive?
     @State private var isExportingDay = false
     @State private var showingShareCard = false
 
@@ -248,9 +247,6 @@ struct DayDetailView: View {
         .onAppear {
             notesDraft = day.notes ?? ""
         }
-        .sheet(item: $exportedArchive) { archive in
-            ShareSheet(items: [archive.url])
-        }
         .sheet(isPresented: $showingShareCard) {
             ShareCardSheet(
                 day: day,
@@ -320,7 +316,7 @@ struct DayDetailView: View {
                 let archive = try await Task.detached(priority: .userInitiated) {
                     try DayArchive.build(export: export, logURLs: logURLs)
                 }.value
-                exportedArchive = ExportArchive(url: archive)
+                SharePresenter.present(fileURL: archive)
                 saveErrorMessage = nil
             } catch {
                 saveErrorMessage = "The day export could not be created. \(error.localizedDescription)"
@@ -491,19 +487,45 @@ struct DayDetailView: View {
 
 }
 
-struct ExportArchive: Identifiable {
-    let id = UUID()
-    let url: URL
-}
+/// Presents the system share sheet from the top-most view controller.
+///
+/// Hosting a `UIActivityViewController` as SwiftUI sheet content leaves its
+/// activities without a stable presenter, which makes taps on Save Image or an
+/// app silently do nothing. Presenting it modally from the view controller that
+/// is already on screen keeps the sheet and its activities healthy.
+@MainActor
+enum SharePresenter {
+    /// The menu that triggers a share is still dismissing, and presenting into
+    /// it would take the share sheet down with the menu.
+    private static let menuDismissalDelay: Duration = .milliseconds(250)
 
-struct ShareSheet: UIViewControllerRepresentable {
-    let items: [Any]
-
-    func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    static func present(fileURL: URL) {
+        Task { @MainActor in
+            try? await Task.sleep(for: menuDismissalDelay)
+            guard let controller = topMostViewController(),
+                !(controller is UIActivityViewController)
+            else { return }
+            let activity = UIActivityViewController(
+                activityItems: [fileURL],
+                applicationActivities: nil)
+            controller.present(activity, animated: true)
+        }
     }
 
-    func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
+    private static func topMostViewController() -> UIViewController? {
+        guard let window = activeWindow else { return nil }
+        var controller = window.rootViewController
+        while let presented = controller?.presentedViewController {
+            controller = presented
+        }
+        return controller
+    }
+
+    private static var activeWindow: UIWindow? {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        let scene = scenes.first { $0.activationState == .foregroundActive } ?? scenes.first
+        return scene?.keyWindow ?? scene?.windows.first { $0.isKeyWindow } ?? scene?.windows.first
+    }
 }
 
 enum DayArchiveError: LocalizedError {
