@@ -15,13 +15,6 @@ struct SettingsView: View {
         )
     }
 
-    private var liveActivityMetricBinding: Binding<BermsLiveActivityMetric> {
-        Binding(
-            get: { recorder.liveActivityMetric },
-            set: { recorder.setLiveActivityMetric($0) }
-        )
-    }
-
     private var selectedCatalog: TrailCatalogDescriptor? {
         trailCatalogSelection.manualCatalogID.flatMap(TrailCatalogRegistry.catalog(withID:))
     }
@@ -89,16 +82,26 @@ struct SettingsView: View {
                     .pickerStyle(.inline)
                 }
                 Section {
-                    Picker("Right field", selection: liveActivityMetricBinding) {
-                        ForEach(BermsLiveActivityMetric.allCases) { metric in
-                            Text(metric.title).tag(metric)
-                        }
+                    ForEach(BermsLiveActivityMetric.allCases) { metric in
+                        Toggle(
+                            metric.title,
+                            isOn: Binding(
+                                get: { recorder.liveActivityMetrics.contains(metric) },
+                                set: { recorder.setLiveActivityMetric(metric, enabled: $0) }
+                            )
+                        )
+                        .disabled(
+                            !recorder.liveActivityMetrics.contains(metric)
+                                && recorder.liveActivityMetrics.count
+                                    >= BermsLiveActivityMetric.selectionLimit
+                        )
                     }
-                    .pickerStyle(.menu)
                 } header: {
                     Text("Live Activity")
                 } footer: {
-                    Text("Shown at the right of the Live Activity and Dynamic Island while recording.")
+                    Text(
+                        "Choose up to \(BermsLiveActivityMetric.selectionLimit) stats for the Live Activity and Dynamic Island while recording. Time and runs are always shown."
+                    )
                 }
                 Section {
                     Toggle(

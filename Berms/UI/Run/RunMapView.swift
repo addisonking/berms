@@ -54,6 +54,7 @@ struct RunMapView: View {
     @State private var showingFullScreenMap = false
     @State private var ownBase: SessionDetailBase?
     @State private var ownTrailDetails: SessionDetailTrailDetails?
+    @State private var jumpComparisons: SessionJumpComparisons = .empty
     @State private var isPreparing = false
     @State private var prepareFailed = false
 
@@ -135,6 +136,7 @@ struct RunMapView: View {
                     Section("Run stats") {
                         RunStatsCard(segment: segment, detail: activeDetail)
                     }
+                    jumpsSection
                     Section("Trail") {
                         TrailSequenceCard(sequence: trailSequence, runNumber: number)
                     }
@@ -151,6 +153,67 @@ struct RunMapView: View {
         .navigationTitle("Run \(number)")
         .navigationBarTitleDisplayMode(.inline)
         .task(id: preparedDetail == nil) { await prepareIfNeeded() }
+        .task(id: segment.id) { await prepareJumpComparisons() }
+    }
+
+    @ViewBuilder
+    private var jumpsSection: some View {
+        Section("Jumps") {
+            if jumps.isEmpty {
+                Text("No jumps detected in this run.")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(Array(jumps.enumerated()), id: \.offset) { index, jump in
+                    let attemptID = jumpAttemptID(index: index)
+                    let feature = jumpComparisons.feature(forAttemptID: attemptID)
+                    NavigationLink {
+                        JumpComparisonView(
+                            attempt: attempt(at: index, jump: jump),
+                            feature: feature)
+                    } label: {
+                        RunJumpRow(
+                            number: index + 1,
+                            jump: jump,
+                            attemptID: attemptID,
+                            feature: feature)
+                    }
+                }
+            }
+        }
+    }
+
+    private var jumps: [JumpEvent] {
+        activeDetail?.jumps ?? []
+    }
+
+    private func jumpAttemptID(index: Int) -> String {
+        "\(segment.id.uuidString)-\(index)"
+    }
+
+    private func attempt(at index: Int, jump: JumpEvent) -> SessionJumpAttempt {
+        let id = jumpAttemptID(index: index)
+        if let existing = jumpComparisons.features
+            .flatMap(\.attempts)
+            .first(where: { $0.id == id })
+        {
+            return existing
+        }
+        return SessionJumpAttempt(
+            id: id,
+            segmentID: segment.id,
+            runNumber: number,
+            jumpNumber: index + 1,
+            jump: jump)
+    }
+
+    @MainActor
+    private func prepareJumpComparisons() async {
+        guard let dayID = segment.day?.id else { return }
+        let comparisons = await SessionDetailPresentationPreheater.prepareJumpComparisons(
+            dayID: dayID,
+            container: modelContext.container)
+        guard !Task.isCancelled, let comparisons else { return }
+        jumpComparisons = comparisons
     }
 
     private var trailSequence: String {
@@ -236,6 +299,9 @@ struct RunStatsCard: View {
                 SummaryStat(label: "Top speed", value: BermsFormat.speed(segment.maximumSpeedMetersPerSecond))
                 SummaryStat(label: "Jumps", value: detail.map { "\($0.jumps.count)" } ?? "…")
                 SummaryStat(label: "Best airtime", value: bestAirtime)
+                SummaryStat(label: "Longest jump", value: longestJump)
+                SummaryStat(label: "Highest air", value: highestAir)
+                SummaryStat(label: "Biggest drop", value: biggestDrop)
             }
         }
         .accessibilityElement(children: .contain)
@@ -246,6 +312,163 @@ struct RunStatsCard: View {
         guard let airtime = detail.jumps.map(\.airtime).max() else { return "—" }
         return BermsFormat.airtime(airtime)
     }
+
+    private var longestJump: String {
+        guard let detail else { return "…" }
+        return BermsFormat.jumpSize(detail.jumps.compactMap(\.lengthMeters).max())
+    }
+
+    private var highestAir: String {
+        guard let detail else { return "…" }
+        return BermsFormat.jumpSize(detail.jumps.compactMap(\.heightMeters).max())
+    }
+
+    private var biggestDrop: String {
+        guard let detail else { return "…" }
+        return BermsFormat.jumpSize(detail.jumps.compactMap(\.dropMeters).max())
+    }
+}
+
+struct JumpStatsGrid: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    let jump: JumpEvent
+
+    var body: some View {
+        LazyVGrid(
+            columns: Array(repeating: GridItem(.flexible()), count: dynamicTypeSize.isAccessibilitySize ? 1 : 2),
+            alignment: .leading, spacing: BermsSpacing.content
+        ) {
+            SummaryStat(label: "Length", value: BermsFormat.jumpSize(jump.lengthMeters))
+            SummaryStat(label: "Highest air", value: BermsFormat.jumpSize(jump.heightMeters))
+            SummaryStat(label: "Drop", value: BermsFormat.jumpSize(jump.dropMeters))
+            SummaryStat(label: "Airtime", value: BermsFormat.airtime(jump.airtime))
+        }
+        .accessibilityElement(children: .contain)
+    }
+}
+
+struct RunJumpRow: View {
+    let number: Int
+    let jump: JumpEvent
+    let attemptID: String
+    let feature: SessionJumpFeature?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text("Jump \(number)")
+                .font(.headline)
+            Text(jumpStatsLine(jump))
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Color.bermsMuted)
+            if let comparisonLine {
+                Text(comparisonLine)
+                    .font(.caption)
+                    .foregroundStyle(Color.bermsMuted)
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Jump \(number)")
+        .accessibilityValue(accessibilityValue)
+    }
+
+    private var comparisonLine: String? {
+        guard let feature, feature.attempts.count > 1,
+            let best = feature.attempts.max(by: {
+                ($0.jump.lengthMeters ?? 0) < ($1.jump.lengthMeters ?? 0)
+            })
+        else { return nil }
+        if best.id == attemptID {
+            let runCount = Set(feature.attempts.map(\.runNumber)).count
+            return runCount == 2
+                ? "Best of 2 runs at this jump"
+                : "Best of \(runCount) runs at this jump"
+        }
+        return "Best \(BermsFormat.jumpSize(best.jump.lengthMeters)) · Run \(best.runNumber)"
+    }
+
+    private var accessibilityValue: String {
+        [jumpStatsLine(jump), comparisonLine].compactMap { $0 }.joined(separator: ", ")
+    }
+}
+
+struct JumpComparisonView: View {
+    let attempt: SessionJumpAttempt
+    let feature: SessionJumpFeature?
+
+    private var attempts: [SessionJumpAttempt] {
+        (feature?.attempts ?? [attempt]).sorted {
+            ($0.runNumber, $0.jumpNumber) < ($1.runNumber, $1.jumpNumber)
+        }
+    }
+
+    private var bestLengthID: String? {
+        attempts.max(by: { ($0.jump.lengthMeters ?? 0) < ($1.jump.lengthMeters ?? 0) })?.id
+    }
+
+    var body: some View {
+        List {
+            Section("Run \(attempt.runNumber) · Jump \(attempt.jumpNumber)") {
+                JumpStatsGrid(jump: attempt.jump)
+            }
+            if attempts.count > 1 {
+                Section {
+                    ForEach(attempts, id: \.id) { other in
+                        VStack(alignment: .leading, spacing: 3) {
+                            HStack {
+                                Text("Run \(other.runNumber) · Jump \(other.jumpNumber)")
+                                    .font(.headline)
+                                Spacer()
+                                Text(BermsFormat.jumpSize(other.jump.lengthMeters))
+                                    .font(.headline.monospacedDigit())
+                            }
+                            Text(jumpStatsLine(other.jump))
+                                .font(.caption)
+                                .foregroundStyle(Color.bermsMuted)
+                            if other.id == bestLengthID {
+                                Text("Longest in session")
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundStyle(Color.bermsMuted)
+                            }
+                            if other.id == attempt.id {
+                                Text("This run")
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundStyle(Color.bermsMuted)
+                            }
+                        }
+                        .accessibilityElement(children: .combine)
+                    }
+                } header: {
+                    Text("Across runs")
+                } footer: {
+                    Text(
+                        "Jumps are matched by takeoff and landing location. Only runs from this session are compared."
+                    )
+                }
+            } else {
+                Section {
+                    Text("No other run in this session hit this jump.")
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .navigationTitle("Jump \(attempt.jumpNumber)")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+private func jumpStatsLine(_ jump: JumpEvent) -> String {
+    var parts: [String] = []
+    if let length = jump.lengthMeters {
+        parts.append(BermsFormat.jumpSize(length))
+    }
+    if let height = jump.heightMeters {
+        parts.append("\(BermsFormat.jumpSize(height)) air")
+    }
+    if let drop = jump.dropMeters, drop > 0 {
+        parts.append("\(BermsFormat.jumpSize(drop)) drop")
+    }
+    parts.append(BermsFormat.airtime(jump.airtime))
+    return parts.joined(separator: " · ")
 }
 
 struct TrailSequenceCard: View {
@@ -304,7 +527,7 @@ struct SegmentRow: View {
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(Color.bermsMuted)
                 if let detail, detail.kind == .run, !detail.jumps.isEmpty {
-                    Text("\(detail.jumps.count) jumps · \(BermsFormat.airtime(detail.jumps.map(\.airtime).max() ?? 0))")
+                    Text(jumpSummary(detail))
                         .font(.caption)
                         .foregroundStyle(Color.bermsMuted)
                 }
@@ -326,6 +549,15 @@ struct SegmentRow: View {
     private var trailTitle: String {
         if let trailName { return trailName }
         return isPreparingDetails ? "Loading trail details…" : "Trail not identified"
+    }
+
+    private func jumpSummary(_ detail: SessionDetailSegment) -> String {
+        let count = detail.jumps.count
+        let countLabel = count == 1 ? "1 jump" : "\(count) jumps"
+        guard let longest = detail.jumps.compactMap(\.lengthMeters).max(), longest > 0 else {
+            return "\(countLabel) · \(BermsFormat.airtime(detail.jumps.map(\.airtime).max() ?? 0))"
+        }
+        return "\(countLabel) · \(BermsFormat.jumpSize(longest)) longest"
     }
 
     private var durationTitle: String {

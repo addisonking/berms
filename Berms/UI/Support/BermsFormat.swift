@@ -31,6 +31,12 @@ enum BermsFormat {
         String(format: "%.2fs", max(0, seconds))
     }
 
+    /// Jump sizes are small, so a decimal keeps sub-meter air readable.
+    static func jumpSize(_ meters: Double?) -> String {
+        guard let meters, meters > 0 else { return "—" }
+        return isMetric ? String(format: "%.1f m", meters) : String(format: "%.1f ft", meters * 3.28084)
+    }
+
     static func gpsPoints(_ count: Int) -> String {
         "\(count) GPS point\(count == 1 ? "" : "s")"
     }

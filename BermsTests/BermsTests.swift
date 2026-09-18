@@ -798,7 +798,11 @@ final class BermsTests: XCTestCase {
 
         XCTAssertEqual(result.runs.map(\.id), [id])
         XCTAssertEqual(result.runs.first?.routePoints, route)
-        XCTAssertEqual(result.runs.first?.jumps, [jump])
+        XCTAssertEqual(result.runs.first?.jumps.count, 1)
+        XCTAssertEqual(result.runs.first?.jumps.first?.airtime ?? .nan, 0.2, accuracy: 0.001)
+        // The builder resolves jump size from the run's route.
+        XCTAssertEqual(result.runs.first?.jumps.first?.lengthMeters ?? .nan, 2.2, accuracy: 0.4)
+        XCTAssertEqual(result.runs.first?.jumps.first?.dropMeters ?? .nan, 0.2, accuracy: 0.05)
         XCTAssertEqual(result.runs.first?.duration ?? .nan, 10, accuracy: 0.001)
         XCTAssertEqual(result.jumpMarkers.map(\.id), ["\(id.uuidString)-0"])
         XCTAssertEqual(result.jumpMarkers.first?.segmentID, id)
@@ -2853,7 +2857,7 @@ final class BermsTests: XCTestCase {
         let export = BermsDataExport(
             day: day, exportedAt: base,
             rawDiagnosticsFilename: "Berms-day.jsonl")
-        XCTAssertEqual(export.version, 4)
+        XCTAssertEqual(export.version, 5)
         XCTAssertEqual(export.days[0].segments.compactMap(\.runNumber), [1, 2])
         XCTAssertEqual(export.parsed.runCount, 2)
         XCTAssertEqual(export.parsed.runs.map(\.number), [1, 2])
@@ -2974,6 +2978,186 @@ final class BermsTests: XCTestCase {
             dwellTimestamps.allSatisfy { timestamp in
                 detector.currentPoints.contains { $0.timestamp == timestamp }
             })
+    }
+
+    func testJumpMetricsResolveLengthDropAndAirHeightFromRoute() throws {
+        let base = Date(timeIntervalSince1970: 40_000)
+        let route = (0...10).map { index in
+            RoutePoint(
+                latitude: 50 + Double(index) * 0.00009,
+                longitude: -122.9,
+                altitude: 100 - Double(index),
+                speed: 9,
+                timestamp: base.addingTimeInterval(Double(index)))
+        }
+        let jump = JumpEvent(
+            takeoffTimestamp: base.addingTimeInterval(2),
+            landingTimestamp: base.addingTimeInterval(2.5),
+            takeoffMonotonicSeconds: 2,
+            landingMonotonicSeconds: 2.5)
+
+        let resolved = jump.resolved(in: route)
+        let metrics = try XCTUnwrap(resolved.metrics)
+        // Half a second at roughly 10 m/s per latitude step.
+        XCTAssertEqual(metrics.lengthMeters, 5, accuracy: 0.6)
+        XCTAssertEqual(metrics.dropMeters, 0.5, accuracy: 0.05)
+        XCTAssertEqual(
+            metrics.heightMeters,
+            JumpMetrics.airHeight(airtime: 0.5, dropMeters: 0.5),
+            accuracy: 0.001)
+        XCTAssertEqual(resolved.resolved(in: []), resolved, "Resolving is idempotent")
+    }
+
+    func testJumpAirHeightFollowsBallisticModel() {
+        // A level landing peaks at g * t^2 / 8.
+        let level = JumpMetrics.airHeight(airtime: 0.9, dropMeters: 0)
+        XCTAssertEqual(level, 9.80665 * 0.9 * 0.9 / 8, accuracy: 0.01)
+        // Landing below takeoff means less air for the same flight time.
+        XCTAssertLessThan(JumpMetrics.airHeight(airtime: 0.9, dropMeters: 2), level)
+        // A pure drop-off never reports negative height.
+        XCTAssertEqual(JumpMetrics.airHeight(airtime: 0.4, dropMeters: 5), 0)
+    }
+
+    func testJumpEventDecodesLegacyPayloadWithoutMetrics() throws {
+        struct LegacyJump: Codable {
+            let takeoffTimestamp: Date
+            let landingTimestamp: Date
+            let takeoffMonotonicSeconds: Double
+            let landingMonotonicSeconds: Double
+            let airtime: TimeInterval
+        }
+        let legacy = LegacyJump(
+            takeoffTimestamp: Date(timeIntervalSince1970: 1_000),
+            landingTimestamp: Date(timeIntervalSince1970: 1_000.4),
+            takeoffMonotonicSeconds: 1,
+            landingMonotonicSeconds: 1.4,
+            airtime: 0.4)
+
+        let decoded = try JSONDecoder().decode(
+            JumpEvent.self,
+            from: try JSONEncoder().encode(legacy))
+
+        XCTAssertEqual(decoded.airtime, 0.4, accuracy: 0.001)
+        XCTAssertNil(decoded.metrics)
+        XCTAssertFalse(decoded.isResolved)
+    }
+
+    func testRideDayAggregatesJumpSize() throws {
+        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try ModelContainer(
+            for: RideDay.self, RideSegment.self, configurations: configuration)
+        let context = ModelContext(container)
+        let base = Date(timeIntervalSince1970: 60_000)
+        let day = RideDay(startedAt: base)
+        let metrics = JumpMetrics(
+            takeoffCoordinate: Coordinate(latitude: 50, longitude: -122),
+            landingCoordinate: Coordinate(latitude: 50.0001, longitude: -122),
+            lengthMeters: 12,
+            heightMeters: 1.2,
+            dropMeters: 0.8)
+        let jump = JumpEvent(
+            takeoffTimestamp: base,
+            landingTimestamp: base.addingTimeInterval(0.6),
+            takeoffMonotonicSeconds: 0,
+            landingMonotonicSeconds: 0.6,
+            metrics: metrics)
+        let segment = RideSegment(
+            kind: .run, startedAt: base, endedAt: base.addingTimeInterval(30),
+            routeData: Data(), jumps: [jump])
+        segment.day = day
+        day.segments.append(segment)
+        context.insert(day)
+        context.insert(segment)
+        try context.save()
+
+        let saved = try XCTUnwrap(context.fetch(FetchDescriptor<RideDay>()).first)
+        XCTAssertEqual(saved.maximumJumpLengthMeters, 12, accuracy: 0.001)
+        XCTAssertEqual(saved.maximumJumpHeightMeters, 1.2, accuracy: 0.001)
+        XCTAssertEqual(saved.maximumJumpDropMeters, 0.8, accuracy: 0.001)
+        XCTAssertEqual(saved.totalJumpDistanceMeters, 12, accuracy: 0.001)
+        XCTAssertEqual(saved.totalJumpAirtime, 0.6, accuracy: 0.001)
+    }
+
+    func testJumpComparisonBuilderMatchesAcrossRunsByLocation() throws {
+        let base = Date(timeIntervalSince1970: 70_000)
+        func route(start: Date, latitudeOffset: Double) -> [RoutePoint] {
+            (0...20).map { index in
+                RoutePoint(
+                    latitude: 50 + latitudeOffset + Double(index) * 0.00009,
+                    longitude: -122.9,
+                    altitude: 200 - Double(index),
+                    speed: 9,
+                    timestamp: start.addingTimeInterval(Double(index)))
+            }
+        }
+        func resolvedJumps(points: [RoutePoint], indices: [Int], airtime: TimeInterval) -> [JumpEvent] {
+            indices.map { index in
+                let takeoff = points[index]
+                return JumpEvent(
+                    takeoffTimestamp: takeoff.timestamp,
+                    landingTimestamp: takeoff.timestamp.addingTimeInterval(airtime),
+                    takeoffMonotonicSeconds: takeoff.timestamp.timeIntervalSinceReferenceDate,
+                    landingMonotonicSeconds: takeoff.timestamp.timeIntervalSinceReferenceDate + airtime
+                ).resolved(in: points)
+            }
+        }
+
+        let firstID = UUID(uuidString: "AAAAAAAA-0000-0000-0000-000000000001")!
+        let secondID = UUID(uuidString: "AAAAAAAA-0000-0000-0000-000000000002")!
+        let thirdID = UUID(uuidString: "AAAAAAAA-0000-0000-0000-000000000003")!
+        let firstRoute = route(start: base, latitudeOffset: 0)
+        let secondRoute = route(start: base.addingTimeInterval(600), latitudeOffset: 0.00002)
+        let farRoute = route(start: base.addingTimeInterval(1_200), latitudeOffset: 0.01)
+
+        let comparisons = SessionJumpComparisonBuilder.build(runs: [
+            .init(
+                segmentID: firstID, runNumber: 1,
+                jumps: resolvedJumps(points: firstRoute, indices: [4, 12], airtime: 0.5)),
+            .init(
+                segmentID: secondID, runNumber: 2,
+                jumps: resolvedJumps(points: secondRoute, indices: [4, 12], airtime: 0.6)),
+            .init(
+                segmentID: thirdID, runNumber: 3,
+                jumps: resolvedJumps(points: farRoute, indices: [4], airtime: 0.5)),
+        ])
+
+        XCTAssertEqual(comparisons.features.count, 3)
+        let firstJump = try XCTUnwrap(
+            comparisons.feature(forAttemptID: "\(firstID.uuidString)-0"))
+        XCTAssertEqual(firstJump.attempts.map(\.runNumber), [1, 2])
+        let secondJump = try XCTUnwrap(
+            comparisons.feature(forAttemptID: "\(secondID.uuidString)-1"))
+        XCTAssertEqual(secondJump.attempts.map(\.runNumber), [1, 2])
+        let farJump = try XCTUnwrap(
+            comparisons.feature(forAttemptID: "\(thirdID.uuidString)-0"))
+        XCTAssertEqual(farJump.attempts.map(\.runNumber), [3])
+    }
+
+    func testLiveActivityShownMetricsFallsBackAndCapsSelection() {
+        let legacy = BermsActivityAttributes.ContentState(
+            phase: "run", isPaused: false, runCount: 2, startedAt: Date(timeIntervalSince1970: 80_000),
+            elapsedSeconds: 30, distanceMeters: 0, descentMeters: 100, topSpeedMetersPerSecond: 0,
+            metric: .descent)
+        XCTAssertEqual(legacy.shownMetrics, [.descent])
+
+        let decoded = try? JSONDecoder().decode(
+            BermsActivityAttributes.ContentState.self,
+            from: JSONEncoder().encode(legacy))
+        XCTAssertEqual(decoded?.shownMetrics, [.descent])
+
+        let capped = BermsActivityAttributes.ContentState(
+            phase: "run", isPaused: false, runCount: 2, startedAt: Date(timeIntervalSince1970: 80_000),
+            elapsedSeconds: 30, distanceMeters: 0, descentMeters: 100, topSpeedMetersPerSecond: 0,
+            metric: .longestJump,
+            metrics: [.longestJump, .highestJump, .biggestDrop, .jumps])
+        XCTAssertEqual(capped.shownMetrics, [.longestJump, .highestJump, .biggestDrop])
+
+        let none = BermsActivityAttributes.ContentState(
+            phase: "run", isPaused: false, runCount: 2, startedAt: Date(timeIntervalSince1970: 80_000),
+            elapsedSeconds: 30, distanceMeters: 0, descentMeters: 100, topSpeedMetersPerSecond: 0,
+            metric: .descent,
+            metrics: [])
+        XCTAssertTrue(none.shownMetrics.isEmpty, "Deselecting every stat shows only time and runs")
     }
 
     private func runContext(

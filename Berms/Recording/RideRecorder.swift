@@ -252,7 +252,7 @@ enum DiagnosticSummaryRebuilder {
                 distanceMeters: cleaned.distance,
                 verticalMeters: cleaned.vertical,
                 maximumSpeedMetersPerSecond: cleaned.maximumSpeed,
-                jumps: draft.jumps
+                jumps: draft.jumps.map { $0.resolved(in: cleaned.points) }
             )
         }
         guard !summaries.isEmpty else { return nil }
@@ -343,7 +343,7 @@ enum DiagnosticSummaryRebuilder {
         kind: SegmentKind
     ) -> (
         routeData: Data, distance: Double,
-        vertical: Double, maximumSpeed: Double
+        vertical: Double, maximumSpeed: Double, points: [RoutePoint]
     )? {
         let cleanedPoints = RouteCleaner().clean(samples).map(\.routePoint)
         guard cleanedPoints.count >= 2, let routeData = try? RouteCodec.encode(cleanedPoints) else {
@@ -353,7 +353,8 @@ enum DiagnosticSummaryRebuilder {
             routeData,
             RouteMetrics.distance(of: cleanedPoints),
             RouteMetrics.vertical(of: cleanedPoints, kind: kind),
-            RouteMetrics.maximumSpeed(of: cleanedPoints)
+            RouteMetrics.maximumSpeed(of: cleanedPoints),
+            cleanedPoints
         )
     }
 
@@ -384,6 +385,7 @@ final class RideRecorder: ObservableObject {
     private static let diagnosticSummaryVersionKey = "berms.diagnosticSummaryVersion"
     private static let rawMotionLoggingKey = "berms.rawMotionLogging"
     private static let liveActivityMetricKey = "berms.liveActivityMetric"
+    private static let liveActivityMetricsKey = "berms.liveActivityMetrics"
     private static let activityModeKey = "berms.activityMode"
 
     @Published private(set) var activeDay: RideDay?
@@ -394,7 +396,7 @@ final class RideRecorder: ObservableObject {
     @Published private(set) var motionAvailable = true
     @Published private(set) var jumpSensitivity: JumpSensitivity
     @Published private(set) var rawMotionLoggingEnabled: Bool
-    @Published private(set) var liveActivityMetric: BermsLiveActivityMetric
+    @Published private(set) var liveActivityMetrics: [BermsLiveActivityMetric]
     @Published private(set) var selectedActivityMode: ActivityMode
     @Published private(set) var isRestoring = false
     @Published private(set) var needsRecoveryPrompt = false
@@ -438,10 +440,7 @@ final class RideRecorder: ObservableObject {
             ?? .standard
         jumpSensitivity = storedSensitivity
         rawMotionLoggingEnabled = UserDefaults.standard.bool(forKey: Self.rawMotionLoggingKey)
-        liveActivityMetric =
-            BermsLiveActivityMetric(
-                rawValue: UserDefaults.standard.string(forKey: Self.liveActivityMetricKey) ?? ""
-            ) ?? .descent
+        liveActivityMetrics = Self.storedLiveActivityMetrics()
         jumpDetector = JumpDetector(configuration: storedSensitivity.configuration)
         self.context = context ?? PersistenceController.shared.container.mainContext
         self.watchStateSink = watchStateSink
@@ -593,6 +592,39 @@ final class RideRecorder: ObservableObject {
         return completed + jumpsForCurrentRun.reduce(0) { $0 + $1.airtime }
     }
 
+    var activeLongestJumpLength: Double {
+        max(completedJumpMaximum(\.lengthMeters), currentRunJumpMaximum(\.lengthMeters))
+    }
+
+    var activeHighestJump: Double {
+        max(completedJumpMaximum(\.heightMeters), currentRunJumpMaximum(\.heightMeters))
+    }
+
+    var activeBiggestJumpDrop: Double {
+        max(completedJumpMaximum(\.dropMeters), currentRunJumpMaximum(\.dropMeters))
+    }
+
+    /// Jumps from the in-progress run, measured against the route so far. A jump
+    /// detected seconds ago gains its landing point as GPS catches up.
+    private var resolvedLiveJumps: [JumpEvent] {
+        guard !jumpsForCurrentRun.isEmpty else { return [] }
+        let routePoints = activePoints.map(\.routePoint)
+        guard routePoints.count >= 2 else { return jumpsForCurrentRun }
+        return jumpsForCurrentRun.map { $0.resolved(in: routePoints) }
+    }
+
+    private func completedJumpMaximum(_ keyPath: KeyPath<JumpEvent, Double?>) -> Double {
+        (activeDay?.segments ?? [])
+            .filter { $0.kind == .run }
+            .flatMap(\.jumps)
+            .compactMap { $0[keyPath: keyPath] }
+            .max() ?? 0
+    }
+
+    private func currentRunJumpMaximum(_ keyPath: KeyPath<JumpEvent, Double?>) -> Double {
+        resolvedLiveJumps.compactMap { $0[keyPath: keyPath] }.max() ?? 0
+    }
+
     var activeTopSpeed: Double {
         let currentRunPoints = phase == .run ? activePoints.map(\.routePoint) : []
         return max(
@@ -631,11 +663,36 @@ final class RideRecorder: ObservableObject {
             ))
     }
 
-    func setLiveActivityMetric(_ metric: BermsLiveActivityMetric) {
-        guard metric != liveActivityMetric else { return }
-        liveActivityMetric = metric
-        UserDefaults.standard.set(metric.rawValue, forKey: Self.liveActivityMetricKey)
+    func setLiveActivityMetric(_ metric: BermsLiveActivityMetric, enabled: Bool) {
+        var metrics = liveActivityMetrics
+        if enabled {
+            guard !metrics.contains(metric),
+                metrics.count < BermsLiveActivityMetric.selectionLimit
+            else { return }
+            metrics.append(metric)
+        } else {
+            guard metrics.contains(metric) else { return }
+            metrics.removeAll { $0 == metric }
+        }
+        liveActivityMetrics = metrics
+        UserDefaults.standard.set(metrics.map(\.rawValue), forKey: Self.liveActivityMetricsKey)
         updateLiveActivity(force: true)
+    }
+
+    private static func storedLiveActivityMetrics() -> [BermsLiveActivityMetric] {
+        if UserDefaults.standard.object(forKey: liveActivityMetricsKey) != nil {
+            let stored = UserDefaults.standard.stringArray(forKey: liveActivityMetricsKey) ?? []
+            return Array(
+                stored.compactMap(BermsLiveActivityMetric.init(rawValue:))
+                    .prefix(BermsLiveActivityMetric.selectionLimit))
+        }
+        // Before multiple stats were selectable there was a single choice.
+        if let legacy = BermsLiveActivityMetric(
+            rawValue: UserDefaults.standard.string(forKey: liveActivityMetricKey) ?? "")
+        {
+            return [legacy]
+        }
+        return [.descent]
     }
 
     private static func pruneOldDiagnosticLogs() {
@@ -711,7 +768,7 @@ final class RideRecorder: ObservableObject {
             BermsLiveActivityCoordinator.shared.start(
                 rideID: day.id,
                 startedAt: day.startedAt,
-                metric: liveActivityMetric,
+                metrics: liveActivityMetrics,
                 activityModeRawValue: day.activityMode.rawValue
             )
             startSensors()
@@ -1178,7 +1235,7 @@ final class RideRecorder: ObservableObject {
         BermsLiveActivityCoordinator.shared.start(
             rideID: day.id,
             startedAt: day.startedAt,
-            metric: liveActivityMetric,
+            metrics: liveActivityMetrics,
             activityModeRawValue: day.activityMode.rawValue
         )
         if day.isPaused {
@@ -1512,11 +1569,14 @@ final class RideRecorder: ObservableObject {
             distance: day.distanceMeters,
             descent: day.descentMeters,
             topSpeed: activeTopSpeed,
-            metric: liveActivityMetric,
+            metrics: liveActivityMetrics,
             jumpCount: activeJumpCount,
             liftCount: completedLiftCount,
             longestAirtime: activeLongestJumpAirtime,
             totalAirtime: activeTotalJumpAirtime,
+            maximumJumpLength: activeLongestJumpLength,
+            maximumJumpHeight: activeHighestJump,
+            maximumJumpDrop: activeBiggestJumpDrop,
             activityModeRawValue: day.activityMode.rawValue,
             force: force
         )
@@ -1616,7 +1676,8 @@ final class RideRecorder: ObservableObject {
     private func save(_ draft: SegmentDraft, to day: RideDay) {
         let cleanedPoints = RouteCleaner().clean(draft.points).map(\.routePoint)
         guard cleanedPoints.count >= 2, let data = try? RouteCodec.encode(cleanedPoints) else { return }
-        let jumps = draft.kind == .run ? (draft.jumps.isEmpty ? jumpsForCurrentRun : draft.jumps) : []
+        let rawJumps = draft.kind == .run ? (draft.jumps.isEmpty ? jumpsForCurrentRun : draft.jumps) : []
+        let jumps = rawJumps.map { $0.resolved(in: cleanedPoints) }
         let segment = RideSegment(
             kind: draft.kind, startedAt: draft.startedAt,
             endedAt: draft.endedAt, routeData: data, jumps: jumps)

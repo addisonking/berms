@@ -9,6 +9,11 @@ public enum BermsLiveActivityMetric: String, Codable, CaseIterable, Identifiable
     case lifts
     case longestAirtime
     case totalAirtime
+    case longestJump
+    case highestJump
+    case biggestDrop
+
+    public static let selectionLimit = 3
 
     public var id: String { rawValue }
 
@@ -21,6 +26,9 @@ public enum BermsLiveActivityMetric: String, Codable, CaseIterable, Identifiable
         case .lifts: "Lifts"
         case .longestAirtime: "Longest airtime"
         case .totalAirtime: "Total airtime"
+        case .longestJump: "Longest jump"
+        case .highestJump: "Highest air"
+        case .biggestDrop: "Biggest drop"
         }
     }
 }
@@ -40,6 +48,10 @@ public struct BermsActivityAttributes: ActivityAttributes {
         public var liftCount: Int
         public var longestAirtime: TimeInterval
         public var totalAirtime: TimeInterval
+        public var maximumJumpLengthMeters: Double?
+        public var maximumJumpHeightMeters: Double?
+        public var maximumJumpDropMeters: Double?
+        public var metrics: [BermsLiveActivityMetric]?
         public var lastUpdated: Date
         public var activityModeRawValue: String?
 
@@ -51,12 +63,24 @@ public struct BermsActivityAttributes: ActivityAttributes {
             isSkiDay ? "Ski day" : "Berms"
         }
 
+        /// The rider's chosen stats, capped so one activity never crowds. Older
+        /// activities only carry the single legacy metric.
+        public var shownMetrics: [BermsLiveActivityMetric] {
+            guard let metrics else { return [metric] }
+            return Array(metrics.prefix(BermsLiveActivityMetric.selectionLimit))
+        }
+
         public init(
             phase: String, isPaused: Bool, runCount: Int, startedAt: Date,
             elapsedSeconds: TimeInterval, distanceMeters: Double, descentMeters: Double,
             topSpeedMetersPerSecond: Double, metric: BermsLiveActivityMetric = .descent,
             jumpCount: Int = 0, liftCount: Int = 0, longestAirtime: TimeInterval = 0,
-            totalAirtime: TimeInterval = 0, lastUpdated: Date = .now,
+            totalAirtime: TimeInterval = 0,
+            maximumJumpLengthMeters: Double? = nil,
+            maximumJumpHeightMeters: Double? = nil,
+            maximumJumpDropMeters: Double? = nil,
+            metrics: [BermsLiveActivityMetric]? = nil,
+            lastUpdated: Date = .now,
             activityModeRawValue: String? = nil
         ) {
             self.phase = phase
@@ -72,6 +96,10 @@ public struct BermsActivityAttributes: ActivityAttributes {
             self.liftCount = liftCount
             self.longestAirtime = longestAirtime
             self.totalAirtime = totalAirtime
+            self.maximumJumpLengthMeters = maximumJumpLengthMeters
+            self.maximumJumpHeightMeters = maximumJumpHeightMeters
+            self.maximumJumpDropMeters = maximumJumpDropMeters
+            self.metrics = metrics
             self.lastUpdated = lastUpdated
             self.activityModeRawValue = activityModeRawValue
         }

@@ -171,6 +171,11 @@ struct DayDetailView: View {
                     }
                 }
             }
+            if jumpSummaryCount > 0 {
+                Section("Jumps") {
+                    jumpSummary
+                }
+            }
             Section("Journal") {
                 TextEditor(text: $notesDraft)
                     .frame(minHeight: 140)
@@ -373,6 +378,43 @@ struct DayDetailView: View {
                         label: "Jumps",
                         value: detailBase.map { "\($0.jumpCount)" } ?? "…",
                         tint: .primary)
+                }
+            }
+        }
+    }
+
+    private var jumpSummaryCount: Int {
+        detailBase?.jumpCount ?? day.jumpCount
+    }
+
+    private var jumpSummary: some View {
+        VStack(alignment: .leading, spacing: BermsSpacing.control) {
+            VStack(spacing: BermsSpacing.content) {
+                AdaptiveStatRow {
+                    SummaryStat(
+                        label: "Longest jump",
+                        value: detailBase.map { BermsFormat.jumpSize($0.longestJumpLengthMeters) } ?? "…",
+                        tint: .primary)
+                    SummaryStat(
+                        label: "Highest air",
+                        value: detailBase.map { BermsFormat.jumpSize($0.highestJumpMeters) } ?? "…",
+                        tint: .primary)
+                }
+                AdaptiveStatRow {
+                    SummaryStat(
+                        label: "Biggest drop",
+                        value: detailBase.map { BermsFormat.jumpSize($0.biggestJumpDropMeters) } ?? "…")
+                    SummaryStat(
+                        label: "Total jumps",
+                        value: detailBase.map { "\($0.jumpCount)" } ?? "…")
+                }
+                AdaptiveStatRow {
+                    SummaryStat(
+                        label: "Total airtime",
+                        value: detailBase.map { BermsFormat.airtime($0.totalJumpAirtime) } ?? "…")
+                    SummaryStat(
+                        label: "Total jump distance",
+                        value: detailBase.map { BermsFormat.distance($0.totalJumpDistanceMeters) } ?? "…")
                 }
             }
         }

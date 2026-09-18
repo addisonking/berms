@@ -184,6 +184,26 @@ final class RideDay {
         segments.filter { $0.kind == .run }.flatMap(\.jumps).map(\.airtime).max() ?? 0
     }
 
+    var totalJumpAirtime: TimeInterval {
+        segments.filter { $0.kind == .run }.flatMap(\.jumps).reduce(0) { $0 + $1.airtime }
+    }
+
+    var totalJumpDistanceMeters: Double {
+        segments.filter { $0.kind == .run }.flatMap(\.jumps).compactMap(\.lengthMeters).reduce(0, +)
+    }
+
+    var maximumJumpLengthMeters: Double {
+        segments.filter { $0.kind == .run }.flatMap(\.jumps).compactMap(\.lengthMeters).max() ?? 0
+    }
+
+    var maximumJumpHeightMeters: Double {
+        segments.filter { $0.kind == .run }.flatMap(\.jumps).compactMap(\.heightMeters).max() ?? 0
+    }
+
+    var maximumJumpDropMeters: Double {
+        segments.filter { $0.kind == .run }.flatMap(\.jumps).compactMap(\.dropMeters).max() ?? 0
+    }
+
     func recalculateTotals() {
         let runs = segments.filter { $0.kind == .run }
         let lifts = segments.filter { $0.kind == .lift }
@@ -314,11 +334,17 @@ struct BermsDataExport: Codable, Sendable {
         let takeoffAt: Date
         let landingAt: Date
         let airtimeSeconds: Double
+        let lengthMeters: Double?
+        let heightMeters: Double?
+        let dropMeters: Double?
 
         init(_ jump: JumpEvent) {
             takeoffAt = jump.takeoffTimestamp
             landingAt = jump.landingTimestamp
             airtimeSeconds = jump.airtime
+            lengthMeters = jump.lengthMeters
+            heightMeters = jump.heightMeters
+            dropMeters = jump.dropMeters
         }
     }
 
@@ -404,7 +430,7 @@ struct BermsDataExport: Codable, Sendable {
         }
 
         format = "berms.day"
-        version = 4
+        version = 5
         self.exportedAt = exportedAt
         days = [
             Day(

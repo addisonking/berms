@@ -205,6 +205,17 @@ enum SessionDetailPresentationPreheater {
         return .init(base: entry.base, detail: detail, trailDetails: entry.trailDetails)
     }
 
+    /// Groups the day's jumps by landing spot off the caller's actor, so a run
+    /// can compare its jumps with the session's other runs.
+    static func prepareJumpComparisons(
+        dayID: UUID,
+        container: ModelContainer
+    ) async -> SessionJumpComparisons? {
+        await Task.detached(priority: .userInitiated) {
+            SessionJumpComparisonBuilder.build(dayID: dayID, container: container)
+        }.value
+    }
+
     static func trailRevision(for trails: [Trail]) -> String {
         trails
             .map { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" }
