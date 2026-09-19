@@ -20,3 +20,5 @@ jobs:
       - uses: actions/checkout@v5
       - name: Check formatting and lint
         run: ./scripts/lint.sh
+      - name: Check build identity across Git workflows
+        run: python3 scripts/test-build-identity.py
