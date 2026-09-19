@@ -21,6 +21,16 @@ References:
 
 Preserve the centered start composition: center the icon, description, Start button, and supporting text in the available screen, with scrolling only when content does not fit. During recording, keep the map full-screen behind a compact floating stats panel above the tab bar. Size that panel to its content; never give it a large empty fixed-height background or replace it with an edge-to-edge bottom block. Keep the recording navigation chrome transparent and avoid a redundant Recording title. These are explicit user preferences from the September 9 visual review.
 
+## Pre-release build identity
+
+- Settings → About Berms Beta shows the build's Git commit, local-change status, and build time, with Share Build Details for comparing phones. Everything is embedded and works offline.
+- The Berms target runs `scripts/write-build-identity.py` on every build, including Release/archive and incremental builds. It writes only into the built app, never into tracked source files.
+- Build from a Git clone or worktree. Use the actual checkout's `HEAD`, never `main`, `origin/main`, commit counts, branch names, or a manually chosen version. Worktrees, detached checkouts, and shallow clones work without fetching.
+- After merging a PR (including squash/rebase), build from updated main to distribute that main commit. A build made before merging still identifies its original commit; merging cannot change an already-installed app.
+- No agent should ask what pre-release version to bump or manually bump versions for ordinary changes. Commit identity updates automatically. Keep Apple's numeric bundle versions separate from this source identity; any future TestFlight upload workflow must supply its own increasing numeric build number consistently across the app and extensions.
+- Uncommitted tracked, staged, and untracked files mark a build as Local changes. Share details include a UTC build time to distinguish these builds; only clean builds can be identified by commit alone.
+- Verify the generator with `python3 scripts/test-build-identity.py`.
+
 ## Lint and format
 
 Swift formatting and linting use Apple's `swift-format` with the repo-root `.swift-format` config (4-space indent, 120-column lines, force-unwrap and `.forEach` rules on).

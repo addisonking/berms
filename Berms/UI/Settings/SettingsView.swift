@@ -116,6 +116,7 @@ struct SettingsView: View {
                         "Keeps high-rate motion samples with each ride so sessions can be re-analyzed. Uses extra storage and is off by default."
                     )
                 }
+                BuildIdentitySection()
             }
             .navigationTitle("Settings")
             .navigationSubtitle("Beta")
@@ -125,6 +126,46 @@ struct SettingsView: View {
                     Button("Done") { dismiss() }
                 }
             }
+        }
+    }
+}
+
+private struct BuildIdentitySection: View {
+    var body: some View {
+        Section {
+            if let identity = BuildIdentity.current {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Build")
+                    Text(verbatim: identity.shortCommit)
+                        .monospaced()
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                    if identity.hasLocalChanges {
+                        Text("Local changes")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .accessibilityElement(children: .combine)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Built")
+                    Text(identity.builtAt, format: .dateTime.year().month().day().hour().minute().second())
+                        .foregroundStyle(.secondary)
+                }
+                .accessibilityElement(children: .combine)
+
+                ShareLink("Share Build Details", item: identity.shareText)
+            } else {
+                Text("Build details unavailable")
+                    .foregroundStyle(.secondary)
+            }
+        } header: {
+            Text("About Berms Beta")
+        } footer: {
+            Text(
+                "Compare build IDs to see whether you and your friends have the same version. Local changes aren't included in the commit."
+            )
         }
     }
 }
