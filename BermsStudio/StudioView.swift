@@ -199,7 +199,7 @@ struct StudioView: View {
                     try FootageScanner.clips(fromFiles: videoFiles)
                 }.value
                 let newDays = try await Task.detached {
-                    try logFiles.flatMap(Self.loadDay)
+                    try Self.loadDays(logFiles)
                 }.value
 
                 if !newClips.isEmpty { library.add(clips: newClips) }
@@ -288,11 +288,16 @@ struct StudioView: View {
         return process.terminationStatus == 0 ? destination : nil
     }
 
-    nonisolated private static func loadDay(_ url: URL) throws -> [StudioDay] {
-        if url.pathExtension.lowercased() == "jsonl" {
-            return [try DiagnosticsImporter.loadDay(url: url)]
-        }
-        return try StudioExport.load(url).studioDays()
+    nonisolated private static func loadDays(_ urls: [URL]) throws -> [StudioDay] {
+        let parsed =
+            try urls
+            .filter { $0.pathExtension.lowercased() == "json" }
+            .flatMap { try StudioExport.load($0).studioDays() }
+        let parsedIDs = Set(parsed.map(\.id))
+        let raw = DiagnosticsImporter.rawLogs(
+            urls.filter { $0.pathExtension.lowercased() == "jsonl" },
+            notCoveredBy: parsedIDs)
+        return parsed + (try raw.map { try DiagnosticsImporter.loadDay(url: $0) })
     }
 }
 
