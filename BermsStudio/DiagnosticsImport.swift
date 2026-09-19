@@ -33,8 +33,7 @@ enum DiagnosticsImporter {
             throw DiagnosticsImportError.noSegments(url)
         }
 
-        let filename = url.deletingPathExtension().lastPathComponent
-        let dayID = filename.hasPrefix("Berms-") ? String(filename.dropFirst(6)) : filename
+        let dayID = dayID(for: url)
         let segments = replay.segments.enumerated().map { index, draft in
             makeSegment(draft, id: "\(dayID)-seg-\(index + 1)")
         }
@@ -44,6 +43,19 @@ enum DiagnosticsImporter {
         return StudioDay(
             id: dayID, name: nil, startedAt: startedAt, endedAt: endedAt,
             segments: segments)
+    }
+
+    /// Day identifier encoded in a `Berms-<dayID>.jsonl` log filename.
+    static func dayID(for url: URL) -> String {
+        let filename = url.deletingPathExtension().lastPathComponent
+        return filename.hasPrefix("Berms-") ? String(filename.dropFirst(6)) : filename
+    }
+
+    /// Raw logs rebuild the original run boundaries, so days already covered by a
+    /// parsed `*-data.json` export skip their logs and keep the parsed runs.
+    static func rawLogs(_ urls: [URL], notCoveredBy parsedDayIDs: Set<String>) -> [URL] {
+        let covered = Set(parsedDayIDs.map { $0.lowercased() })
+        return urls.filter { !covered.contains(dayID(for: $0).lowercased()) }
     }
 
     private static func makeSegment(_ draft: SegmentDraft, id: String) -> StudioSegment {
