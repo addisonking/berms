@@ -550,17 +550,21 @@ struct TrackView: View {
     }
 
     private var activityModePicker: some View {
-        Picker(selection: activityModeBinding) {
-            ForEach(ActivityMode.allCases) { mode in
-                Label(mode.title, systemImage: mode.systemImage)
-                    .tag(mode)
+        Menu {
+            Picker("Activity mode", selection: activityModeBinding) {
+                ForEach(ActivityMode.allCases) { mode in
+                    Label(mode.title, systemImage: mode.systemImage)
+                        .tag(mode)
+                }
             }
+            .pickerStyle(.inline)
         } label: {
             Image(systemName: recorder.selectedActivityMode.systemImage)
+                .font(.headline)
+                .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
                 .frame(width: BermsSpacing.target, height: BermsSpacing.target)
                 .contentShape(.rect)
         }
-        .pickerStyle(.menu)
         .accessibilityLabel("Activity mode")
     }
 
