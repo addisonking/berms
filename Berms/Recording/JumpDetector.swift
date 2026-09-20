@@ -22,33 +22,70 @@ struct JumpMetrics: Hashable, Sendable {
 
     static let gravity = 9.80665
     /// The longest route gap that still counts as a bracket for interpolation.
-    static let maximumInterpolationGap: TimeInterval = 5
+    /// A jump is short, so a wider gap would interpolate position and altitude
+    /// across ground the rider never covered.
+    static let maximumInterpolationGap: TimeInterval = 2
     static let maximumHeightMeters: Double = 25
+    /// A measured length implying a ground speed this far above the fastest
+    /// recorded nearby speed is GPS position noise rather than a jump.
+    static let maximumLengthSpeedFactor: Double = 1.5
+    static let maximumLengthSpeedSlackMetersPerSecond: Double = 6
 
     static func resolve(
         takeoffTimestamp: Date,
         landingTimestamp: Date,
         airtime: TimeInterval,
-        in routePoints: [RoutePoint]
+        positions: [RoutePoint],
+        altitudes: [RoutePoint]? = nil
     ) -> JumpMetrics? {
-        guard routePoints.count >= 2,
-            let takeoff = interpolatedPoint(at: takeoffTimestamp, in: routePoints),
-            let landing = interpolatedPoint(at: landingTimestamp, in: routePoints)
+        let altitudePoints = altitudes ?? positions
+        guard positions.count >= 2, altitudePoints.count >= 2,
+            let takeoff = interpolatedPoint(at: takeoffTimestamp, in: positions),
+            let landing = interpolatedPoint(at: landingTimestamp, in: positions),
+            let takeoffAltitude = interpolatedPoint(at: takeoffTimestamp, in: altitudePoints),
+            let landingAltitude = interpolatedPoint(at: landingTimestamp, in: altitudePoints)
         else { return nil }
 
         let takeoffCoordinate = Coordinate(latitude: takeoff.latitude, longitude: takeoff.longitude)
         let landingCoordinate = Coordinate(latitude: landing.latitude, longitude: landing.longitude)
-        let drop = takeoff.altitude - landing.altitude
+        let drop = takeoffAltitude.altitude - landingAltitude.altitude
+        let length = takeoffCoordinate.distance(to: landingCoordinate)
+        if airtime > 0,
+            let maximumSpeed = maximumNearbySpeed(from: takeoffTimestamp, to: landingTimestamp, in: positions)
+        {
+            let plausibleSpeed = max(
+                maximumSpeed * maximumLengthSpeedFactor,
+                maximumSpeed + maximumLengthSpeedSlackMetersPerSecond)
+            if length / airtime > plausibleSpeed {
+                return nil
+            }
+        }
         // Height is peak height above the landing, the number riders compare to
         // the size of the drop or booter they hit. On a pure drop-off the arc
-        // adds almost nothing and the height is the drop itself.
-        let height = airHeight(airtime: airtime, dropMeters: drop) + max(drop, 0)
+        // adds almost nothing and the height is the drop itself; a step-up
+        // lands above the takeoff, so the climb subtracts from the arc.
+        let height = max(0, airHeight(airtime: airtime, dropMeters: drop) + drop)
         return JumpMetrics(
             takeoffCoordinate: takeoffCoordinate,
             landingCoordinate: landingCoordinate,
-            lengthMeters: takeoffCoordinate.distance(to: landingCoordinate),
+            lengthMeters: length,
             heightMeters: height,
             dropMeters: drop)
+    }
+
+    private static func maximumNearbySpeed(
+        from takeoffTimestamp: Date,
+        to landingTimestamp: Date,
+        in points: [RoutePoint]
+    ) -> Double? {
+        let lowerBound = takeoffTimestamp.addingTimeInterval(-maximumInterpolationGap)
+        let upperBound = landingTimestamp.addingTimeInterval(maximumInterpolationGap)
+        return
+            points
+            .filter { $0.timestamp >= lowerBound && $0.timestamp <= upperBound }
+            .map(\.speed)
+            .filter { $0.isFinite && $0 > 0 }
+            .max()
     }
 
     /// Peak height of a ballistic arc that is airborne for `airtime` and lands
@@ -136,14 +173,17 @@ struct JumpEvent: Codable, Hashable, Sendable {
     var isResolved: Bool { metrics != nil }
 
     /// Returns a copy carrying measured size when the route around the jump is
-    /// known. Already-resolved jumps are returned untouched.
-    func resolved(in routePoints: [RoutePoint]) -> JumpEvent {
+    /// known. Already-resolved jumps are returned untouched. Positions and
+    /// altitudes can come from different point sets so a cleaned route supplies
+    /// the length while the raw altitude series supplies the drop.
+    func resolved(in routePoints: [RoutePoint], altitudes altitudePoints: [RoutePoint]? = nil) -> JumpEvent {
         guard !isResolved,
             let metrics = JumpMetrics.resolve(
                 takeoffTimestamp: takeoffTimestamp,
                 landingTimestamp: landingTimestamp,
                 airtime: airtime,
-                in: routePoints)
+                positions: routePoints,
+                altitudes: altitudePoints)
         else { return self }
         return JumpEvent(
             takeoffTimestamp: takeoffTimestamp,
@@ -166,17 +206,25 @@ final class JumpDetector: @unchecked Sendable {
         var maximumTrackContextAge: TimeInterval = 2.5
         var maximumMotionGap: TimeInterval = 0.25
         var lowForceThresholdG: Double = 0.55
-        var minimumAirtime: TimeInterval = 0.12
+        /// Force above this means the wheels are back on the ground. A sample
+        /// this high before the landing impact ends the candidate instead of
+        /// letting ordinary riding stretch the airtime.
+        var airborneCeilingG: Double = 0.85
+        /// Minimum share of samples in the window that must be below
+        /// `lowForceThresholdG` for the window to stay open.
+        var minimumLowForceCoverage: Double = 0.7
+        var minimumAirtime: TimeInterval = 0.28
         var maximumAirtime: TimeInterval = 1.25
         var landingImpactThresholdG: Double = 1.35
         var maximumAirborneRotationRate: Double = 8.0
         var cooldown: TimeInterval = 1.5
 
-        var version: String { "jump-detector-v1" }
+        var version: String { "jump-detector-v2" }
 
         var summary: String {
             "version=\(version),minSpeed=\(minimumRidingSpeed),minRun=\(minimumRunContextSeconds),"
                 + "contextAge=\(maximumTrackContextAge),lowForceG=\(lowForceThresholdG),"
+                + "airCeilingG=\(airborneCeilingG),minCoverage=\(minimumLowForceCoverage),"
                 + "minAir=\(minimumAirtime),maxAir=\(maximumAirtime),landingG=\(landingImpactThresholdG),"
                 + "maxRotation=\(maximumAirborneRotationRate),cooldown=\(cooldown)"
         }
@@ -186,6 +234,8 @@ final class JumpDetector: @unchecked Sendable {
     private var previousSample: DeviceMotionSample?
     private var candidateStart: DeviceMotionSample?
     private var candidateMaximumRotationRate = 0.0
+    private var candidateSampleCount = 0
+    private var candidateLowForceSamples = 0
     private var runContextStart: Double?
     private var cooldownUntil: Double?
 
@@ -205,6 +255,8 @@ final class JumpDetector: @unchecked Sendable {
         previousSample = nil
         candidateStart = nil
         candidateMaximumRotationRate = 0
+        candidateSampleCount = 0
+        candidateLowForceSamples = 0
         runContextStart = nil
         cooldownUntil = nil
     }
@@ -280,6 +332,10 @@ final class JumpDetector: @unchecked Sendable {
         let rotationRate = rotationRateMagnitude(of: sample)
         if let candidateStart {
             candidateMaximumRotationRate = max(candidateMaximumRotationRate, rotationRate)
+            candidateSampleCount += 1
+            if forceG <= configuration.lowForceThresholdG {
+                candidateLowForceSamples += 1
+            }
             let airtime = sample.monotonicSeconds - candidateStart.monotonicSeconds
             guard airtime <= configuration.maximumAirtime else {
                 return rejectCandidate(sample, reason: "airtime_too_long")
@@ -293,6 +349,15 @@ final class JumpDetector: @unchecked Sendable {
                 return rejectCandidate(sample, reason: "airtime_too_short")
             }
             guard forceG >= configuration.landingImpactThresholdG else {
+                // Force this high means the wheels are back on the ground. An
+                // unweighting only counts as airtime while the window stays
+                // mostly low-force; ordinary riding must not stretch it.
+                let coverage = Double(candidateLowForceSamples) / Double(max(candidateSampleCount, 1))
+                guard forceG <= configuration.airborneCeilingG,
+                    coverage >= configuration.minimumLowForceCoverage
+                else {
+                    return rejectCandidate(sample, reason: "force_recovered_before_landing")
+                }
                 return []
             }
             guard candidateMaximumRotationRate <= configuration.maximumAirborneRotationRate else {
@@ -307,6 +372,8 @@ final class JumpDetector: @unchecked Sendable {
             )
             self.candidateStart = nil
             candidateMaximumRotationRate = 0
+            candidateSampleCount = 0
+            candidateLowForceSamples = 0
             cooldownUntil = sample.monotonicSeconds + configuration.cooldown
             return [.detected(event)]
         }
@@ -314,6 +381,8 @@ final class JumpDetector: @unchecked Sendable {
         guard forceG <= configuration.lowForceThresholdG else { return [] }
         self.candidateStart = sample
         candidateMaximumRotationRate = rotationRate
+        candidateSampleCount = 1
+        candidateLowForceSamples = 1
         return [
             diagnostic(
                 "jump_candidate_started", sample,
@@ -325,6 +394,8 @@ final class JumpDetector: @unchecked Sendable {
         guard candidateStart != nil else { return [] }
         candidateStart = nil
         candidateMaximumRotationRate = 0
+        candidateSampleCount = 0
+        candidateLowForceSamples = 0
         return [diagnostic("jump_candidate_rejected", sample, reason)]
     }
 
@@ -389,7 +460,9 @@ enum JumpSensitivity: String, CaseIterable, Identifiable, Equatable, Sendable {
         case .low:
             configuration.minimumRidingSpeed = 3.8
             configuration.lowForceThresholdG = 0.48
-            configuration.minimumAirtime = 0.16
+            configuration.airborneCeilingG = 0.75
+            configuration.minimumLowForceCoverage = 0.8
+            configuration.minimumAirtime = 0.35
             configuration.landingImpactThresholdG = 1.5
             configuration.cooldown = 2
         case .standard:
@@ -397,7 +470,9 @@ enum JumpSensitivity: String, CaseIterable, Identifiable, Equatable, Sendable {
         case .high:
             configuration.minimumRidingSpeed = 2.5
             configuration.lowForceThresholdG = 0.65
-            configuration.minimumAirtime = 0.1
+            configuration.airborneCeilingG = 0.9
+            configuration.minimumLowForceCoverage = 0.6
+            configuration.minimumAirtime = 0.22
             configuration.landingImpactThresholdG = 1.2
             configuration.cooldown = 1
         }

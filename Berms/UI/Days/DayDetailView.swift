@@ -586,8 +586,15 @@ enum DayArchive {
         try fileManager.createDirectory(at: folder, withIntermediateDirectories: true)
         defer { try? fileManager.removeItem(at: folder) }
 
+        // Jump timestamps need sub-second precision: airtime is stored at full
+        // precision and the two must agree.
+        let dateFormatter = ISO8601DateFormatter()
+        dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
+        encoder.dateEncodingStrategy = .custom { date, encoder in
+            var container = encoder.singleValueContainer()
+            try container.encode(dateFormatter.string(from: date))
+        }
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let json = try encoder.encode(export)
         try json.write(

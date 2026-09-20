@@ -426,7 +426,7 @@ struct BermsDataExport: Codable, Sendable {
         }
 
         format = "berms.day"
-        version = 5
+        version = 6
         self.exportedAt = exportedAt
         days = [
             Day(
