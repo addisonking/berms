@@ -12,6 +12,7 @@ final class ParkLapDetector {
         var learnedLifts: [LearnedLiftProfile] = []
         var endpointConfirmationSeconds: TimeInterval = 8
         var endpointSpeedThreshold: Double = 1.5
+        var minimumUnlearnedLiftSpeed: Double = 3
     }
 
     private var configuration: Configuration
@@ -154,6 +155,9 @@ final class ParkLapDetector {
         guard let confirmedOpposite = confirmedKind(in: candidatePoints), confirmedOpposite == opposite else {
             return []
         }
+        guard canConfirmTransition(to: opposite, in: candidatePoints) else {
+            return []
+        }
 
         let oldPoints = currentPoints
         let oldKind = expected
@@ -223,6 +227,18 @@ final class ParkLapDetector {
                     kind: expected, points: finishedPoints,
                     startedAt: firstPoint.timestamp, endedAt: lastPoint.timestamp))
         ]
+    }
+
+    private func canConfirmTransition(to kind: SegmentKind, in points: [TrackSample]) -> Bool {
+        guard kind == .lift, !configuration.learnedLifts.isEmpty else { return true }
+        guard let lastPoint = points.last else { return false }
+        if configuration.learnedLifts.contains(where: { $0.containsBottom(lastPoint.coordinate) }) {
+            return true
+        }
+        let movingPoints = points.dropFirst().filter { !$0.isStationary && !$0.isAutomotive }
+        guard !movingPoints.isEmpty else { return false }
+        let averageSpeed = movingPoints.map(\.speed).reduce(0, +) / Double(movingPoints.count)
+        return averageSpeed >= configuration.minimumUnlearnedLiftSpeed
     }
 
     private func flushEndpointCandidate() {

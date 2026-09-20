@@ -127,6 +127,111 @@ final class ParkDayTests: XCTestCase {
         XCTAssertEqual(finished.map(\.kind), [.lift, .run])
     }
 
+    func testLearnedLiftStartZonePreventsWalkingFeatureSplit() {
+        let profile = LearnedLiftProfile(
+            id: UUID(),
+            bottom: Coordinate(latitude: 40.02, longitude: -105),
+            top: Coordinate(latitude: 40.03, longitude: -105),
+            bottomRadius: 60,
+            topRadius: 60,
+            observationCount: 3,
+            confidence: 1
+        )
+        var configuration = ParkLapDetector.Configuration()
+        configuration.learnedLifts = [profile]
+        let detector = ParkLapDetector(configuration: configuration)
+        var events: [DetectorEvent] = []
+
+        for t in 0...30 {
+            events += detector.process(point(Double(t), 100 - Double(t), speed: 7, cycling: true))
+        }
+        for t in 31...38 {
+            events += detector.process(point(Double(t), 70 - Double(t - 30) * 2, speed: 2))
+        }
+        for t in 39...55 {
+            events += detector.process(point(Double(t), 54 + Double(t - 38) * 2, speed: 2))
+        }
+        for t in 56...80 {
+            events += detector.process(point(Double(t), 88 - Double(t - 55) * 2, speed: 7, cycling: true))
+        }
+
+        XCTAssertEqual(detector.phase, .run)
+        XCTAssertFalse(
+            events.contains {
+                if case .finished = $0 { return true }
+                return false
+            })
+        guard case .finished(let draft) = detector.finish() else {
+            return XCTFail("Expected the feature session to remain one run")
+        }
+        XCTAssertEqual(draft.kind, .run)
+    }
+
+    func testLearnedLiftStartZoneEndsRunAtStationAfterAscent() {
+        let profile = LearnedLiftProfile(
+            id: UUID(),
+            bottom: Coordinate(latitude: 40.0005, longitude: -105),
+            top: Coordinate(latitude: 40.01, longitude: -105),
+            bottomRadius: 30,
+            topRadius: 30,
+            observationCount: 3,
+            confidence: 1
+        )
+        var configuration = ParkLapDetector.Configuration()
+        configuration.learnedLifts = [profile]
+        let detector = ParkLapDetector(configuration: configuration)
+        var events: [DetectorEvent] = []
+
+        for t in 0...30 {
+            events += detector.process(point(Double(t), 100 - Double(t), speed: 7, cycling: true))
+        }
+        for t in 31...50 {
+            events += detector.process(point(Double(t), 70 + Double(t - 30) * 2, speed: 2))
+        }
+
+        XCTAssertEqual(detector.phase, .lift)
+        XCTAssertTrue(
+            events.contains {
+                if case .finished(let draft) = $0 { return draft.kind == .run }
+                return false
+            })
+        XCTAssertTrue(
+            events.contains {
+                if case .started(kind: .lift, points: _) = $0 { return true }
+                return false
+            })
+    }
+
+    func testUnknownLiftCanStillBeLearnedFromFasterAscent() {
+        let profile = LearnedLiftProfile(
+            id: UUID(),
+            bottom: Coordinate(latitude: 40.02, longitude: -105),
+            top: Coordinate(latitude: 40.03, longitude: -105),
+            bottomRadius: 60,
+            topRadius: 60,
+            observationCount: 3,
+            confidence: 1
+        )
+        var configuration = ParkLapDetector.Configuration()
+        configuration.learnedLifts = [profile]
+        let detector = ParkLapDetector(configuration: configuration)
+        var events: [DetectorEvent] = []
+
+        for t in 0...30 {
+            events += detector.process(point(Double(t), 100 - Double(t), speed: 7, cycling: true))
+        }
+        for t in 31...50 {
+            events += detector.process(point(Double(t), 70 + Double(t - 30) * 4, speed: 4))
+        }
+
+        XCTAssertEqual(detector.phase, .lift)
+        XCTAssertTrue(
+            events.contains {
+                if case .finished(let draft) = $0 { return draft.kind == .run }
+                return false
+            })
+    }
+
     func testRunResumesAfterLongStopWithoutTruncatingAtStop() {
         let detector = ParkLapDetector()
         for t in 0...30 { _ = detector.process(point(Double(t), 100 - Double(t), speed: 7)) }
