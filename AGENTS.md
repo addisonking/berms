@@ -49,3 +49,15 @@ Run lint before committing; it must pass clean. Scripts prefer /Applications/Xco
 - Build for the connected device with DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild -project Berms.xcodeproj -scheme Berms -destination 'id=DEVICE_ID' -derivedDataPath /tmp/berms-device-build -allowProvisioningUpdates build.
 - Install the signed app with DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun devicectl device install app --device DEVICE_ID /tmp/berms-device-build/Build/Products/Debug-iphoneos/Berms.app.
 - Device installation requires a paired phone, an Apple account available to Xcode, and provisioning profiles that include Berms's HealthKit capability and its Watch targets.
+
+## iOS Simulator interaction (AXe)
+
+Use AXe (`axe`) for any task that requires interacting with the iOS Simulator; use normal shell/Xcode tooling for builds and installs. AXe needs a full Xcode selected, so prefix its commands with `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer` unless `xcode-select -p` already points at Xcode.
+
+- Determine the target UDID first with `axe list-simulators`, then pass `--udid <UDID>` to every simulator command.
+- Inspect the current UI with `axe describe-ui --udid <UDID>` before interacting, and re-inspect after any action that changes state.
+- Prefer accessibility IDs and labels (`axe tap --id` / `--label`, `axe slider`) over screen coordinates.
+- HID commands are fire-and-forget: verify the requested final state with `describe-ui` or `axe screenshot` instead of assuming a tap or type succeeded.
+- Use screenshots when the accessibility hierarchy is insufficient.
+- Use AXe 1.8.0 installed at /opt/homebrew/opt/axe/libexec with the wrapper at /opt/homebrew/bin/axe; the Homebrew formula install is blocked by the macOS 27 / Xcode 26.4.1 version check.
+- Do not boot, erase, reset, or otherwise modify simulator state unless the task requires it, and shut down simulators you booted when finished.
