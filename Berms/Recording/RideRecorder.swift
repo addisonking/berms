@@ -1683,9 +1683,10 @@ final class RideRecorder: ObservableObject {
             let data = try? RouteCodec.encode(cleanedPoints)
         else { return }
         let rawJumps = draft.kind == .run ? (draft.jumps.isEmpty ? jumpsForCurrentRun : draft.jumps) : []
-        // Measure jumps from the raw accepted samples. The cleaned route is for
-        // the map; its smoothing would quietly shrink drops the live panel showed.
-        let jumps = rawJumps.map { $0.resolved(in: rawPoints) }
+        // Length comes from the cleaned route so it matches the map; the drop
+        // comes from the raw accepted samples so smoothing cannot quietly
+        // shrink the drop the live panel showed.
+        let jumps = rawJumps.map { $0.resolved(in: cleanedPoints, altitudes: rawPoints) }
         let segment = RideSegment(
             kind: draft.kind, startedAt: draft.startedAt,
             endedAt: draft.endedAt, routeData: data, jumps: jumps)

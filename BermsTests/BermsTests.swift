@@ -2239,6 +2239,7 @@ final class BermsTests: XCTestCase {
     func testJumpDetectorConfirmsAirborneIntervalAndHonorsCooldown() {
         var configuration = JumpDetector.Configuration()
         configuration.minimumRunContextSeconds = 0
+        configuration.minimumAirtime = 0.12
         configuration.cooldown = 1
         let detector = JumpDetector(configuration: configuration)
         let base = Date(timeIntervalSince1970: 2_000)
@@ -2287,9 +2288,77 @@ final class BermsTests: XCTestCase {
         }
     }
 
+    /// A brief unweighting must not stretch into a long airtime: ordinary
+    /// riding force before the impact ends the candidate.
+    func testJumpDetectorDoesNotStretchAirtimeThroughOrdinaryRiding() {
+        var configuration = JumpDetector.Configuration()
+        configuration.minimumRunContextSeconds = 0
+        let detector = JumpDetector(configuration: configuration)
+        let base = Date(timeIntervalSince1970: 2_400)
+        var detected: [JumpEvent] = []
+        var rejectionReasons: [String] = []
+
+        func feed(at seconds: Double, forceG: Double) {
+            for event in detector.process(
+                motion(at: seconds, forceG: forceG, base: base),
+                context: runContext(at: seconds, base: base))
+            {
+                switch event {
+                case .detected(let jump): detected.append(jump)
+                case .diagnostic(kind: "jump_candidate_rejected", _, _, let detail):
+                    rejectionReasons.append(detail)
+                case .diagnostic: break
+                }
+            }
+        }
+
+        for step in 0..<9 {
+            feed(at: 0.04 + Double(step) * 0.04, forceG: 0.30)
+        }
+        for step in 0..<20 {
+            feed(at: 0.40 + Double(step) * 0.04, forceG: 1.05)
+        }
+        feed(at: 1.20, forceG: 1.40)
+
+        XCTAssertTrue(detected.isEmpty, "riding force must end the airborne candidate")
+        XCTAssertTrue(
+            rejectionReasons.contains("force_recovered_before_landing"),
+            "expected the window to end when force recovered, got \(rejectionReasons)")
+    }
+
+    func testJumpDetectorDetectsSustainedLowForceWithDefaultAirtime() {
+        var configuration = JumpDetector.Configuration()
+        configuration.minimumRunContextSeconds = 0
+        let detector = JumpDetector(configuration: configuration)
+        let base = Date(timeIntervalSince1970: 2_600)
+        var detected: [JumpEvent] = []
+
+        _ = detector.process(
+            motion(at: 0, forceG: 1, base: base),
+            context: runContext(at: 0, base: base))
+        for step in 0..<12 {
+            for event in detector.process(
+                motion(at: 0.04 + Double(step) * 0.04, forceG: 0.30, base: base),
+                context: runContext(at: 0.04 + Double(step) * 0.04, base: base))
+            {
+                if case .detected(let jump) = event { detected.append(jump) }
+            }
+        }
+        for event in detector.process(
+            motion(at: 0.52, forceG: 1.60, base: base),
+            context: runContext(at: 0.52, base: base))
+        {
+            if case .detected(let jump) = event { detected.append(jump) }
+        }
+
+        XCTAssertEqual(detected.count, 1)
+        XCTAssertEqual(detected.first?.airtime ?? .nan, 0.48, accuracy: 0.001)
+    }
+
     func testJumpDetectorRejectsShortUnloadAndHighRotation() {
         var configuration = JumpDetector.Configuration()
         configuration.minimumRunContextSeconds = 0
+        configuration.minimumAirtime = 0.12
         let detector = JumpDetector(configuration: configuration)
         let base = Date(timeIntervalSince1970: 3_000)
         _ = detector.process(motion(at: 0, forceG: 1), context: runContext(at: 0, base: base))
@@ -2413,6 +2482,7 @@ final class BermsTests: XCTestCase {
         }
         var configuration = JumpDetector.Configuration()
         configuration.minimumRunContextSeconds = 0
+        configuration.minimumAirtime = 0.12
         let result = try JumpLogReplayer().replay(data: data, configuration: configuration)
         XCTAssertEqual(result.jumps.count, 1)
         XCTAssertEqual(result.jumps[0].airtime, 0.20, accuracy: 0.001)
@@ -2449,6 +2519,7 @@ final class BermsTests: XCTestCase {
         }
         var configuration = JumpDetector.Configuration()
         configuration.minimumRunContextSeconds = 0
+        configuration.minimumAirtime = 0.12
         let result = try JumpLogReplayer().replay(data: data, configuration: configuration)
         XCTAssertTrue(result.jumps.isEmpty)
     }
@@ -2843,9 +2914,14 @@ final class BermsTests: XCTestCase {
         ]
         let routeData = try RouteCodec.encode(route)
         let day = RideDay(startedAt: base)
+        let jump = JumpEvent(
+            takeoffTimestamp: base.addingTimeInterval(1.25),
+            landingTimestamp: base.addingTimeInterval(1.75),
+            takeoffMonotonicSeconds: 1.25,
+            landingMonotonicSeconds: 1.75)
         let firstRun = RideSegment(
             kind: .run, startedAt: base,
-            endedAt: base.addingTimeInterval(10), routeData: routeData)
+            endedAt: base.addingTimeInterval(10), routeData: routeData, jumps: [jump])
         let lift = RideSegment(
             kind: .lift, startedAt: base.addingTimeInterval(20),
             endedAt: base.addingTimeInterval(30), routeData: routeData)
@@ -2857,19 +2933,38 @@ final class BermsTests: XCTestCase {
         let export = BermsDataExport(
             day: day, exportedAt: base,
             rawDiagnosticsFilename: "Berms-day.jsonl")
-        XCTAssertEqual(export.version, 5)
+        XCTAssertEqual(export.version, 6)
         XCTAssertEqual(export.days[0].segments.compactMap(\.runNumber), [1, 2])
         XCTAssertEqual(export.parsed.runCount, 2)
         XCTAssertEqual(export.parsed.runs.map(\.number), [1, 2])
         XCTAssertEqual(export.rawDiagnostics?.filename, "Berms-day.jsonl")
 
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
+        encoder.dateEncodingStrategy = .custom { date, encoder in
+            var container = encoder.singleValueContainer()
+            try container.encode(fractional.string(from: date))
+        }
         let data = try encoder.encode(export)
         let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
+        decoder.dateDecodingStrategy = .custom { decoder in
+            let container = try decoder.singleValueContainer()
+            let value = try container.decode(String.self)
+            guard let date = fractional.date(from: value) ?? ISO8601DateFormatter().date(from: value)
+            else {
+                throw DecodingError.dataCorruptedError(in: container, debugDescription: "bad date \(value)")
+            }
+            return date
+        }
         let decoded = try decoder.decode(BermsDataExport.self, from: data)
         XCTAssertEqual(decoded.parsed.runs.map(\.segmentID), export.parsed.runs.map(\.segmentID))
+        // Jump timestamps and airtime must survive the round trip together.
+        let decodedJump = try XCTUnwrap(decoded.days[0].segments.first?.jumps.first)
+        XCTAssertEqual(
+            decodedJump.takeoffAt.timeIntervalSince(base), 1.25, accuracy: 0.001)
+        XCTAssertEqual(
+            decodedJump.landingAt.timeIntervalSince(decodedJump.takeoffAt), 0.5, accuracy: 0.001)
     }
 
     func testDiagnosticSummaryRebuildCombinesLogsInChronologicalOrder() throws {
@@ -3036,6 +3131,31 @@ final class BermsTests: XCTestCase {
         XCTAssertLessThan(JumpMetrics.airHeight(airtime: 0.9, dropMeters: 2), level)
         // A pure drop-off never reports negative height.
         XCTAssertEqual(JumpMetrics.airHeight(airtime: 0.4, dropMeters: 5), 0)
+    }
+
+    func testJumpMetricsStepUpSubtractsTheClimbToTheLanding() throws {
+        let base = Date(timeIntervalSince1970: 41_000)
+        let route = [
+            RoutePoint(
+                latitude: 50, longitude: -122.9, altitude: 100, speed: 9,
+                timestamp: base),
+            RoutePoint(
+                latitude: 50, longitude: -122.9, altitude: 101, speed: 9,
+                timestamp: base.addingTimeInterval(1)),
+        ]
+        let jump = JumpEvent(
+            takeoffTimestamp: base,
+            landingTimestamp: base.addingTimeInterval(0.5),
+            takeoffMonotonicSeconds: 0,
+            landingMonotonicSeconds: 0.5)
+
+        let metrics = try XCTUnwrap(jump.resolved(in: route).metrics)
+        XCTAssertEqual(metrics.dropMeters, -0.5, accuracy: 0.001)
+        // The landing sits above the takeoff, so the climb subtracts from the
+        // arc instead of being credited as height.
+        let arc = JumpMetrics.airHeight(airtime: 0.5, dropMeters: -0.5)
+        XCTAssertEqual(metrics.heightMeters, arc - 0.5, accuracy: 0.001)
+        XCTAssertLessThan(metrics.heightMeters, arc)
     }
 
     func testJumpEventDecodesLegacyPayloadWithoutMetrics() throws {
