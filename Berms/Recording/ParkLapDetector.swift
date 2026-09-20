@@ -23,6 +23,7 @@ final class ParkLapDetector {
     private(set) var currentPoints: [TrackSample] = []
     private(set) var lastSample: TrackSample?
     private var candidatePoints: [TrackSample] = []
+    private var candidateStartedAtStationaryBottom = false
     private var endpointCandidate: [TrackSample] = []
     private var isInRunBreak = false
 
@@ -40,6 +41,7 @@ final class ParkLapDetector {
 
         guard lastSample != nil else {
             candidatePoints = [sample]
+            candidateStartedAtStationaryBottom = isStationaryBottom(sample)
             return []
         }
 
@@ -76,6 +78,7 @@ final class ParkLapDetector {
         phase = .idle
         currentPoints.removeAll(keepingCapacity: true)
         candidatePoints.removeAll(keepingCapacity: true)
+        candidateStartedAtStationaryBottom = false
         endpointCandidate.removeAll(keepingCapacity: true)
         isInRunBreak = false
         lastSample = nil
@@ -85,6 +88,7 @@ final class ParkLapDetector {
         phase = kind == .lift ? .lift : .run
         currentPoints = points
         candidatePoints.removeAll(keepingCapacity: true)
+        candidateStartedAtStationaryBottom = false
         endpointCandidate.removeAll(keepingCapacity: true)
         isInRunBreak = false
         lastSample = points.last
@@ -99,6 +103,9 @@ final class ParkLapDetector {
     }
 
     private func processIdle(_ sample: TrackSample) -> [DetectorEvent] {
+        if candidatePoints.isEmpty {
+            candidateStartedAtStationaryBottom = isStationaryBottom(sample)
+        }
         candidatePoints.append(sample)
         trimCandidate()
 
@@ -108,6 +115,7 @@ final class ParkLapDetector {
         phase = kind == .lift ? .lift : .run
         currentPoints = candidatePoints.filter { !$0.isStationary && !$0.isAutomotive }
         candidatePoints.removeAll(keepingCapacity: true)
+        candidateStartedAtStationaryBottom = false
         return [.started(kind: kind, points: currentPoints)]
     }
 
@@ -125,8 +133,8 @@ final class ParkLapDetector {
                 let resumedRun = isPattern(.run, in: windowIncluding(sample))
                 isInRunBreak = false
                 if resumedRun {
+                    commitCandidatePoints()
                     currentPoints.append(sample)
-                    candidatePoints.removeAll(keepingCapacity: true)
                     return [.updated(kind: .run, point: sample)]
                 }
             }
@@ -139,20 +147,18 @@ final class ParkLapDetector {
             isPattern(expected, in: windowIncluding(sample))
                 || (expected == .run && isLevelMovement(in: localWindow))
         {
-            if !candidatePoints.isEmpty {
-                currentPoints.append(
-                    contentsOf: candidatePoints.filter {
-                        !$0.isStationary && !$0.isAutomotive
-                            && $0.timestamp > (currentPoints.last?.timestamp ?? .distantPast)
-                    })
-                candidatePoints.removeAll(keepingCapacity: true)
-            }
+            commitCandidatePoints()
             currentPoints.append(sample)
             return [.updated(kind: expected, point: sample)]
         }
 
         if candidatePoints.isEmpty {
-            candidatePoints = currentPoints.last.map { [$0] } ?? []
+            if let anchor = currentPoints.last {
+                candidatePoints = [anchor]
+                candidateStartedAtStationaryBottom = isStationaryBottom(anchor)
+            } else {
+                candidateStartedAtStationaryBottom = isStationaryBottom(sample)
+            }
         }
         candidatePoints.append(sample)
         trimCandidate()
@@ -169,6 +175,7 @@ final class ParkLapDetector {
         let oldKind = expected
         currentPoints = candidatePoints.filter { !$0.isStationary && !$0.isAutomotive }
         candidatePoints.removeAll(keepingCapacity: true)
+        candidateStartedAtStationaryBottom = false
         phase = opposite == .lift ? .lift : .run
 
         guard let first = oldPoints.first, let last = oldPoints.last,
@@ -188,6 +195,8 @@ final class ParkLapDetector {
     ) -> Bool {
         guard kind == .lift, !configuration.learnedLifts.isEmpty else { return true }
         guard let lastPoint = points.last else { return false }
+        // Active transitions can use any point because a run may cross a base;
+        // idle transitions require the current point to still be at the base.
         let isAtKnownBottom: Bool
         if requireCurrentPoint {
             isAtKnownBottom = configuration.learnedLifts.contains {
@@ -199,7 +208,11 @@ final class ParkLapDetector {
             }
         }
         if isAtKnownBottom {
-            return true
+            // A candidate that begins with a station stop must also move at
+            // lift speed; walking away from a base is otherwise indistinguishable.
+            if !candidateStartedAtStationaryBottom {
+                return true
+            }
         }
         let seedCount = points.first?.timestamp == currentPoints.last?.timestamp ? 1 : 0
         // candidatePoints starts with the last run sample; exclude that downhill
@@ -219,6 +232,12 @@ final class ParkLapDetector {
                     && $0.timestamp > (currentPoints.last?.timestamp ?? .distantPast)
             })
         candidatePoints.removeAll(keepingCapacity: true)
+        candidateStartedAtStationaryBottom = false
+    }
+
+    private func isStationaryBottom(_ point: TrackSample) -> Bool {
+        guard point.isStationary || point.speed <= configuration.endpointSpeedThreshold else { return false }
+        return configuration.learnedLifts.contains { $0.containsBottom(point.coordinate) }
     }
 
     private func processLearnedEndpoint(_ sample: TrackSample, expected: SegmentKind) -> [DetectorEvent]? {
@@ -255,6 +274,7 @@ final class ParkLapDetector {
         let finishedPoints = currentPoints
         endpointCandidate.removeAll(keepingCapacity: true)
         candidatePoints.removeAll(keepingCapacity: true)
+        candidateStartedAtStationaryBottom = false
         isInRunBreak = false
         phase = .idle
         currentPoints.removeAll(keepingCapacity: true)

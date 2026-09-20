@@ -148,11 +148,11 @@ final class ParkDayTests: XCTestCase {
         for t in 31...38 {
             events += detector.process(point(Double(t), 70 - Double(t - 30) * 2, speed: 2))
         }
-        for t in 39...55 {
+        for t in 39...70 {
             events += detector.process(point(Double(t), 54 + Double(t - 38) * 2, speed: 2))
         }
-        for t in 56...80 {
-            events += detector.process(point(Double(t), 88 - Double(t - 55) * 2, speed: 7, cycling: true))
+        for t in 71...95 {
+            events += detector.process(point(Double(t), 118 - Double(t - 70) * 2, speed: 7, cycling: true))
         }
 
         XCTAssertEqual(detector.phase, .run)
@@ -177,8 +177,8 @@ final class ParkDayTests: XCTestCase {
             id: UUID(),
             bottom: Coordinate(latitude: 40.0005, longitude: -105),
             top: Coordinate(latitude: 40.01, longitude: -105),
-            bottomRadius: 30,
-            topRadius: 30,
+            bottomRadius: 70,
+            topRadius: 70,
             observationCount: 3,
             confidence: 1
         )
@@ -242,8 +242,8 @@ final class ParkDayTests: XCTestCase {
             id: UUID(),
             bottom: Coordinate(latitude: 40.0005, longitude: -105),
             top: Coordinate(latitude: 40.01, longitude: -105),
-            bottomRadius: 20,
-            topRadius: 20,
+            bottomRadius: 70,
+            topRadius: 70,
             observationCount: 3,
             confidence: 1
         )
@@ -258,7 +258,10 @@ final class ParkDayTests: XCTestCase {
         for t in 51...59 {
             events += detector.process(point(Double(t), 20, speed: 0, stationary: true))
         }
-        for t in 60...80 {
+        for t in 60...65 {
+            events += detector.process(point(Double(t), 20, speed: 0, stationary: true))
+        }
+        for t in 66...86 {
             events += detector.process(point(Double(t), 20 + Double(t - 59) * 2, speed: 2))
         }
 
