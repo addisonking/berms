@@ -12,6 +12,9 @@ final class ParkLapDetector {
         var learnedLifts: [LearnedLiftProfile] = []
         var endpointConfirmationSeconds: TimeInterval = 8
         var endpointSpeedThreshold: Double = 1.5
+        // Once a lift is known, keep unknown slow ascents ambiguous with
+        // feature scouting; known bottoms or clearly faster ascents can still
+        // end a run and teach another lift.
         var minimumUnlearnedLiftSpeed: Double = 3
     }
 
@@ -99,7 +102,9 @@ final class ParkLapDetector {
         candidatePoints.append(sample)
         trimCandidate()
 
-        guard let kind = confirmedKind(in: candidatePoints) else { return [] }
+        guard let kind = confirmedKind(in: candidatePoints),
+            canConfirmTransition(to: kind, in: candidatePoints, requireCurrentPoint: true)
+        else { return [] }
         phase = kind == .lift ? .lift : .run
         currentPoints = candidatePoints.filter { !$0.isStationary && !$0.isAutomotive }
         candidatePoints.removeAll(keepingCapacity: true)
@@ -156,7 +161,8 @@ final class ParkLapDetector {
             return []
         }
         guard canConfirmTransition(to: opposite, in: candidatePoints) else {
-            return []
+            commitCandidatePoints()
+            return [.updated(kind: expected, point: sample)]
         }
 
         let oldPoints = currentPoints
@@ -175,6 +181,44 @@ final class ParkLapDetector {
             kind: oldKind, points: oldPoints,
             startedAt: first.timestamp, endedAt: last.timestamp)
         return [.finished(finished), .started(kind: opposite, points: currentPoints)]
+    }
+
+    private func canConfirmTransition(
+        to kind: SegmentKind, in points: [TrackSample], requireCurrentPoint: Bool = false
+    ) -> Bool {
+        guard kind == .lift, !configuration.learnedLifts.isEmpty else { return true }
+        guard let lastPoint = points.last else { return false }
+        let isAtKnownBottom: Bool
+        if requireCurrentPoint {
+            isAtKnownBottom = configuration.learnedLifts.contains {
+                $0.containsBottom(lastPoint.coordinate)
+            }
+        } else {
+            isAtKnownBottom = points.contains { point in
+                configuration.learnedLifts.contains { $0.containsBottom(point.coordinate) }
+            }
+        }
+        if isAtKnownBottom {
+            return true
+        }
+        let seedCount = points.first?.timestamp == currentPoints.last?.timestamp ? 1 : 0
+        // candidatePoints starts with the last run sample; exclude that downhill
+        // seed when measuring the speed of a possible new lift.
+        let movingPoints = points.dropFirst(seedCount).filter {
+            !$0.isStationary && !$0.isAutomotive
+        }
+        guard !movingPoints.isEmpty else { return false }
+        let averageSpeed = movingPoints.map(\.speed).reduce(0, +) / Double(movingPoints.count)
+        return averageSpeed >= configuration.minimumUnlearnedLiftSpeed
+    }
+
+    private func commitCandidatePoints() {
+        currentPoints.append(
+            contentsOf: candidatePoints.filter {
+                !$0.isStationary && !$0.isAutomotive
+                    && $0.timestamp > (currentPoints.last?.timestamp ?? .distantPast)
+            })
+        candidatePoints.removeAll(keepingCapacity: true)
     }
 
     private func processLearnedEndpoint(_ sample: TrackSample, expected: SegmentKind) -> [DetectorEvent]? {
@@ -227,18 +271,6 @@ final class ParkLapDetector {
                     kind: expected, points: finishedPoints,
                     startedAt: firstPoint.timestamp, endedAt: lastPoint.timestamp))
         ]
-    }
-
-    private func canConfirmTransition(to kind: SegmentKind, in points: [TrackSample]) -> Bool {
-        guard kind == .lift, !configuration.learnedLifts.isEmpty else { return true }
-        guard let lastPoint = points.last else { return false }
-        if configuration.learnedLifts.contains(where: { $0.containsBottom(lastPoint.coordinate) }) {
-            return true
-        }
-        let movingPoints = points.dropFirst().filter { !$0.isStationary && !$0.isAutomotive }
-        guard !movingPoints.isEmpty else { return false }
-        let averageSpeed = movingPoints.map(\.speed).reduce(0, +) / Double(movingPoints.count)
-        return averageSpeed >= configuration.minimumUnlearnedLiftSpeed
     }
 
     private func flushEndpointCandidate() {

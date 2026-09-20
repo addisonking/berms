@@ -127,7 +127,7 @@ final class ParkDayTests: XCTestCase {
         XCTAssertEqual(finished.map(\.kind), [.lift, .run])
     }
 
-    func testLearnedLiftStartZonePreventsWalkingFeatureSplit() {
+    func testSlowAscentOutsideKnownLiftZoneDoesNotSplitRun() {
         let profile = LearnedLiftProfile(
             id: UUID(),
             bottom: Coordinate(latitude: 40.02, longitude: -105),
@@ -165,6 +165,11 @@ final class ParkDayTests: XCTestCase {
             return XCTFail("Expected the feature session to remain one run")
         }
         XCTAssertEqual(draft.kind, .run)
+        let largestGap =
+            zip(draft.points, draft.points.dropFirst()).map {
+                $1.timestamp.timeIntervalSince($0.timestamp)
+            }.max() ?? 0
+        XCTAssertLessThanOrEqual(largestGap, 2, "Blocked lift candidates must stay in the run route")
     }
 
     func testLearnedLiftStartZoneEndsRunAtStationAfterAscent() {
@@ -228,6 +233,44 @@ final class ParkDayTests: XCTestCase {
         XCTAssertTrue(
             events.contains {
                 if case .finished(let draft) = $0 { return draft.kind == .run }
+                return false
+            })
+    }
+
+    func testIdleWalkingAfterLearnedBottomDoesNotStartLift() {
+        let profile = LearnedLiftProfile(
+            id: UUID(),
+            bottom: Coordinate(latitude: 40.0005, longitude: -105),
+            top: Coordinate(latitude: 40.01, longitude: -105),
+            bottomRadius: 20,
+            topRadius: 20,
+            observationCount: 3,
+            confidence: 1
+        )
+        var configuration = ParkLapDetector.Configuration()
+        configuration.learnedLifts = [profile]
+        let detector = ParkLapDetector(configuration: configuration)
+        var events: [DetectorEvent] = []
+
+        for t in 0...50 {
+            events += detector.process(point(Double(t), 120 - Double(t) * 2, speed: 7, cycling: true))
+        }
+        for t in 51...59 {
+            events += detector.process(point(Double(t), 20, speed: 0, stationary: true))
+        }
+        for t in 60...80 {
+            events += detector.process(point(Double(t), 20 + Double(t - 59) * 2, speed: 2))
+        }
+
+        XCTAssertEqual(detector.phase, .idle)
+        XCTAssertTrue(
+            events.contains {
+                if case .finished(let draft) = $0 { return draft.kind == .run }
+                return false
+            })
+        XCTAssertFalse(
+            events.contains {
+                if case .started(kind: .lift, points: _) = $0 { return true }
                 return false
             })
     }
