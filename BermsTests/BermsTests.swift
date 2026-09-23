@@ -814,7 +814,7 @@ final class BermsTests: XCTestCase {
         let base = Date(timeIntervalSince1970: 20_000)
         let route = (0...10).map { index in
             RoutePoint(
-                latitude: 41.2505 + Double(index) * 0.0001,
+                latitude: 41.1844 + Double(index) * 0.0001,
                 longitude: -74.5012,
                 altitude: 100 - Double(index),
                 speed: 8,

@@ -1,0 +1,22 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  unit-tests:
+    name: unit tests
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Run unit tests
+        run: ./scripts/test.sh
