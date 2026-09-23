@@ -16,7 +16,13 @@ jobs:
   unit-tests:
     name: unit tests
     runs-on: macos-latest
+    # Berms builds against the iOS 26 SDK, so this assumes macos-latest ships a
+    # stable Xcode new enough to build it. The version step below records what
+    # the runner actually used.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
+      - name: Show Xcode version
+        run: xcodebuild -version
       - name: Run unit tests
         run: ./scripts/test.sh

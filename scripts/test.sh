@@ -1,5 +1,6 @@
 #!/bin/zsh
 set -eu
+set -o pipefail
 cd "${0:A:h:h}"
 
 if [[ -z "${DEVELOPER_DIR:-}" && -d /Applications/Xcode.app/Contents/Developer ]]; then
@@ -9,7 +10,12 @@ fi
 if [[ -n "${BERMS_TEST_DESTINATION:-}" ]]; then
     destination="$BERMS_TEST_DESTINATION"
 else
-    udid=$(xcrun simctl list devices available -j | python3 -c '
+    devices=$(xcrun simctl list devices available -j) || {
+        echo "could not list simulators; is Xcode installed and DEVELOPER_DIR set?" >&2
+        exit 1
+    }
+    # Newest iOS runtime first, then the alphabetically last iPhone name.
+    udid=$(printf '%s' "$devices" | python3 -c '
 import json, sys
 
 best = None
