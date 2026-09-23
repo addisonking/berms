@@ -184,10 +184,6 @@ private struct BuildIdentitySection: View {
             }
         } header: {
             Text("About Berms Beta")
-        } footer: {
-            Text(
-                "Compare build IDs to see whether you and your friends have the same version. Local changes aren't included in the commit."
-            )
         }
     }
 }
