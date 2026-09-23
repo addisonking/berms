@@ -42,6 +42,15 @@ Swift formatting and linting use Apple's `swift-format` with the repo-root `.swi
 
 Run lint before committing; it must pass clean. Scripts prefer /Applications/Xcode.app when DEVELOPER_DIR is unset.
 
+## Tests
+
+The `BermsTests` XCTest target runs on the iOS Simulator against the app host.
+
+- Run everything: `./scripts/test.sh`
+- Run one case: `./scripts/test.sh -only-testing:BermsTests/BermsTests/testName`
+- Override the simulator with `BERMS_TEST_DESTINATION` (for example `platform=iOS Simulator,id=UDID`); otherwise the script picks the newest available iPhone.
+- CI runs `./scripts/test.sh` via `.github/workflows/test.yml`
+
 ## Local device workflow
 
 - For physical iPhone builds and installs, use the stable Xcode toolchain at /Applications/Xcode.app/Contents/Developer. The beta toolchain currently rejects Berms's legacy watchkit2-extension target.
