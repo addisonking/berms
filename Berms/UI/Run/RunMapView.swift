@@ -222,9 +222,7 @@ struct RunMapView: View {
         } header: {
             Text("Jumps")
         } footer: {
-            Text(
-                "Notable jumps are 0.4 s of air or 5 m long. Smaller catches stay in the list so nothing is hidden."
-            )
+            Text("Notable: 0.4 s of air or 5 m long.")
         }
     }
 
@@ -528,7 +526,7 @@ struct JumpComparisonView: View {
                     Text("Across runs")
                 } footer: {
                     Text(
-                        "Jumps are matched by takeoff and landing location. Only runs from this session are compared."
+                        "Matched by takeoff and landing location."
                     )
                 }
             } else {
@@ -609,7 +607,7 @@ private struct SplitRunSheet: View {
                     Text("Stops")
                 } footer: {
                     Text(
-                        "Split points come from stops of 15 seconds or longer. The run becomes two runs, and both are renumbered by start time."
+                        "Split points come from stops of 15 s or more."
                     )
                 }
                 if let midpoint = SegmentEditor.midpointCandidate(for: segment) {

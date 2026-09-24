@@ -49,6 +49,8 @@ enum BermsFormat {
     }
 
     static func elevation(_ meters: Double) -> String {
-        isMetric ? String(format: "%.0f m", meters) : String(format: "%.0f ft", meters * 3.28084)
+        let value = isMetric ? meters : meters * 3.28084
+        let unit = isMetric ? "m" : "ft"
+        return "\(value.formatted(.number.precision(.fractionLength(0)))) \(unit)"
     }
 }

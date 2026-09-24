@@ -507,15 +507,8 @@ struct DayDetailView: View {
         let range =
             day.startedAt.formatted(date: .omitted, time: .shortened) + " – "
             + end.formatted(date: .omitted, time: .shortened)
-        var lines = [
-            "\(range). Other time is off the bike: queueing, walking, and lodge time."
-        ]
-        if !lifts.isEmpty {
-            lines.append(
-                "Lifts climbed \(BermsFormat.elevation(day.liftMeters)) across \(lifts.count) rides."
-            )
-        }
-        return lines.joined(separator: " ")
+        guard !lifts.isEmpty else { return range }
+        return "\(range) · \(BermsFormat.elevation(day.liftMeters)) lifted"
     }
 
     private var jumpTrustFooter: String {
@@ -523,10 +516,7 @@ struct DayDetailView: View {
         let configuration = sensitivity.configuration
         let airtime = String(format: "%.2f", configuration.minimumAirtime)
         let speed = String(format: "%.1f", configuration.minimumRidingSpeed)
-        return
-            "Detected automatically with \(sensitivity.title.lowercased()) sensitivity: "
-            + "at least \(airtime) s of air over \(speed) m/s of riding. "
-            + "Missing or extra jumps? Change sensitivity in Settings."
+        return "Auto-detected: \(airtime) s air at \(speed) m/s. Adjust in Settings."
     }
 
     private var jumpSummaryCount: Int {

@@ -28,13 +28,34 @@ struct SettingsView: View {
             set: { UserDefaults.standard.set($0, forKey: CorrectionsSharing.key) })
     }
 
+    private var resortSelectionBinding: Binding<String> {
+        Binding(
+            get: { trailCatalogSelection.selectionID },
+            set: { trailCatalogSelection.setSelectionID($0) }
+        )
+    }
+
+    private var liveStatBinding: (LiveStatMetric) -> Binding<Bool> {
+        { metric in
+            Binding(
+                get: { recorder.liveStatMetrics.contains(metric) },
+                set: { recorder.setLiveStatMetric(metric, enabled: $0) }
+            )
+        }
+    }
+
+    private var rawMotionLoggingBinding: Binding<Bool> {
+        Binding(
+            get: { recorder.rawMotionLoggingEnabled },
+            set: { recorder.setRawMotionLoggingEnabled($0) }
+        )
+    }
+
     private var jumpDetectionFooter: String {
         let configuration = recorder.jumpSensitivity.configuration
         let airtime = String(format: "%.2f", configuration.minimumAirtime)
         let speed = String(format: "%.1f", configuration.minimumRidingSpeed)
-        return
-            "Flags air of at least \(airtime) s while riding faster than \(speed) m/s, "
-            + "then checks the landing impact."
+        return "Detects \(airtime) s of air at \(speed) m/s or faster."
     }
 
     private var selectedCatalog: TrailCatalogDescriptor? {
@@ -54,128 +75,30 @@ struct SettingsView: View {
 
     private var catalogCaption: String {
         guard let selectedCatalog else {
-            return "Automatic matches trails for the resort you are riding in, from GPS."
+            return "Matches trails from GPS."
         }
         guard selectedCatalog.season == recorder.activeActivityMode.season else {
-            return
-                "This resort has no \(recorder.activeActivityMode.title.lowercased()) trails, so Automatic is used instead."
+            return "No \(recorder.activeActivityMode.title.lowercased()) trails here; Automatic is used."
         }
-        return "Using this resort until you switch back to Automatic."
+        return "Using this resort until you switch back."
     }
 
     var body: some View {
         NavigationStack {
             Form {
-                Section("Trail catalog") {
+                trailsSection
+                trackScreenSection
+                liveActivitySection
+                jumpDetectionSection
+                correctionsSection
+                diagnosticsSection
+                Section {
                     NavigationLink {
-                        TrailLibraryView()
+                        AboutView()
                     } label: {
-                        Label("Trail Library", systemImage: "map")
+                        Label("About Berms Beta", systemImage: "info.circle")
                     }
-
-                    Picker(
-                        "Resort",
-                        selection: Binding(
-                            get: { trailCatalogSelection.selectionID },
-                            set: { trailCatalogSelection.setSelectionID($0) }
-                        )
-                    ) {
-                        Text("Automatic").tag(TrailCatalogRegistry.automaticSelectionID)
-                        ForEach(selectableCatalogs) { catalog in
-                            Text(catalog.resortName).tag(catalog.id)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    Text(catalogCaption)
-                        .font(.caption)
-                        .foregroundStyle(Color.bermsMuted)
                 }
-                Section {
-                    Picker("Sensitivity", selection: sensitivityBinding) {
-                        ForEach(JumpSensitivity.allCases) { sensitivity in
-                            VStack(alignment: .leading) {
-                                Text(sensitivity.title)
-                                Text(sensitivity.detail)
-                                    .font(.caption)
-                            }
-                            .tag(sensitivity)
-                        }
-                    }
-                    .pickerStyle(.inline)
-                } header: {
-                    Text("Jump detection")
-                } footer: {
-                    Text(jumpDetectionFooter)
-                }
-                Section {
-                    Toggle("Include corrections in exports", isOn: correctionsSharingBinding)
-                } header: {
-                    Text("Corrections")
-                } footer: {
-                    Text(
-                        "Splitting a run or marking a misclassified lift stays on this phone. Turn this on to include those corrections in the day archive you export, so they can be used to improve detection."
-                    )
-                }
-                Section {
-                    Picker("Right field", selection: liveActivityMetricBinding) {
-                        ForEach(BermsLiveActivityMetric.allCases) { metric in
-                            Text(metric.title).tag(metric)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                } header: {
-                    Text("Live Activity")
-                } footer: {
-                    Text("Shown at the right of the Live Activity and Dynamic Island while recording.")
-                }
-                Section {
-                    ForEach(LiveStatMetric.allCases) { metric in
-                        Toggle(
-                            metric.title,
-                            isOn: Binding(
-                                get: { recorder.liveStatMetrics.contains(metric) },
-                                set: { recorder.setLiveStatMetric(metric, enabled: $0) }
-                            )
-                        )
-                        .tint(.green)
-                        .disabled(
-                            !recorder.liveStatMetrics.contains(metric)
-                                && recorder.liveStatMetrics.count >= LiveStatMetric.selectionLimit
-                        )
-                    }
-                } header: {
-                    Text("Live tracking panel")
-                } footer: {
-                    Text(
-                        "Choose up to \(LiveStatMetric.selectionLimit) stats for the Track screen while recording. Run status, GPS status, Pause, and Finish always appear."
-                    )
-                }
-                Section {
-                    Toggle(
-                        "Raw motion logging",
-                        isOn: Binding(
-                            get: { recorder.rawMotionLoggingEnabled },
-                            set: { recorder.setRawMotionLoggingEnabled($0) }
-                        )
-                    )
-                    .tint(.green)
-                } header: {
-                    Text("Diagnostics")
-                } footer: {
-                    Text(
-                        "Keeps high-rate motion samples with each ride so sessions can be re-analyzed. Uses extra storage and is off by default."
-                    )
-                }
-                BuildIdentitySection()
-                #if DEBUG
-                    Section("Developer") {
-                        NavigationLink {
-                            DayArchiveImportView()
-                        } label: {
-                            Label("Import day export", systemImage: "square.and.arrow.down")
-                        }
-                    }
-                #endif
             }
             .navigationTitle("Settings")
             .navigationSubtitle("Beta")
@@ -187,40 +110,139 @@ struct SettingsView: View {
             }
         }
     }
-}
 
-private struct BuildIdentitySection: View {
-    var body: some View {
+    private var trailsSection: some View {
         Section {
-            if let identity = BuildIdentity.current {
-                VStack(alignment: .leading, spacing: BermsSpacing.tight) {
-                    Text("Build")
-                    Text(verbatim: identity.shortCommit)
-                        .monospaced()
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                    if identity.hasLocalChanges {
-                        Text("Local changes")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
+            NavigationLink {
+                TrailLibraryView()
+            } label: {
+                Label("Trail Library", systemImage: "map")
+            }
+            Picker("Resort", selection: resortSelectionBinding) {
+                Text("Automatic").tag(TrailCatalogRegistry.automaticSelectionID)
+                ForEach(selectableCatalogs) { catalog in
+                    Text(catalog.resortName).tag(catalog.id)
                 }
-                .accessibilityElement(children: .combine)
+            }
+            .pickerStyle(.menu)
+            Text(catalogCaption)
+                .font(.caption)
+                .foregroundStyle(Color.bermsMuted)
+        } header: {
+            Text("Trails")
+        }
+    }
 
-                VStack(alignment: .leading, spacing: BermsSpacing.tight) {
-                    Text("Built")
-                    Text(identity.builtAt, format: .dateTime.year().month().day().hour().minute().second())
-                        .foregroundStyle(.secondary)
-                }
-                .accessibilityElement(children: .combine)
-
-                ShareLink("Share Build Details", item: identity.shareText)
-            } else {
-                Text("Build details unavailable")
-                    .foregroundStyle(.secondary)
+    private var trackScreenSection: some View {
+        Section {
+            ForEach(LiveStatMetric.allCases) { metric in
+                Toggle(metric.title, isOn: liveStatBinding(metric))
+                    .disabled(
+                        !recorder.liveStatMetrics.contains(metric)
+                            && recorder.liveStatMetrics.count >= LiveStatMetric.selectionLimit
+                    )
             }
         } header: {
-            Text("About Berms Beta")
+            Text("Track screen")
+        } footer: {
+            Text("Up to \(LiveStatMetric.selectionLimit) stats. Status, Pause, and Finish always show.")
         }
+    }
+
+    private var liveActivitySection: some View {
+        Section {
+            Picker("Right field", selection: liveActivityMetricBinding) {
+                ForEach(BermsLiveActivityMetric.allCases) { metric in
+                    Text(metric.title).tag(metric)
+                }
+            }
+            .pickerStyle(.menu)
+        } header: {
+            Text("Live Activity")
+        } footer: {
+            Text("Right side of the Dynamic Island while recording.")
+        }
+    }
+
+    private var jumpDetectionSection: some View {
+        Section {
+            Picker("Sensitivity", selection: sensitivityBinding) {
+                ForEach(JumpSensitivity.allCases) { sensitivity in
+                    Text(sensitivity.title).tag(sensitivity)
+                }
+            }
+            .pickerStyle(.menu)
+        } header: {
+            Text("Jump detection")
+        } footer: {
+            Text(jumpDetectionFooter)
+        }
+    }
+
+    private var correctionsSection: some View {
+        Section {
+            Toggle("Include corrections in exports", isOn: correctionsSharingBinding)
+        } header: {
+            Text("Corrections")
+        } footer: {
+            Text("Corrections stay on this phone unless exported.")
+        }
+    }
+
+    private var diagnosticsSection: some View {
+        Section {
+            Toggle("Raw motion logging", isOn: rawMotionLoggingBinding)
+            #if DEBUG
+                NavigationLink {
+                    DayArchiveImportView()
+                } label: {
+                    Label("Import day export", systemImage: "square.and.arrow.down")
+                }
+            #endif
+        } header: {
+            Text("Diagnostics")
+        } footer: {
+            Text("Saves motion samples for re-analysis. Uses more storage.")
+        }
+    }
+}
+
+private struct AboutView: View {
+    var body: some View {
+        Form {
+            if let identity = BuildIdentity.current {
+                Section {
+                    VStack(alignment: .leading, spacing: BermsSpacing.tight) {
+                        Text("Build")
+                        Text(verbatim: identity.shortCommit)
+                            .monospaced()
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                        if identity.hasLocalChanges {
+                            Text("Local changes")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .accessibilityElement(children: .combine)
+
+                    VStack(alignment: .leading, spacing: BermsSpacing.tight) {
+                        Text("Built")
+                        Text(identity.builtAt, format: .dateTime.year().month().day().hour().minute().second())
+                            .foregroundStyle(.secondary)
+                    }
+                    .accessibilityElement(children: .combine)
+
+                    ShareLink("Share Build Details", item: identity.shareText)
+                }
+            } else {
+                Section {
+                    Text("Build details unavailable")
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .navigationTitle("About Berms Beta")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
