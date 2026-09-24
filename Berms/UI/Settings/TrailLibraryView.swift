@@ -28,6 +28,9 @@ private struct TrailLibrarySection: Identifiable {
 }
 
 struct TrailLibraryView: View {
+    private static let mapHeight: CGFloat = 300
+    private static let selectedLineWidth: CGFloat = 5
+
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Query(sort: \Trail.updatedAt, order: .reverse) private var trails: [Trail]
     @EnvironmentObject private var mapLayerPreferences: MapLayerPreferences
@@ -134,12 +137,16 @@ struct TrailLibraryView: View {
         return RouteMapConfiguration(points: [], boundary: boundary)
     }
 
+    private var trailCountTitle: String {
+        visibleTrails.count == 1 ? "1 trail" : "\(visibleTrails.count) trails"
+    }
+
     var body: some View {
         ScrollViewReader { proxy in
             List {
                 Section {
                     libraryMap
-                        .frame(height: 300)
+                        .frame(height: Self.mapHeight)
                         .listRowInsets(EdgeInsets())
                         .id("libraryMap")
                 }
@@ -176,7 +183,7 @@ struct TrailLibraryView: View {
                                 .accessibilityHint("Shows this trail on the map")
                             }
                         } header: {
-                            Text(section.title ?? "\(visibleTrails.count) trails")
+                            Text(section.title ?? trailCountTitle)
                         }
                     }
                 }
@@ -250,7 +257,8 @@ struct TrailLibraryView: View {
                                     trailMapContent(
                                         coordinates: trailCoordinates(for: trail),
                                         difficulty: trail.difficulty,
-                                        lineWidth: selectedTrailID == trail.id ? 5 : TrailMapRendering.lineWidth,
+                                        lineWidth: selectedTrailID == trail.id
+                                            ? Self.selectedLineWidth : TrailMapRendering.lineWidth,
                                         tag: trail.id)
                                 }
                             }
@@ -333,7 +341,7 @@ struct ProductionTrailLibraryRow: View {
     var body: some View {
         HStack(spacing: BermsSpacing.control) {
             TrailRatingBadge(difficulty: trail.difficulty, size: 12)
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: BermsSpacing.tight) {
                 Text(trail.name)
                     .font(.headline)
                     .fixedSize(horizontal: false, vertical: true)

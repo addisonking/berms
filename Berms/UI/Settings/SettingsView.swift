@@ -22,6 +22,21 @@ struct SettingsView: View {
         )
     }
 
+    private var correctionsSharingBinding: Binding<Bool> {
+        Binding(
+            get: { UserDefaults.standard.bool(forKey: CorrectionsSharing.key) },
+            set: { UserDefaults.standard.set($0, forKey: CorrectionsSharing.key) })
+    }
+
+    private var jumpDetectionFooter: String {
+        let configuration = recorder.jumpSensitivity.configuration
+        let airtime = String(format: "%.2f", configuration.minimumAirtime)
+        let speed = String(format: "%.1f", configuration.minimumRidingSpeed)
+        return
+            "Flags air of at least \(airtime) s while riding faster than \(speed) m/s, "
+            + "then checks the landing impact."
+    }
+
     private var selectedCatalog: TrailCatalogDescriptor? {
         trailCatalogSelection.manualCatalogID.flatMap(TrailCatalogRegistry.catalog(withID:))
     }
@@ -75,7 +90,7 @@ struct SettingsView: View {
                         .font(.caption)
                         .foregroundStyle(Color.bermsMuted)
                 }
-                Section("Jump detection") {
+                Section {
                     Picker("Sensitivity", selection: sensitivityBinding) {
                         ForEach(JumpSensitivity.allCases) { sensitivity in
                             VStack(alignment: .leading) {
@@ -87,6 +102,19 @@ struct SettingsView: View {
                         }
                     }
                     .pickerStyle(.inline)
+                } header: {
+                    Text("Jump detection")
+                } footer: {
+                    Text(jumpDetectionFooter)
+                }
+                Section {
+                    Toggle("Include corrections in exports", isOn: correctionsSharingBinding)
+                } header: {
+                    Text("Corrections")
+                } footer: {
+                    Text(
+                        "Splitting a run or marking a misclassified lift stays on this phone. Turn this on to include those corrections in the day archive you export, so they can be used to improve detection."
+                    )
                 }
                 Section {
                     Picker("Right field", selection: liveActivityMetricBinding) {
@@ -139,6 +167,15 @@ struct SettingsView: View {
                     )
                 }
                 BuildIdentitySection()
+                #if DEBUG
+                    Section("Developer") {
+                        NavigationLink {
+                            DayArchiveImportView()
+                        } label: {
+                            Label("Import day export", systemImage: "square.and.arrow.down")
+                        }
+                    }
+                #endif
             }
             .navigationTitle("Settings")
             .navigationSubtitle("Beta")
@@ -156,7 +193,7 @@ private struct BuildIdentitySection: View {
     var body: some View {
         Section {
             if let identity = BuildIdentity.current {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: BermsSpacing.tight) {
                     Text("Build")
                     Text(verbatim: identity.shortCommit)
                         .monospaced()
@@ -170,7 +207,7 @@ private struct BuildIdentitySection: View {
                 }
                 .accessibilityElement(children: .combine)
 
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: BermsSpacing.tight) {
                     Text("Built")
                     Text(identity.builtAt, format: .dateTime.year().month().day().hour().minute().second())
                         .foregroundStyle(.secondary)

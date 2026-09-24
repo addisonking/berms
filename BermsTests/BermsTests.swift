@@ -3306,6 +3306,181 @@ final class BermsTests: XCTestCase {
         XCTAssertEqual(restored.liveStatMetrics, recorder.liveStatMetrics)
     }
 
+    // MARK: - Segment corrections
+
+    @MainActor
+    func testSegmentEditorMarkReclassifiesAndRecordsCorrection() throws {
+        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try ModelContainer(
+            for: RideDay.self, RideSegment.self, configurations: configuration)
+        let context = ModelContext(container)
+
+        let day = RideDay(startedAt: Date(timeIntervalSince1970: 1_000))
+        let points = correctionRoutePoints(from: day.startedAt, count: 10, altitudeStep: 2)
+        let segment = RideSegment(
+            kind: .run, startedAt: day.startedAt, endedAt: points[points.count - 1].timestamp,
+            routeData: try RouteCodec.encode(points))
+        segment.distanceMeters = RouteMetrics.distance(of: points)
+        segment.verticalMeters = RouteMetrics.vertical(of: points, kind: .run)
+        segment.day = day
+        day.segments.append(segment)
+        context.insert(day)
+        context.insert(segment)
+        try context.save()
+        day.recalculateTotals()
+        XCTAssertEqual(day.descentMeters, 0, accuracy: 0.001)
+
+        try SegmentEditor.mark(segment, as: .lift, in: context)
+
+        XCTAssertEqual(segment.kind, .lift)
+        XCTAssertGreaterThan(segment.verticalMeters, 0)
+        XCTAssertEqual(day.liftSeconds, segment.duration, accuracy: 0.001)
+        XCTAssertEqual(day.activeSeconds, 0, accuracy: 0.001)
+        XCTAssertEqual(day.corrections.map(\.kind), [.markLift])
+        XCTAssertEqual(day.corrections.first?.originalKind, .run)
+        XCTAssertEqual(day.corrections.first?.correctedKind, .lift)
+        XCTAssertEqual(day.corrections.first?.segmentID, segment.id)
+        XCTAssertEqual(try context.fetch(FetchDescriptor<RideSegment>()).count, 1)
+    }
+
+    @MainActor
+    func testSegmentEditorSplitPartitionsRouteJumpsAndTotals() throws {
+        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try ModelContainer(
+            for: RideDay.self, RideSegment.self, configurations: configuration)
+        let context = ModelContext(container)
+
+        let day = RideDay(startedAt: Date(timeIntervalSince1970: 2_000))
+        let points = correctionRoutePoints(from: day.startedAt, count: 11, altitudeStep: -2)
+        let earlyJump = JumpEvent(
+            takeoffTimestamp: points[2].timestamp,
+            landingTimestamp: points[2].timestamp.addingTimeInterval(0.4),
+            takeoffMonotonicSeconds: 2, landingMonotonicSeconds: 2.4)
+        let lateJump = JumpEvent(
+            takeoffTimestamp: points[8].timestamp,
+            landingTimestamp: points[8].timestamp.addingTimeInterval(0.5),
+            takeoffMonotonicSeconds: 8, landingMonotonicSeconds: 8.5)
+        let segment = RideSegment(
+            kind: .run, startedAt: day.startedAt, endedAt: points[points.count - 1].timestamp,
+            routeData: try RouteCodec.encode(points), jumps: [earlyJump, lateJump])
+        segment.distanceMeters = RouteMetrics.distance(of: points)
+        segment.verticalMeters = RouteMetrics.vertical(of: points, kind: .run)
+        segment.day = day
+        day.segments.append(segment)
+        context.insert(day)
+        context.insert(segment)
+        try context.save()
+        day.recalculateTotals()
+
+        let originalDuration = segment.duration
+        let splitSegment = try SegmentEditor.split(segment, at: 5, in: context)
+
+        XCTAssertEqual(day.segments.count, 2)
+        XCTAssertEqual(segment.points.count, 5)
+        XCTAssertEqual(splitSegment.points.count, 6)
+        XCTAssertEqual(segment.jumps.count, 1)
+        XCTAssertEqual(splitSegment.jumps.count, 1)
+        XCTAssertEqual(segment.endedAt, points[4].timestamp)
+        XCTAssertEqual(splitSegment.startedAt, points[5].timestamp)
+        XCTAssertEqual(splitSegment.endedAt, points[10].timestamp)
+        XCTAssertGreaterThan(segment.distanceMeters, 0)
+        XCTAssertGreaterThan(splitSegment.distanceMeters, 0)
+        XCTAssertEqual(
+            day.activeSeconds, segment.duration + splitSegment.duration, accuracy: 0.001)
+        XCTAssertLessThan(day.activeSeconds, originalDuration)
+        XCTAssertEqual(day.corrections.map(\.kind), [.split])
+        XCTAssertEqual(day.corrections.first?.splitTimestamp, points[5].timestamp)
+        XCTAssertEqual(try context.fetch(FetchDescriptor<RideSegment>()).count, 2)
+    }
+
+    @MainActor
+    func testSegmentEditorFindsLongStopsAsSplitCandidates() throws {
+        let day = RideDay(startedAt: Date(timeIntervalSince1970: 3_000))
+        var points = correctionRoutePoints(from: day.startedAt, count: 12, speed: 8)
+        for index in 4..<9 {
+            points[index] = RoutePoint(
+                latitude: points[index].latitude,
+                longitude: points[index].longitude,
+                altitude: points[index].altitude,
+                speed: 0.2,
+                timestamp: points[index].timestamp)
+        }
+        let segment = RideSegment(
+            kind: .run, startedAt: day.startedAt, endedAt: points[points.count - 1].timestamp,
+            routeData: try RouteCodec.encode(points))
+
+        let candidates = SegmentEditor.splitCandidates(for: segment)
+
+        XCTAssertEqual(candidates.count, 1)
+        let candidate = try XCTUnwrap(candidates.first)
+        XCTAssertGreaterThanOrEqual(candidate.stoppedSeconds, 15)
+        XCTAssertEqual(candidate.timestamp, points[6].timestamp)
+        XCTAssertTrue((2...(points.count - 2)).contains(candidate.index))
+        XCTAssertFalse(SegmentEditor.splitCandidates(for: segment).isEmpty)
+    }
+
+    func testDayTimeBreakdownSplitsWallClockIntoFourBuckets() {
+        let day = RideDay(startedAt: Date(timeIntervalSince1970: 4_000))
+        day.endedAt = day.startedAt.addingTimeInterval(3_600)
+        day.activeSeconds = 1_200
+        day.liftSeconds = 600
+        day.accumulatedPausedSeconds = 300
+
+        let breakdown = DayTimeBreakdown(day: day)
+
+        XCTAssertEqual(breakdown.riding, 1_200, accuracy: 0.001)
+        XCTAssertEqual(breakdown.lifts, 600, accuracy: 0.001)
+        XCTAssertEqual(breakdown.paused, 300, accuracy: 0.001)
+        XCTAssertEqual(breakdown.stopped, 1_500, accuracy: 0.001)
+        XCTAssertEqual(breakdown.total, 3_600, accuracy: 0.001)
+    }
+
+    private func correctionRoutePoints(
+        from start: Date, count: Int, speed: Double = 6, altitudeStep: Double = 0
+    ) -> [RoutePoint] {
+        (0..<count).map { index in
+            RoutePoint(
+                latitude: 40 + Double(index) * 0.0002,
+                longitude: -105,
+                altitude: Double(index) * altitudeStep,
+                speed: speed,
+                timestamp: start.addingTimeInterval(Double(index) * 5))
+        }
+    }
+
+    func testRouteTitleBuilderCompactsLongSequences() {
+        let a = UUID()
+        let b = UUID()
+        let titles = RouteTitleBuilder.titles(from: [
+            a: ["Upper Dominion", "Pipeline", "Progression Drops"],
+            b: ["Domboo"],
+        ])
+        XCTAssertEqual(titles[a], "Upper Dominion → … → Progression Drops")
+        XCTAssertEqual(titles[b], "Domboo")
+    }
+
+    func testRouteTitleBuilderDisambiguatesLookalikeRuns() {
+        let a = UUID()
+        let b = UUID()
+        let titles = RouteTitleBuilder.titles(from: [
+            a: ["Upper Dominion", "Pipeline", "Lower Dominion", "Progression Drops"],
+            b: ["Upper Dominion", "Crap Chute", "Lower Dominion", "Progression Drops"],
+        ])
+        XCTAssertEqual(titles[a], "Upper Dominion → Pipeline → Progression Drops")
+        XCTAssertEqual(titles[b], "Upper Dominion → Crap Chute → Progression Drops")
+    }
+
+    func testRouteTitleBuilderLeavesIdenticalRoutesIdentical() {
+        let a = UUID()
+        let b = UUID()
+        let titles = RouteTitleBuilder.titles(from: [
+            a: ["Upper Dominion", "Pipeline", "Progression Drops"],
+            b: ["Upper Dominion", "Pipeline", "Progression Drops"],
+        ])
+        XCTAssertEqual(titles[a], titles[b])
+        XCTAssertEqual(titles[a], "Upper Dominion → … → Progression Drops")
+    }
+
     private func runContext(
         at seconds: Double, base: Date, speed: Double = 8,
         phase: DetectorPhase = .run

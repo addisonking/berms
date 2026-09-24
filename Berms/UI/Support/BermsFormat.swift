@@ -16,7 +16,9 @@ enum BermsFormat {
     }
 
     static func speed(_ metersPerSecond: Double) -> String {
-        String(format: "%.1f mph", metersPerSecond * 2.23694)
+        isMetric
+            ? String(format: "%.1f km/h", metersPerSecond * 3.6)
+            : String(format: "%.1f mph", metersPerSecond * 2.23694)
     }
 
     static func distance(_ meters: Double) -> String {

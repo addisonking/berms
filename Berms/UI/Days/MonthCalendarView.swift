@@ -4,6 +4,8 @@ import UIKit
 /// Month grid backed by `UICalendarView`: the same layout, chevron header, and
 /// swipe paging as the system Calendar app, with a dot on every recorded day.
 struct MonthCalendarView: UIViewRepresentable {
+    private static let minimumHeight: CGFloat = 300
+
     struct DayKey: Hashable {
         let year: Int
         let month: Int
@@ -73,7 +75,7 @@ struct MonthCalendarView: UIViewRepresentable {
             withHorizontalFittingPriority: .required,
             verticalFittingPriority: .fittingSizeLevel
         )
-        return CGSize(width: width, height: max(fitting.height, 300))
+        return CGSize(width: width, height: max(fitting.height, Self.minimumHeight))
     }
 
     private static func components(for date: Date) -> DateComponents {

@@ -4,10 +4,12 @@ import SwiftUI
 import UIKit
 
 struct DaysView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \RideDay.startedAt, order: .reverse) private var days: [RideDay]
     @Query(sort: \Trail.updatedAt, order: .reverse) private var trails: [Trail]
     @Binding private var pendingDayID: UUID?
+    @Binding private var pendingRecapDayID: UUID?
     let onStartTracking: () -> Void
     @State private var deleteError: String?
     @State private var dayToDelete: RideDay?
@@ -15,12 +17,15 @@ struct DaysView: View {
     @State private var showingCalendar = false
     @State private var calendarSelection = Date()
     @State private var pendingScrollID: UUID?
+    @State private var recapDayID: UUID?
 
     init(
         pendingDayID: Binding<UUID?> = .constant(nil),
+        pendingRecapDayID: Binding<UUID?> = .constant(nil),
         onStartTracking: @escaping () -> Void = {}
     ) {
         self._pendingDayID = pendingDayID
+        self._pendingRecapDayID = pendingRecapDayID
         self.onStartTracking = onStartTracking
     }
 
@@ -51,7 +56,7 @@ struct DaysView: View {
             }
             .navigationDestination(for: UUID.self) { dayID in
                 if let day = days.first(where: { $0.id == dayID }) {
-                    DayDetailView(day: day) { destination in
+                    DayDetailView(day: day, initiallyShowsRecap: recapDayID == dayID) { destination in
                         navigationPath.append(destination)
                     }
                 }
@@ -221,7 +226,7 @@ struct DaysView: View {
             .listSectionSpacing(.compact)
             .onChange(of: pendingScrollID) { _, target in
                 guard let target else { return }
-                withAnimation { proxy.scrollTo(target, anchor: .top) }
+                withAnimation(reduceMotion ? nil : BermsMotion.recenter) { proxy.scrollTo(target, anchor: .top) }
                 pendingScrollID = nil
             }
         }
@@ -342,7 +347,9 @@ struct DaysView: View {
         guard let pendingDayID,
             finishedDays.contains(where: { $0.id == pendingDayID })
         else { return }
+        recapDayID = pendingRecapDayID == pendingDayID ? pendingDayID : nil
         navigationPath = NavigationPath([pendingDayID])
         self.pendingDayID = nil
+        pendingRecapDayID = nil
     }
 }

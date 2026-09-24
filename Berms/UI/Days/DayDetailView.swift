@@ -6,6 +6,7 @@ import UIKit
 
 struct DayDetailView: View {
     let day: RideDay
+    let initiallyShowsRecap: Bool
     let onRunSelected: (RunMapDestination) -> Void
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
@@ -24,9 +25,19 @@ struct DayDetailView: View {
     @State private var diagnosticLogURLs: [URL] = []
     @State private var isExportingDay = false
     @State private var showingShareCard = false
+    @State private var showingRecap = false
+    @State private var hasShownRecap = false
+    @State private var correctionError: String?
 
-    init(day: RideDay, onRunSelected: @escaping (RunMapDestination) -> Void = { _ in }) {
+    private static let mapPreviewHeight: CGFloat = 280
+    private static let journalMinimumHeight: CGFloat = 140
+
+    init(
+        day: RideDay, initiallyShowsRecap: Bool = false,
+        onRunSelected: @escaping (RunMapDestination) -> Void = { _ in }
+    ) {
         self.day = day
+        self.initiallyShowsRecap = initiallyShowsRecap
         self.onRunSelected = onRunSelected
     }
 
@@ -34,8 +45,32 @@ struct DayDetailView: View {
         day.segments.filter { $0.kind == .run }.sorted { $0.startedAt < $1.startedAt }
     }
 
+    private var lifts: [RideSegment] {
+        day.segments.filter { $0.kind == .lift }.sorted { $0.startedAt < $1.startedAt }
+    }
+
+    private var correctionsBySegment: [UUID: SegmentCorrection] {
+        Dictionary(day.corrections.map { ($0.segmentID, $0) }, uniquingKeysWith: { _, latest in latest })
+    }
+
+    private var timeBreakdown: DayTimeBreakdown {
+        DayTimeBreakdown(day: day)
+    }
+
+    private var runRouteTitles: [UUID: String] {
+        var sequences: [UUID: [String]] = [:]
+        for segment in runs {
+            let name =
+                trailDetails?.sequenceBySegmentID[segment.id]
+                ?? preheatedRun(for: segment)?.trailDetails.sequenceBySegmentID[segment.id]
+            guard let name, !name.isEmpty else { continue }
+            sequences[segment.id] = name.components(separatedBy: " → ")
+        }
+        return RouteTitleBuilder.titles(from: sequences)
+    }
+
     private var preparationTaskKey: String {
-        "\(day.id.uuidString)|\(catalogSelectionID)|"
+        "\(day.id.uuidString)|\(catalogSelectionID)|\(presentationCache.revision)|"
             + SessionDetailPresentationPreheater.trailRevision(for: trails)
     }
 
@@ -116,72 +151,13 @@ struct DayDetailView: View {
 
     var body: some View {
         List {
-            Section("Day summary") {
-                LabeledContent("Activity", value: day.activityMode.title)
-                if day.segments.isEmpty {
-                    LabeledContent("Started", value: day.startedAt.formatted(date: .omitted, time: .shortened))
-                    LabeledContent("Duration", value: BermsFormat.duration(day.duration))
-                } else {
-                    summary
-                }
-            }
-            Section {
-                Picker("Resort", selection: resortSelection) {
-                    Text("Automatic").tag(String?.none)
-                    ForEach(selectableCatalogs) { catalog in
-                        Text(catalog.resortName).tag(Optional(catalog.id))
-                    }
-                }
-                .pickerStyle(.menu)
-                Text(resortCaption)
-                    .font(.caption)
-                    .foregroundStyle(Color.bermsMuted)
-            }
-            if !runs.isEmpty {
-                Section {
-                    dayMap
-                        .listRowInsets(EdgeInsets())
-                }
-            }
-            Section("Runs") {
-                if runs.isEmpty {
-                    Text("No runs recorded during this session.")
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach(Array(runs.enumerated()), id: \.element.id) { index, segment in
-                        let preheatedRun = preheatedRun(for: segment)
-                        NavigationLink {
-                            RunMapView(
-                                number: index + 1,
-                                segment: segment,
-                                preparedBase: detailBase ?? preheatedRun?.base,
-                                preparedDetail: detailBase?.segmentsByID[segment.id]
-                                    ?? preheatedRun?.detail,
-                                preparedTrailDetails: trailDetails
-                                    ?? preheatedRun?.trailDetails)
-                        } label: {
-                            SegmentRow(
-                                number: index + 1, segment: segment,
-                                detail: detailBase?.segmentsByID[segment.id]
-                                    ?? preheatedRun?.detail,
-                                trailName: trailDetails?.sequenceBySegmentID[segment.id]
-                                    ?? preheatedRun?.trailDetails.sequenceBySegmentID[segment.id],
-                                isPreparingDetails: trailDetails == nil && preheatedRun == nil)
-                        }
-                    }
-                }
-            }
-            if jumpSummaryCount > 0 {
-                Section("Jumps") {
-                    jumpSummary
-                }
-            }
-            Section("Journal") {
-                TextEditor(text: $notesDraft)
-                    .frame(minHeight: 140)
-                    .textInputAutocapitalization(.sentences)
-                    .accessibilityLabel("Session journal")
-            }
+            summarySection
+            resortSection
+            mapSection
+            timeSection
+            runsSection
+            jumpsSection
+            journalSection
         }
         .navigationTitle(
             day.hasCustomName ? day.displayName : day.startedAt.formatted(date: .abbreviated, time: .omitted)
@@ -195,6 +171,11 @@ struct DayDetailView: View {
                         showingShareCard = true
                     } label: {
                         Label("Share image", systemImage: "photo.on.rectangle.angled")
+                    }
+                    Button {
+                        showingRecap = true
+                    } label: {
+                        Label("Day recap", systemImage: "sparkles")
                     }
                     Button {
                         exportDay()
@@ -251,6 +232,10 @@ struct DayDetailView: View {
         }
         .onAppear {
             notesDraft = day.notes ?? ""
+            if initiallyShowsRecap, !hasShownRecap {
+                hasShownRecap = true
+                showingRecap = true
+            }
         }
         .sheet(isPresented: $showingShareCard) {
             ShareCardSheet(
@@ -258,6 +243,24 @@ struct DayDetailView: View {
                 base: detailBase,
                 trailDetails: trailDetails,
                 manualCatalogID: dayCatalogID)
+        }
+        .sheet(isPresented: $showingRecap) {
+            DayRecapSheet(day: day, runs: runs, lifts: lifts) {
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(350))
+                    showingShareCard = true
+                }
+            }
+        }
+        .alert(
+            "Couldn't apply correction",
+            isPresented: Binding(
+                get: { correctionError != nil },
+                set: { if !$0 { correctionError = nil } })
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(correctionError ?? "")
         }
         .task(id: day.id) {
             let dayID = day.id
@@ -315,11 +318,15 @@ struct DayDetailView: View {
 
         let export = BermsDataExport(day: day, trails: trails, rawDiagnosticsFilename: rawFilename)
         let logURLs = diagnosticLogURLs
+        let corrections = day.corrections
 
         Task {
             do {
                 let archive = try await Task.detached(priority: .userInitiated) {
-                    try DayArchive.build(export: export, logURLs: logURLs)
+                    try DayArchive.build(
+                        export: export,
+                        logURLs: logURLs,
+                        corrections: corrections)
                 }.value
                 SharePresenter.present(fileURL: archive)
                 saveErrorMessage = nil
@@ -356,31 +363,170 @@ struct DayDetailView: View {
     }
 
     private var summary: some View {
-        VStack(alignment: .leading, spacing: BermsSpacing.control) {
-            VStack(spacing: BermsSpacing.content) {
-                AdaptiveStatRow {
-                    SummaryStat(label: "Time", value: BermsFormat.duration(day.duration), tint: .primary)
-                    SummaryStat(label: "Runs", value: "\(runs.count)", tint: .primary)
-                }
-                AdaptiveStatRow {
-                    SummaryStat(label: "Descent", value: BermsFormat.elevation(day.descentMeters), tint: .primary)
-                    SummaryStat(label: "Distance", value: BermsFormat.distance(day.distanceMeters))
-                }
-                AdaptiveStatRow {
-                    SummaryStat(
-                        label: day.activityMode.activeTimeTitle,
-                        value: BermsFormat.duration(day.activeSeconds))
-                    SummaryStat(label: "Lift time", value: BermsFormat.duration(day.liftSeconds))
-                }
-                AdaptiveStatRow {
-                    SummaryStat(label: "Top speed", value: BermsFormat.speed(day.maximumSpeedMetersPerSecond))
-                    SummaryStat(
-                        label: "Jumps",
-                        value: detailBase.map { "\($0.jumpCount)" } ?? "…",
-                        tint: .primary)
+        VStack(spacing: BermsSpacing.content) {
+            AdaptiveStatRow {
+                SummaryStat(
+                    label: "Descent", value: BermsFormat.elevation(day.descentMeters), emphasis: true)
+                SummaryStat(
+                    label: "Distance", value: BermsFormat.distance(day.distanceMeters), emphasis: true)
+            }
+            AdaptiveStatRow {
+                SummaryStat(label: "Runs", value: "\(runs.count)")
+                SummaryStat(label: "Top speed", value: BermsFormat.speed(day.maximumSpeedMetersPerSecond))
+            }
+            AdaptiveStatRow {
+                SummaryStat(
+                    label: day.activityMode.activeTimeTitle,
+                    value: BermsFormat.duration(day.activeSeconds))
+                SummaryStat(
+                    label: "Longest jump",
+                    value: day.jumpCount > 0 ? BermsFormat.jumpSize(day.maximumJumpLengthMeters) : "—")
+            }
+        }
+    }
+
+    private var summarySection: some View {
+        Section("Day summary") {
+            LabeledContent("Activity", value: day.activityMode.title)
+            if day.segments.isEmpty {
+                LabeledContent("Started", value: day.startedAt.formatted(date: .omitted, time: .shortened))
+                LabeledContent("Duration", value: BermsFormat.duration(day.duration))
+            } else {
+                summary
+            }
+        }
+    }
+
+    private var resortSection: some View {
+        Section {
+            resortPicker
+            Text(resortCaption)
+                .font(.caption)
+                .foregroundStyle(Color.bermsMuted)
+        }
+    }
+
+    @ViewBuilder
+    private var mapSection: some View {
+        if !runs.isEmpty {
+            Section {
+                dayMap
+                    .listRowInsets(EdgeInsets())
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var timeSection: some View {
+        if !day.segments.isEmpty {
+            Section {
+                DayTimeBreakdownView(
+                    breakdown: timeBreakdown,
+                    ridingTitle: day.activityMode.activeTimeTitle)
+            } header: {
+                Text("Time")
+            } footer: {
+                Text(timeFooter)
+            }
+        }
+    }
+
+    private var runsSection: some View {
+        Section("Runs") {
+            if runs.isEmpty {
+                Text("No runs recorded during this session.")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(Array(runs.enumerated()), id: \.element.id) { index, segment in
+                    let preheatedRun = preheatedRun(for: segment)
+                    NavigationLink {
+                        RunMapView(
+                            number: index + 1,
+                            segment: segment,
+                            preparedBase: detailBase ?? preheatedRun?.base,
+                            preparedDetail: detailBase?.segmentsByID[segment.id]
+                                ?? preheatedRun?.detail,
+                            preparedTrailDetails: trailDetails
+                                ?? preheatedRun?.trailDetails)
+                    } label: {
+                        CompactRunRow(
+                            number: index + 1,
+                            segment: segment,
+                            detail: detailBase?.segmentsByID[segment.id]
+                                ?? preheatedRun?.detail,
+                            routeTitle: runRouteTitles[segment.id],
+                            isPreparingDetails: trailDetails == nil && preheatedRun == nil,
+                            correction: correctionsBySegment[segment.id])
+                    }
+                    .swipeActions(edge: .trailing) {
+                        Button {
+                            mark(segment, as: .lift)
+                        } label: {
+                            Label("Mark as Lift", systemImage: "arrow.up.right")
+                        }
+                    }
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private var jumpsSection: some View {
+        if jumpSummaryCount > 0 {
+            Section {
+                jumpSummary
+            } header: {
+                Text("Jumps")
+            } footer: {
+                Text(jumpTrustFooter)
+            }
+        }
+    }
+
+    private var journalSection: some View {
+        Section("Journal") {
+            TextEditor(text: $notesDraft)
+                .frame(minHeight: Self.journalMinimumHeight)
+                .textInputAutocapitalization(.sentences)
+                .accessibilityLabel("Session journal")
+        }
+    }
+
+    private var resortPicker: some View {
+        Picker("Resort", selection: resortSelection) {
+            Text("Automatic").tag(String?.none)
+            ForEach(selectableCatalogs) { catalog in
+                Text(catalog.resortName).tag(String?.some(catalog.id))
+            }
+        }
+        .pickerStyle(.menu)
+    }
+
+    private var timeFooter: String {
+        let end = day.endedAt ?? .now
+        let range =
+            day.startedAt.formatted(date: .omitted, time: .shortened) + " – "
+            + end.formatted(date: .omitted, time: .shortened)
+        var lines = [
+            "\(range). Other time is off the bike: queueing, walking, and lodge time."
+        ]
+        if !lifts.isEmpty {
+            lines.append(
+                "Lifts climbed \(BermsFormat.elevation(day.liftMeters)) across \(lifts.count) rides."
+            )
+        }
+        return lines.joined(separator: " ")
+    }
+
+    private var jumpTrustFooter: String {
+        let sensitivity = JumpSensitivity.stored
+        let configuration = sensitivity.configuration
+        let airtime = String(format: "%.2f", configuration.minimumAirtime)
+        let speed = String(format: "%.1f", configuration.minimumRidingSpeed)
+        return
+            "Detected automatically with \(sensitivity.title.lowercased()) sensitivity: "
+            + "at least \(airtime) s of air over \(speed) m/s of riding. "
+            + "Missing or extra jumps? Change sensitivity in Settings."
     }
 
     private var jumpSummaryCount: Int {
@@ -388,32 +534,37 @@ struct DayDetailView: View {
     }
 
     private var jumpSummary: some View {
-        VStack(alignment: .leading, spacing: BermsSpacing.control) {
-            VStack(spacing: BermsSpacing.content) {
-                AdaptiveStatRow {
-                    SummaryStat(
-                        label: "Longest jump",
-                        value: detailBase.map { BermsFormat.jumpSize($0.longestJumpLengthMeters) } ?? "…",
-                        tint: .primary)
-                    SummaryStat(
-                        label: "Highest air",
-                        value: detailBase.map { BermsFormat.jumpSize($0.highestJumpMeters) } ?? "…",
-                        tint: .primary)
-                }
-                AdaptiveStatRow {
-                    SummaryStat(
-                        label: "Total jumps",
-                        value: detailBase.map { "\($0.jumpCount)" } ?? "…")
-                    SummaryStat(
-                        label: "Total airtime",
-                        value: detailBase.map { BermsFormat.airtime($0.totalJumpAirtime) } ?? "…")
-                }
-                AdaptiveStatRow {
-                    SummaryStat(
-                        label: "Total jump distance",
-                        value: detailBase.map { BermsFormat.distance($0.totalJumpDistanceMeters) } ?? "…")
-                }
+        VStack(spacing: BermsSpacing.content) {
+            AdaptiveStatRow {
+                SummaryStat(
+                    label: "Longest jump",
+                    value: detailBase.map { BermsFormat.jumpSize($0.longestJumpLengthMeters) } ?? "…")
+                SummaryStat(
+                    label: "Highest air",
+                    value: detailBase.map { BermsFormat.jumpSize($0.highestJumpMeters) } ?? "…")
             }
+            AdaptiveStatRow {
+                SummaryStat(label: "Total jumps", value: "\(jumpSummaryCount)")
+                SummaryStat(
+                    label: "Total airtime",
+                    value: detailBase.map { BermsFormat.duration($0.totalJumpAirtime) } ?? "…")
+            }
+            AdaptiveStatRow {
+                SummaryStat(
+                    label: "Longest airtime", value: BermsFormat.airtime(day.longestJumpAirtime))
+                SummaryStat(
+                    label: "Total jump distance",
+                    value: detailBase.map { BermsFormat.distance($0.totalJumpDistanceMeters) } ?? "…")
+            }
+        }
+    }
+
+    private func mark(_ segment: RideSegment, as kind: SegmentKind) {
+        do {
+            try SegmentEditor.mark(segment, as: kind, in: modelContext)
+            correctionError = nil
+        } catch {
+            correctionError = error.localizedDescription
         }
     }
 
@@ -435,7 +586,7 @@ struct DayDetailView: View {
                     Task { await prepareDetails() }
                 }
             }
-            .frame(maxWidth: .infinity, minHeight: 280)
+            .frame(maxWidth: .infinity, minHeight: Self.mapPreviewHeight)
         } else {
             VStack(spacing: BermsSpacing.compact) {
                 ProgressView()
@@ -443,7 +594,7 @@ struct DayDetailView: View {
                     .font(.subheadline)
                     .foregroundStyle(Color.bermsMuted)
             }
-            .frame(maxWidth: .infinity, minHeight: 280)
+            .frame(maxWidth: .infinity, minHeight: Self.mapPreviewHeight)
         }
     }
 
@@ -456,7 +607,7 @@ struct DayDetailView: View {
                 onRunSelected(RunMapDestination(dayID: day.id, runID: segmentID, number: index + 1))
             }, onExpand: { showingFullScreenMap = true }
         )
-        .frame(height: 280)
+        .frame(height: Self.mapPreviewHeight)
         .fullScreenCover(isPresented: $showingFullScreenMap) {
             FullScreenSummaryMap(
                 title: day.activityMode == .ski ? "Ski Map" : "Ride Map",
@@ -579,7 +730,9 @@ enum DayArchiveError: LocalizedError {
 
 /// One shareable zip holding the parsed day and every raw log behind it.
 enum DayArchive {
-    static func build(export: BermsDataExport, logURLs: [URL]) throws -> URL {
+    static func build(
+        export: BermsDataExport, logURLs: [URL], corrections: [SegmentCorrection] = []
+    ) throws -> URL {
         let fileManager = FileManager.default
         let folder = fileManager.temporaryDirectory
             .appendingPathComponent("Berms-export-\(UUID().uuidString)", isDirectory: true)
@@ -600,6 +753,17 @@ enum DayArchive {
         try json.write(
             to: folder.appendingPathComponent("Berms-\(export.parsed.dayID)-data.json"),
             options: .atomic)
+
+        // Corrections only travel when the rider has opted in to sharing them.
+        if !corrections.isEmpty,
+            UserDefaults.standard.bool(forKey: CorrectionsSharing.key),
+            let dayID = export.days.first?.id
+        {
+            let data = try encoder.encode(corrections)
+            try data.write(
+                to: folder.appendingPathComponent("Berms-\(dayID)-corrections.json"),
+                options: .atomic)
+        }
 
         for log in logURLs {
             try? fileManager.copyItem(at: log, to: folder.appendingPathComponent(log.lastPathComponent))
@@ -637,5 +801,124 @@ enum DayArchive {
         }
         if let coordinatorError { throw DayArchiveError.zipFailed(coordinatorError) }
         if let copyError { throw DayArchiveError.zipFailed(copyError) }
+    }
+}
+
+/// Shortens multi-trail route strings for list rows: long sequences keep their
+/// ends, and lookalike runs swap the ellipsis for the middle trail that differs.
+enum RouteTitleBuilder {
+    static func titles(from sequences: [UUID: [String]]) -> [UUID: String] {
+        var titles = sequences.mapValues(compact)
+        var idsByTitle: [String: [UUID]] = [:]
+        for (id, title) in titles {
+            idsByTitle[title, default: []].append(id)
+        }
+        for (title, ids) in idsByTitle where ids.count > 1 {
+            for id in ids {
+                guard let parts = sequences[id], parts.count > 2 else { continue }
+                let others = ids.compactMap { $0 == id ? nil : sequences[$0] }
+                guard let differentiator = differentiator(in: parts, versus: others) else { continue }
+                titles[id] = "\(parts[0]) → \(differentiator) → \(parts[parts.count - 1])"
+            }
+        }
+        return titles
+    }
+
+    static func compact(_ parts: [String]) -> String {
+        if parts.count <= 2 {
+            return parts.joined(separator: " → ")
+        }
+        let joined = parts.joined(separator: " → ")
+        guard joined.count > 28 else { return joined }
+        return "\(parts[0]) → … → \(parts[parts.count - 1])"
+    }
+
+    private static func differentiator(in parts: [String], versus others: [[String]]) -> String? {
+        guard others.isEmpty == false else { return nil }
+        for index in 1..<(parts.count - 1) {
+            let candidate = parts[index]
+            let collides = others.contains { other in
+                index < other.count && other[index] == candidate
+            }
+            if !collides { return candidate }
+        }
+        return nil
+    }
+}
+
+/// Two-line run row: number, trail, duration, then one metadata line. The full
+/// stat grid lives one tap deeper in the run.
+private struct CompactRunRow: View {
+    let number: Int
+    let segment: RideSegment
+    let detail: SessionDetailSegment?
+    let routeTitle: String?
+    let isPreparingDetails: Bool
+    let correction: SegmentCorrection?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: BermsSpacing.tight) {
+            HStack(alignment: .firstTextBaseline, spacing: BermsSpacing.compact) {
+                Text("\(number)")
+                    .font(.caption.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(.tertiary)
+                Text(trailTitle)
+                    .font(.headline)
+                    .lineLimit(1)
+                Spacer(minLength: BermsSpacing.compact)
+                Text(durationTitle)
+                    .font(.subheadline.weight(.semibold))
+                    .monospacedDigit()
+            }
+            HStack(spacing: BermsSpacing.compact) {
+                Text(metadataLine)
+                    .font(.caption)
+                    .foregroundStyle(Color.bermsMuted)
+                    .lineLimit(1)
+                if let correction {
+                    Text(Self.caption(for: correction))
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(Color.bermsMuted)
+                }
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Run \(number), \(trailTitle)")
+        .accessibilityValue("\(durationTitle), \(metadataLine)")
+    }
+
+    private var trailTitle: String {
+        if let routeTitle, !routeTitle.isEmpty { return routeTitle }
+        return isPreparingDetails ? "Loading trail…" : "Trail not identified"
+    }
+
+    private var durationTitle: String {
+        detail.map { BermsFormat.duration($0.duration) } ?? "…"
+    }
+
+    private var metadataLine: String {
+        var parts = [BermsFormat.elevation(verticalMeters) + " descent"]
+        if let detail, !detail.jumps.isEmpty {
+            let count = detail.jumps.count
+            parts.append(count == 1 ? "1 jump" : "\(count) jumps")
+        }
+        parts.append(BermsFormat.speed(maximumSpeedMetersPerSecond))
+        return parts.joined(separator: " · ")
+    }
+
+    private var verticalMeters: Double {
+        detail?.verticalMeters ?? segment.verticalMeters
+    }
+
+    private var maximumSpeedMetersPerSecond: Double {
+        detail?.maximumSpeedMetersPerSecond ?? segment.maximumSpeedMetersPerSecond
+    }
+
+    static func caption(for correction: SegmentCorrection) -> String {
+        switch correction.kind {
+        case .split: "Split by you"
+        case .markLift: "Marked as lift"
+        case .markRun: "Marked as run"
+        }
     }
 }

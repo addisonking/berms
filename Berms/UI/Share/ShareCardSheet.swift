@@ -17,6 +17,7 @@ struct ShareCardSheet: View {
     @State private var renderTask: Task<Void, Never>?
     @State private var isSaving = false
     @State private var showingSaved = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var saveErrorMessage: String?
     @State private var savedFeedbackTask: Task<Void, Never>?
 
@@ -62,7 +63,6 @@ struct ShareCardSheet: View {
 
                 Section("Map") {
                     Toggle("Include map", isOn: $configuration.showsMap)
-                        .tint(.green)
                     if configuration.showsMap {
                         Picker("Map style", selection: $configuration.mapStyle) {
                             ForEach(ShareCardMapStyle.allCases) { style in
@@ -70,17 +70,14 @@ struct ShareCardSheet: View {
                             }
                         }
                         Toggle("Trail names", isOn: $configuration.showsTrails)
-                            .tint(.green)
                             .disabled((trailDetails?.overlays ?? []).isEmpty)
                         Toggle("Jump markers", isOn: $configuration.showsJumps)
-                            .tint(.green)
                             .disabled((base?.jumpMarkers ?? []).isEmpty)
                     }
                 }
 
                 Section("Branding") {
                     Toggle("Berms watermark", isOn: $configuration.showsWatermark)
-                        .tint(.green)
                 }
             }
             .navigationTitle("Share image")
@@ -168,7 +165,7 @@ struct ShareCardSheet: View {
                     .transition(.opacity)
             }
         }
-        .animation(BermsMotion.content, value: showingSaved)
+        .animation(reduceMotion ? nil : BermsMotion.content, value: showingSaved)
     }
 
     private func statToggle(_ kind: ShareStatKind) -> some View {
@@ -181,7 +178,7 @@ struct ShareCardSheet: View {
                 Spacer()
                 if configuration.stats.contains(kind) {
                     Image(systemName: "checkmark")
-                        .foregroundStyle(.green)
+                        .foregroundStyle(Color.accentColor)
                 }
             }
         }

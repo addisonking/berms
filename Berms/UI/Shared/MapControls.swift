@@ -8,7 +8,7 @@ struct MapControlStack<Content: View>: View {
 
     var body: some View {
         VStack(spacing: 0) { content }
-            .padding(.vertical, 4)
+            .padding(.vertical, BermsSpacing.tight)
             .foregroundStyle(.primary)
             .glassEffect(.regular, in: .capsule)
     }
@@ -109,34 +109,14 @@ struct RunNumberMarker: View {
 struct JumpMapMarker: View {
     let number: Int
     let airtime: TimeInterval
-    var showsAirtime = false
     @ScaledMetric(relativeTo: .caption2) private var markerSize: CGFloat = 20
 
     var body: some View {
-        HStack(spacing: 4) {
-            Text("\(number)")
-                .font(.caption2.weight(.heavy))
-                .foregroundStyle(.black)
-                .frame(width: markerSize, height: markerSize)
-                .background(.orange, in: Circle())
-            if showsAirtime {
-                Text(BermsFormat.airtime(airtime))
-                    .font(.caption2.weight(.bold))
-                    .foregroundStyle(.primary)
-            }
-        }
-        .padding(.horizontal, showsAirtime ? 5 : 0)
-        .padding(.vertical, showsAirtime ? 3 : 0)
-        .background {
-            if showsAirtime {
-                Capsule().fill(.regularMaterial)
-            }
-        }
-        .overlay {
-            if showsAirtime {
-                Capsule().stroke(.orange, lineWidth: 1.5)
-            }
-        }
-        .accessibilityLabel("Jump \(number), \(BermsFormat.airtime(airtime))")
+        Text("\(number)")
+            .font(.caption2.weight(.heavy))
+            .foregroundStyle(Color.bermsOnJump)
+            .frame(width: markerSize, height: markerSize)
+            .background(Color.bermsJump, in: Circle())
+            .accessibilityLabel("Jump \(number), \(BermsFormat.airtime(airtime))")
     }
 }

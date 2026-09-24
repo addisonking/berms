@@ -14,7 +14,14 @@ struct TrackView: View {
     @State private var mapPosition: MapCameraPosition = .userLocation(followsHeading: false, fallback: .automatic)
     @State private var visibleRegion: MKCoordinateRegion?
     @State private var mapWasBackgrounded = false
-    @State private var liveStatsHeight: CGFloat = 320
+    @State private var liveStatsHeight: CGFloat = Layout.initialStatsHeight
+
+    private enum Layout {
+        static let readingMeasure: CGFloat = 300
+        static let buttonMeasure: CGFloat = 260
+        static let initialStatsHeight: CGFloat = 320
+        static let maximumStatsHeightFraction: CGFloat = 0.65
+    }
     @State private var showingStopConfirmation = false
     @State private var showingSettings = false
     let onDayFinished: (RideDay) -> Void
@@ -149,7 +156,7 @@ struct TrackView: View {
                             .font(.subheadline)
                             .foregroundStyle(Color.bermsMuted)
                             .multilineTextAlignment(.center)
-                            .frame(maxWidth: 300)
+                            .frame(maxWidth: Self.Layout.readingMeasure)
                     }
 
                     startButton
@@ -158,7 +165,7 @@ struct TrackView: View {
                         .font(.caption)
                         .foregroundStyle(Color.bermsMuted)
                         .multilineTextAlignment(.center)
-                        .frame(maxWidth: 300)
+                        .frame(maxWidth: Self.Layout.readingMeasure)
                     if recorder.isRestoring {
                         ProgressView("Restoring…")
                     }
@@ -181,7 +188,8 @@ struct TrackView: View {
 
     private var recordingContent: some View {
         GeometryReader { geometry in
-            let panelHeight = min(liveStatsHeight, max(0, geometry.size.height * 0.65))
+            let panelHeight = min(
+                liveStatsHeight, max(0, geometry.size.height * Self.Layout.maximumStatsHeightFraction))
             let statusAreaHeight = max(0, geometry.size.height - panelHeight - BermsSpacing.content)
             ZStack(alignment: .bottom) {
                 // MapKit keeps rendering offscreen while the app records in the
@@ -224,7 +232,9 @@ struct TrackView: View {
                 }
                 .scrollBounceBehavior(.basedOnSize)
                 .frame(height: panelHeight)
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 30, style: .continuous))
+                .background(
+                    .regularMaterial, in: RoundedRectangle(cornerRadius: BermsSpacing.section, style: .continuous)
+                )
                 .padding(.horizontal, BermsSpacing.content)
                 .padding(.bottom, BermsSpacing.content)
             }
@@ -394,8 +404,8 @@ struct TrackView: View {
             )
             .foregroundStyle(Color.bermsOnAccent)
             .font(.headline)
-            .frame(maxWidth: 260)
-            .padding(.vertical, 8)
+            .frame(maxWidth: Self.Layout.buttonMeasure)
+            .padding(.vertical, BermsSpacing.compact)
         }
         .buttonStyle(.borderedProminent)
         .tint(.bermsTrail)
@@ -531,7 +541,7 @@ struct TrackView: View {
                         : mapPosition.followsUserLocation ? "Following location" : "Not following")
             }
         }
-        .padding(.top, BermsSpacing.control)
+        .padding(.top, BermsSpacing.content)
         .padding(.trailing, BermsSpacing.content)
     }
 

@@ -77,18 +77,27 @@ struct RouteMapConfiguration {
             latitude: boundary.center.latitude,
             longitude: boundary.center.longitude)
         let diameter = boundary.radiusMeters * 2
+        let panOverscan: CGFloat = 1.4
+        let minimumPanDistance: CGFloat = 60
+        let minimumMaximumDistance: CGFloat = 1_200
+        let maximumDistanceOverscan: CGFloat = 2.0
         let panRegion = MKCoordinateRegion(
             center: resortCenter,
-            latitudinalMeters: diameter * 1.4,
-            longitudinalMeters: diameter * 1.4)
+            latitudinalMeters: diameter * panOverscan,
+            longitudinalMeters: diameter * panOverscan)
 
         let positionCenter = extent?.center ?? resortCenter
         // Without an extent, which is what a resort preview looks like, frame the
         // whole boundary. A small extent still opens out to half the resort so
         // the camera is not too tight on a short ride.
-        let minimumSpan = extent == nil ? diameter : diameter * 0.5
-        let positionLatitude = min(max((extent?.latitudeMeters ?? 0) * 1.25, minimumSpan), diameter * 1.15)
-        let positionLongitude = min(max((extent?.longitudeMeters ?? 0) * 1.25, minimumSpan), diameter * 1.15)
+        let minimumSpanFactor: CGFloat = 0.5
+        let extentGrowth: CGFloat = 1.25
+        let maximumSpanFactor: CGFloat = 1.15
+        let minimumSpan = extent == nil ? diameter : diameter * minimumSpanFactor
+        let positionLatitude = min(
+            max((extent?.latitudeMeters ?? 0) * extentGrowth, minimumSpan), diameter * maximumSpanFactor)
+        let positionLongitude = min(
+            max((extent?.longitudeMeters ?? 0) * extentGrowth, minimumSpan), diameter * maximumSpanFactor)
 
         return RouteMapConfiguration(
             framingRegion: MKCoordinateRegion(
@@ -96,22 +105,30 @@ struct RouteMapConfiguration {
                 latitudinalMeters: positionLatitude,
                 longitudinalMeters: positionLongitude),
             initialDistance: max(positionLatitude, positionLongitude),
-            minimumDistance: 60,
+            minimumDistance: minimumPanDistance,
             // Enough distance that the whole resort boundary fits on screen.
-            maximumDistance: max(1_200, diameter * 2.0),
+            maximumDistance: max(minimumMaximumDistance, diameter * maximumDistanceOverscan),
             panRegion: panRegion
         )
     }
 
     private static func sessionConfiguration(extent: RouteExtent) -> RouteMapConfiguration {
-        let latitudeMeters = max(800, extent.latitudeMeters * 1.25)
-        let longitudeMeters = max(800, extent.longitudeMeters * 1.25)
+        let minimumExtentMeters: CGFloat = 800
+        let extentGrowth: CGFloat = 1.25
+        let minimumPanDistance: CGFloat = 60
+        let latitudeMeters = max(minimumExtentMeters, extent.latitudeMeters * extentGrowth)
+        let longitudeMeters = max(minimumExtentMeters, extent.longitudeMeters * extentGrowth)
         let largestSpan = max(latitudeMeters, longitudeMeters)
+        let relativeMinimumDistance: CGFloat = 0.05
+        let maximumDistanceGrowth: CGFloat = 3.5
+        let maximumDistanceCap: CGFloat = 15_000
         let center = extent.center
+        let panMinimumMeters: CGFloat = 2_500
+        let panGrowth: CGFloat = 2.2
         let panRegion = MKCoordinateRegion(
             center: center,
-            latitudinalMeters: max(2_500, latitudeMeters * 2.2),
-            longitudinalMeters: max(2_500, longitudeMeters * 2.2))
+            latitudinalMeters: max(panMinimumMeters, latitudeMeters * panGrowth),
+            longitudinalMeters: max(panMinimumMeters, longitudeMeters * panGrowth))
 
         return RouteMapConfiguration(
             framingRegion: MKCoordinateRegion(
@@ -119,8 +136,9 @@ struct RouteMapConfiguration {
                 latitudinalMeters: latitudeMeters,
                 longitudinalMeters: longitudeMeters),
             initialDistance: largestSpan,
-            minimumDistance: max(60, largestSpan * 0.05),
-            maximumDistance: min(max(2_500, largestSpan * 3.5), 15_000),
+            minimumDistance: max(minimumPanDistance, largestSpan * relativeMinimumDistance),
+            maximumDistance: min(
+                max(panMinimumMeters, largestSpan * maximumDistanceGrowth), maximumDistanceCap),
             panRegion: panRegion
         )
     }

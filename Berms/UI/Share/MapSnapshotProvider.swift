@@ -61,7 +61,9 @@ struct MapKitShareSnapshotter: ShareMapSnapshotting {
         let format = UIGraphicsImageRendererFormat()
         format.scale = request.scale
         format.opaque = true
-        let tolerance = max(3, framing.largestSpan / 320)
+        let minimumSimplificationTolerance: CGFloat = 3
+        let toleranceDivisor: CGFloat = 320
+        let tolerance = max(minimumSimplificationTolerance, framing.largestSpan / toleranceDivisor)
 
         return UIGraphicsImageRenderer(size: request.size, format: format).image { context in
             snapshot.image.draw(at: .zero)
@@ -228,8 +230,11 @@ struct ShareMapFraming {
         let centerLatitude = (minLatitude + maxLatitude) / 2
         let centerLongitude = (minLongitude + maxLongitude) / 2
         let longitudeScale = max(0.1, cos(centerLatitude * .pi / 180))
-        let latitudeMeters = max(250, (maxLatitude - minLatitude) * 111_000 * 1.18)
-        let longitudeMeters = max(250, (maxLongitude - minLongitude) * 111_000 * longitudeScale * 1.18)
+        let minimumFramingMeters: Double = 250
+        let framingPadding: Double = 1.18
+        let latitudeMeters = max(minimumFramingMeters, (maxLatitude - minLatitude) * 111_000 * framingPadding)
+        let longitudeMeters = max(
+            minimumFramingMeters, (maxLongitude - minLongitude) * 111_000 * longitudeScale * framingPadding)
 
         let aspect = size.width / size.height
         let adjustedLatitude =

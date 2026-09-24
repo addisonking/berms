@@ -14,7 +14,7 @@ struct DayRow: View {
                     .foregroundStyle(Color.bermsMuted)
                     .frame(width: BermsSpacing.target, height: BermsSpacing.target)
                     .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 5) {
+                VStack(alignment: .leading, spacing: BermsSpacing.tight) {
                     Text(title)
                         .font(.headline)
                         .fixedSize(horizontal: false, vertical: true)

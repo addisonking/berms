@@ -88,6 +88,7 @@ final class RideDay {
     @Attribute(.externalStorage) var checkpointData: Data?
     var pausedAt: Date?
     var accumulatedPausedSeconds: Double?
+    @Attribute(.externalStorage) var correctionsData: Data?
 
     @Relationship(deleteRule: .cascade, inverse: \RideSegment.day)
     var segments: [RideSegment]
@@ -108,6 +109,7 @@ final class RideDay {
         self.maximumSpeedMetersPerSecond = 0
         self.pausedAt = nil
         self.accumulatedPausedSeconds = nil
+        self.correctionsData = nil
         self.segments = []
     }
 
@@ -211,6 +213,19 @@ final class RideDay {
         maximumSpeedMetersPerSecond = runs.map(\.maximumSpeedMetersPerSecond).max() ?? 0
     }
 
+    /// Rider corrections are kept with the day so a reclassify or split can
+    /// later travel with the diagnostics as a detection signal.
+    var corrections: [SegmentCorrection] {
+        guard let correctionsData else { return [] }
+        return (try? JSONDecoder().decode([SegmentCorrection].self, from: correctionsData)) ?? []
+    }
+
+    func appendCorrection(_ correction: SegmentCorrection) {
+        var all = corrections
+        all.append(correction)
+        correctionsData = try? JSONEncoder().encode(all)
+    }
+
     private var normalizedName: String? {
         guard let name else { return nil }
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -272,6 +287,63 @@ final class RideSegment {
         guard let jumpData else { return [] }
         return (try? JSONDecoder().decode([JumpEvent].self, from: jumpData)) ?? []
     }
+}
+
+/// Where a day's wall-clock time went. `stopped` is the honest residual: time
+/// that was not paused, not a run, and not a lift.
+struct DayTimeBreakdown: Sendable {
+    let riding: TimeInterval
+    let lifts: TimeInterval
+    let stopped: TimeInterval
+    let paused: TimeInterval
+
+    var total: TimeInterval { riding + lifts + stopped + paused }
+
+    init(day: RideDay, at date: Date = .now) {
+        let end = day.endedAt ?? date
+        paused =
+            (day.accumulatedPausedSeconds ?? 0)
+            + (day.pausedAt.map { max(0, end.timeIntervalSince($0)) } ?? 0)
+        riding = day.activeSeconds
+        lifts = day.liftSeconds
+        stopped = max(0, end.timeIntervalSince(day.startedAt) - paused - riding - lifts)
+    }
+}
+
+/// A rider correction to automatic segmentation, stored on the day.
+struct SegmentCorrection: Codable, Identifiable, Sendable {
+    enum Kind: String, Codable, Sendable {
+        case split
+        case markLift
+        case markRun
+    }
+
+    let id: UUID
+    let kind: Kind
+    let segmentID: UUID
+    let at: Date
+    let originalKind: SegmentKind?
+    let correctedKind: SegmentKind?
+    let splitTimestamp: Date?
+
+    init(
+        kind: Kind, segmentID: UUID, at: Date = .now,
+        originalKind: SegmentKind? = nil, correctedKind: SegmentKind? = nil,
+        splitTimestamp: Date? = nil
+    ) {
+        self.id = UUID()
+        self.kind = kind
+        self.segmentID = segmentID
+        self.at = at
+        self.originalKind = originalKind
+        self.correctedKind = correctedKind
+        self.splitTimestamp = splitTimestamp
+    }
+}
+
+/// Opt-in gate for attaching rider corrections to an exported archive.
+enum CorrectionsSharing {
+    static let key = "berms.shareCorrections"
 }
 
 struct BermsDataExport: Codable, Sendable {

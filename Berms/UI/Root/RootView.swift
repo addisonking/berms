@@ -16,6 +16,7 @@ struct RootView: View {
     @StateObject private var trailCatalogSelection = TrailCatalogSelection()
     @State private var selectedTab: AppTab = .track
     @State private var pendingDayID: UUID?
+    @State private var pendingRecapDayID: UUID?
     @State private var startupIssue: StartupIssue? = RootView.initialStartupIssue()
 
     private struct StartupIssue: Identifiable {
@@ -42,11 +43,12 @@ struct RootView: View {
             Tab("Track", systemImage: "location.fill", value: AppTab.track) {
                 TrackView(recorder: recorder) { day in
                     pendingDayID = day.id
+                    pendingRecapDayID = day.id
                     selectedTab = .days
                 }
             }
             Tab("Days", systemImage: "calendar", value: AppTab.days) {
-                DaysView(pendingDayID: $pendingDayID) {
+                DaysView(pendingDayID: $pendingDayID, pendingRecapDayID: $pendingRecapDayID) {
                     selectedTab = .track
                 }
             }
