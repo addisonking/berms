@@ -105,7 +105,7 @@ struct SettingsView: View {
 
     private var liveActivitySection: some View {
         Section {
-            Picker("Right field", selection: liveActivityMetricBinding) {
+            Picker("Detail stat", selection: liveActivityMetricBinding) {
                 ForEach(BermsLiveActivityMetric.allCases) { metric in
                     Text(metric.title).tag(metric)
                 }
@@ -114,7 +114,9 @@ struct SettingsView: View {
         } header: {
             Text("Live Activity")
         } footer: {
-            Text("Right side of the Dynamic Island while recording.")
+            Text(
+                "Shown in the expanded Dynamic Island and on the Lock Screen. The compact Dynamic Island always shows the run count on the right and a mountain icon while active or a pause icon while paused on the left."
+            )
         }
     }
 
