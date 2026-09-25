@@ -42,14 +42,23 @@ private struct ShareCardStoryLayout: View {
             palette.background
             if let mapImage {
                 Image(uiImage: mapImage)
+                    .renderingMode(.original)
                     .resizable()
                     .scaledToFill()
             }
-            scrim
+            if mapImage != nil {
+                scrim
+            }
             VStack(alignment: .leading, spacing: 0) {
                 header
-                Spacer(minLength: 0)
-                stats
+                if content.hasRoute {
+                    Spacer(minLength: 0)
+                    stats
+                } else {
+                    Spacer(minLength: 0)
+                    stats
+                    Spacer(minLength: 0)
+                }
                 if configuration.showsWatermark {
                     ShareCardWatermark(tint: palette.watermark)
                         .frame(maxWidth: .infinity)
@@ -137,6 +146,7 @@ private struct ShareCardPostLayout: View {
                 palette.background
                 if let mapImage {
                     Image(uiImage: mapImage)
+                        .renderingMode(.original)
                         .resizable()
                         .scaledToFill()
                 }
@@ -206,7 +216,7 @@ private struct ShareCardPortraitLayout: View {
                         width: configuration.preset.mapFrameSize.width,
                         height: configuration.preset.mapFrameSize.height
                     )
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: BermsSpacing.compact, style: .continuous))
                     .padding(.bottom, 14)
             }
             VStack(spacing: 0) {

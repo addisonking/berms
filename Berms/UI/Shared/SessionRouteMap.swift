@@ -12,6 +12,49 @@ private struct RunStartKey: Hashable {
     }
 }
 
+enum SessionMapOverlayPresentation {
+    static let zoomedInDistance: CLLocationDistance = 1_500
+    static let overviewJumpLimit = 6
+    static let notableJumpAirtime: TimeInterval = 0.4
+
+    static func isZoomedIn(
+        cameraDistance: CLLocationDistance?,
+        initialDistance: CLLocationDistance?
+    ) -> Bool {
+        (cameraDistance ?? initialDistance ?? .greatestFiniteMagnitude) < zoomedInDistance
+    }
+
+    static func showsRunMarkers(isZoomedIn: Bool, focusedSegmentID: UUID?) -> Bool {
+        isZoomedIn || focusedSegmentID != nil
+    }
+
+    static func overviewJumps(
+        _ jumps: [SessionDetailJumpMarker],
+        limit: Int = overviewJumpLimit,
+        minimumSeparationMeters: Double = 140
+    ) -> [SessionDetailJumpMarker] {
+        guard limit > 0 else { return [] }
+        let candidates =
+            jumps
+            .filter { $0.airtime >= notableJumpAirtime }
+            .sorted {
+                if $0.airtime == $1.airtime { return $0.number < $1.number }
+                return $0.airtime > $1.airtime
+            }
+        var selected: [SessionDetailJumpMarker] = []
+        for jump in candidates {
+            guard
+                !selected.contains(where: {
+                    $0.coordinate.distance(to: jump.coordinate) < minimumSeparationMeters
+                })
+            else { continue }
+            selected.append(jump)
+            if selected.count == limit { break }
+        }
+        return selected.sorted { $0.number < $1.number }
+    }
+}
+
 struct SessionRouteMap: View {
     let base: SessionDetailBase
     let trailDetails: SessionDetailTrailDetails?
@@ -26,10 +69,9 @@ struct SessionRouteMap: View {
     @State private var position: MapCameraPosition = .automatic
     @State private var selectedRunID: UUID?
     @State private var cameraDistance: CLLocationDistance?
+    @State private var visibleRegion: MKCoordinateRegion?
 
-    private static let zoomedInDistance: CLLocationDistance = 1_500
-    private static let notableJumpAirtime: TimeInterval = 0.4
-    private static let zoomedOutLabelLimit = 5
+    private static let zoomedOutLabelLimit = 3
 
     private var segments: [SessionDetailSegment] {
         if let focusedSegmentID {
@@ -61,20 +103,49 @@ struct SessionRouteMap: View {
     }
 
     private var isZoomedIn: Bool {
-        (cameraDistance ?? 0) < Self.zoomedInDistance
+        SessionMapOverlayPresentation.isZoomedIn(
+            cameraDistance: cameraDistance,
+            initialDistance: configuration?.initialDistance)
+    }
+
+    private var presentationDistance: CLLocationDistance {
+        cameraDistance ?? configuration?.initialDistance ?? .greatestFiniteMagnitude
+    }
+
+    private var showsRunMarkers: Bool {
+        SessionMapOverlayPresentation.showsRunMarkers(
+            isZoomedIn: isZoomedIn,
+            focusedSegmentID: focusedSegmentID)
     }
 
     /// Zoomed out, only jumps worth looking at; every marker once the camera is
     /// close enough for them to be readable.
     private var visibleJumps: [SessionDetailJumpMarker] {
         guard !isZoomedIn else { return jumps }
-        return jumps.filter { $0.airtime >= Self.notableJumpAirtime }
+        return SessionMapOverlayPresentation.overviewJumps(
+            jumps,
+            minimumSeparationMeters: max(100, presentationDistance * 0.08))
     }
 
     private var trails: [TrailMapOverlay] {
         (trailDetails?.overlays ?? [])
             .filter { focusedSegmentID == nil || $0.segmentID == focusedSegmentID }
             .map(TrailMapOverlay.init(detail:))
+    }
+
+    private var trailLabels: [TrailMapLabelItem] {
+        let center = visibleRegion?.center ?? configuration?.framingRegion.center
+        let mapCenter = center.map { Coordinate(latitude: $0.latitude, longitude: $0.longitude) }
+        let labels = trailMapLabelItems(
+            for: trails,
+            limit: isZoomedIn ? TrailMapRendering.labelLimit : Self.zoomedOutLabelLimit,
+            minimumSeparationMeters: max(120, presentationDistance * 0.3),
+            prioritizingAround: mapCenter,
+            avoidingCoordinates: preferences.showsJumps ? visibleJumps.map(\.coordinate) : [],
+            avoidanceDistanceMeters: max(70, presentationDistance * 0.08),
+            within: visibleRegion ?? configuration?.framingRegion,
+            edgeMarginFraction: 0.22)
+        return labels
     }
 
     /// Runs often start from the same lift top, so exact start markers stack and
@@ -89,7 +160,7 @@ struct SessionRouteMap: View {
 
         var offsets: [UUID: CGSize] = [:]
         for ids in groups.values where ids.count > 1 {
-            let radius = min(34, 8 + Double(ids.count) * 4)
+            let radius = min(92, 24 + Double(ids.count) * 5)
             for (index, id) in ids.enumerated() {
                 let angle = (2 * Double.pi / Double(ids.count)) * Double(index) - Double.pi / 2
                 offsets[id] = CGSize(width: radius * cos(angle), height: radius * sin(angle))
@@ -115,7 +186,7 @@ struct SessionRouteMap: View {
                             )
                             .tag(segment.id)
                     }
-                    if let point = segment.routePoints.first {
+                    if showsRunMarkers, let point = segment.routePoints.first {
                         Annotation(
                             "", coordinate: CLLocationCoordinate2D(latitude: point.latitude, longitude: point.longitude)
                         ) {
@@ -167,12 +238,7 @@ struct SessionRouteMap: View {
                 ForEach(trails) { trail in
                     trailMapContent(coordinates: trail.coordinates, difficulty: trail.difficulty)
                 }
-                ForEach(
-                    trailMapLabelItems(
-                        for: trails,
-                        limit: isZoomedIn
-                            ? TrailMapRendering.labelLimit : Self.zoomedOutLabelLimit)
-                ) { label in
+                ForEach(trailLabels) { label in
                     Annotation("", coordinate: label.coordinate) {
                         TrailMapLabel(name: label.name, difficulty: label.difficulty, color: label.color)
                     }
@@ -206,6 +272,7 @@ struct SessionRouteMap: View {
         .mapScope(mapScope)
         .onMapCameraChange(frequency: .onEnd) { context in
             cameraDistance = context.camera.distance
+            visibleRegion = context.region
         }
         .onAppear { recenter() }
         .onChange(of: selectedRunID) { _, id in

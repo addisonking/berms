@@ -282,6 +282,7 @@ struct DaysView: View {
         var summary: String {
             let dayCount = days.count == 1 ? "1 day" : "\(days.count) days"
             let runCount = days.reduce(0) { $0 + $1.segments.filter { $0.kind == .run }.count }
+            guard runCount > 0 else { return dayCount }
             let runLabel = runCount == 1 ? "1 run" : "\(runCount) runs"
             return "\(dayCount)  ·  \(runLabel)"
         }

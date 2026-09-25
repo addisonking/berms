@@ -11,6 +11,7 @@ struct ShareCardSheet: View {
     @State private var configuration = ShareCardConfigurationStore.load()
     @State private var content: ShareCardContent?
     @State private var previewImage: UIImage?
+    @State private var previewMapImage: UIImage?
     @State private var exportURL: URL?
     @State private var mapUnavailable = false
     @State private var isRendering = false
@@ -25,6 +26,14 @@ struct ShareCardSheet: View {
 
     private var renderKey: String {
         "\(day.id.uuidString)|\(base?.mapSegments.count ?? -1)|\(trailDetails?.overlays.count ?? -1)"
+    }
+
+    private var availableStats: [ShareStatKind] {
+        ShareCardContentBuilder.availableStats(day: day, base: base)
+    }
+
+    private var selectedStats: [ShareStatKind] {
+        ShareCardContentBuilder.selectedStats(day: day, base: base, configuration: configuration)
     }
 
     var body: some View {
@@ -51,31 +60,37 @@ struct ShareCardSheet: View {
                     .pickerStyle(.segmented)
                 }
 
-                Section {
-                    ForEach(ShareStatKind.allCases) { kind in
-                        statToggle(kind)
+                if availableStats.count > 1 {
+                    Section {
+                        ForEach(availableStats) { kind in
+                            statToggle(kind)
+                        }
+                    } header: {
+                        Text("Stats")
+                    } footer: {
+                        Text("Choose up to \(ShareCardConfiguration.maximumStats).")
                     }
-                } header: {
-                    Text("Stats")
-                } footer: {
-                    Text("Choose up to \(ShareCardConfiguration.maximumStats).")
                 }
 
-                Section("Map") {
-                    Toggle("Include map", isOn: $configuration.showsMap)
-                        .tint(Color.bermsSwitch)
-                    if configuration.showsMap {
-                        Picker("Map style", selection: $configuration.mapStyle) {
-                            ForEach(ShareCardMapStyle.allCases) { style in
-                                Text(style.title).tag(style)
+                if content?.hasRoute == true {
+                    Section("Map") {
+                        Toggle("Include map", isOn: $configuration.showsMap)
+                            .tint(Color.bermsSwitch)
+                        if configuration.showsMap {
+                            Picker("Map style", selection: $configuration.mapStyle) {
+                                ForEach(ShareCardMapStyle.allCases) { style in
+                                    Text(style.title).tag(style)
+                                }
+                            }
+                            if !(trailDetails?.overlays ?? []).isEmpty {
+                                Toggle("Trail names", isOn: $configuration.showsTrails)
+                                    .tint(Color.bermsSwitch)
+                            }
+                            if !(base?.jumpMarkers ?? []).isEmpty {
+                                Toggle("Jump markers", isOn: $configuration.showsJumps)
+                                    .tint(Color.bermsSwitch)
                             }
                         }
-                        Toggle("Trail names", isOn: $configuration.showsTrails)
-                            .tint(Color.bermsSwitch)
-                            .disabled((trailDetails?.overlays ?? []).isEmpty)
-                        Toggle("Jump markers", isOn: $configuration.showsJumps)
-                            .tint(Color.bermsSwitch)
-                            .disabled((base?.jumpMarkers ?? []).isEmpty)
                     }
                 }
 
@@ -140,22 +155,35 @@ struct ShareCardSheet: View {
 
     @ViewBuilder
     private var preview: some View {
-        Group {
-            if let previewImage {
-                Image(uiImage: previewImage)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(maxWidth: .infinity, maxHeight: 420)
-                    .accessibilityLabel(content?.accessibilitySummary ?? "Share image preview")
-            } else {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color.bermsInset)
-                    .frame(height: 320)
-                    .overlay {
-                        ProgressView()
-                    }
+        GeometryReader { proxy in
+            let canvasSize = configuration.preset.canvasSize
+            let scale = min(
+                proxy.size.width / canvasSize.width,
+                proxy.size.height / canvasSize.height)
+            ZStack {
+                if let content {
+                    ShareCardCanvas(
+                        content: content,
+                        configuration: configuration,
+                        mapImage: previewMapImage
+                    )
+                    .scaleEffect(scale)
+                    .frame(width: canvasSize.width * scale, height: canvasSize.height * scale)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(content.accessibilitySummary)
+                } else {
+                    RoundedRectangle(cornerRadius: BermsSpacing.compact, style: .continuous)
+                        .fill(Color.bermsInset)
+                        .frame(width: canvasSize.width, height: canvasSize.height)
+                        .scaleEffect(scale)
+                        .frame(width: canvasSize.width * scale, height: canvasSize.height * scale)
+                        .overlay {
+                            ProgressView()
+                        }
+                }
             }
         }
+        .frame(height: min(420, configuration.preset.canvasSize.height))
         .frame(maxWidth: .infinity)
         .listRowInsets(EdgeInsets(top: 12, leading: 12, bottom: 12, trailing: 12))
         .overlay(alignment: .bottom) {
@@ -174,20 +202,27 @@ struct ShareCardSheet: View {
 
     private func statToggle(_ kind: ShareStatKind) -> some View {
         Button {
-            configuration.toggleStat(kind)
+            var updated = configuration
+            updated.stats = selectedStats
+            updated.toggleStat(kind)
+            configuration = updated
         } label: {
             HStack {
                 Text(kind.title)
                     .foregroundStyle(.primary)
                 Spacer()
-                if configuration.stats.contains(kind) {
+                if selectedStats.contains(kind) {
                     Image(systemName: "checkmark")
                         .foregroundStyle(Color.accentColor)
                 }
             }
         }
-        .disabled(!configuration.canToggleStat(kind))
-        .accessibilityAddTraits(configuration.stats.contains(kind) ? [.isSelected] : [])
+        .disabled(
+            selectedStats.contains(kind)
+                ? selectedStats.count <= 1
+                : selectedStats.count >= ShareCardConfiguration.maximumStats
+        )
+        .accessibilityAddTraits(selectedStats.contains(kind) ? [.isSelected] : [])
     }
 
     private func share() {
@@ -257,6 +292,7 @@ struct ShareCardSheet: View {
             manualCatalogID: manualCatalogID,
             configuration: configuration)
         self.content = content
+        previewMapImage = nil
 
         var mapImage: UIImage?
         var unavailable = false
@@ -277,6 +313,7 @@ struct ShareCardSheet: View {
             }
         }
         guard !Task.isCancelled else { return }
+        previewMapImage = mapImage
 
         guard
             let image = ShareCardRenderer.render(
@@ -288,7 +325,6 @@ struct ShareCardSheet: View {
             return
         }
 
-        previewImage = image
         mapUnavailable = unavailable
         exportURL = try? ShareCardRenderer.writePNG(
             image,
@@ -296,6 +332,11 @@ struct ShareCardSheet: View {
                 content: content,
                 preset: configuration.preset,
                 date: day.startedAt))
+        if let exportURL, let exportedImage = UIImage(contentsOfFile: exportURL.path) {
+            previewImage = exportedImage
+        } else {
+            previewImage = image
+        }
         isRendering = false
     }
 }

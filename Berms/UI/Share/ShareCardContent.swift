@@ -56,7 +56,8 @@ enum ShareCardContentBuilder {
         let meta = customName == nil ? dateText : "\(resortName) · \(dateText)"
 
         let values = statValues(day: day, base: base)
-        let stats = configuration.stats.compactMap { kind -> ShareCardStat? in
+        let stats = selectedStats(day: day, base: base, configuration: configuration).compactMap {
+            kind -> ShareCardStat? in
             guard let value = values[kind] else { return nil }
             return ShareCardStat(kind: kind, value: value)
         }
@@ -86,6 +87,32 @@ enum ShareCardContentBuilder {
         )
     }
 
+    static func availableStats(day: RideDay, base: SessionDetailBase?) -> [ShareStatKind] {
+        let runCount = day.segments.filter { $0.kind == .run }.count
+        var available: Set<ShareStatKind> = []
+        if day.descentMeters > 0 { available.insert(.descent) }
+        if day.distanceMeters > 0 { available.insert(.distance) }
+        if day.duration > 0 { available.insert(.duration) }
+        if runCount > 0 { available.insert(.runs) }
+        if day.maximumSpeedMetersPerSecond > 0 { available.insert(.topSpeed) }
+        if (base?.jumpCount ?? day.jumpCount) > 0 { available.insert(.jumps) }
+        if day.activeSeconds > 0 { available.insert(.ridingTime) }
+        if day.liftSeconds > 0 { available.insert(.liftTime) }
+        return ShareStatKind.allCases.filter { available.contains($0) }
+    }
+
+    static func selectedStats(
+        day: RideDay,
+        base: SessionDetailBase?,
+        configuration: ShareCardConfiguration
+    ) -> [ShareStatKind] {
+        let available = availableStats(day: day, base: base)
+        let selected = configuration.stats.filter { available.contains($0) }
+        if !selected.isEmpty { return selected }
+        if available.contains(.duration) { return [.duration] }
+        return Array(available.prefix(ShareCardConfiguration.maximumStats))
+    }
+
     private static func resolveResortName(
         day: RideDay,
         base: SessionDetailBase?,
@@ -102,7 +129,7 @@ enum ShareCardContentBuilder {
         {
             return catalog.resortName
         }
-        return day.activityMode == .ski ? "Ski day" : "Ride day"
+        return day.activityMode == .ski ? "Unknown ski area" : "Unknown bike park"
     }
 
     private static func statValues(day: RideDay, base: SessionDetailBase?) -> [ShareStatKind: String] {
@@ -113,7 +140,7 @@ enum ShareCardContentBuilder {
             .duration: BermsFormat.duration(day.duration),
             .runs: "\(runCount)",
             .topSpeed: BermsFormat.speed(day.maximumSpeedMetersPerSecond),
-            .jumps: base.map { "\($0.jumpCount)" } ?? "—",
+            .jumps: "\(base?.jumpCount ?? day.jumpCount)",
             .ridingTime: BermsFormat.duration(day.activeSeconds),
             .liftTime: BermsFormat.duration(day.liftSeconds),
         ]

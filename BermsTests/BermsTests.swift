@@ -1,4 +1,5 @@
 import Foundation
+import MapKit
 import SwiftData
 import SwiftUI
 import UIKit
@@ -106,6 +107,82 @@ final class BermsTests: XCTestCase {
 
         let limited = trailMapLabelItems(for: overlays, limit: 1)
         XCTAssertEqual(limited.map(\.name), ["Salvation"])
+    }
+
+    func testTrailMapLabelsAvoidNearbyPillsAndFavorTheMapCenter() {
+        func overlay(id: String, name: String, latitude: Double) -> TrailMapOverlay {
+            let point = RoutePoint(
+                latitude: latitude,
+                longitude: -111,
+                altitude: 0,
+                speed: 0,
+                timestamp: .now)
+            return TrailMapOverlay(
+                id: id,
+                trailID: UUID(),
+                name: name,
+                difficulty: .blue,
+                points: [point, point, point],
+                score: 1)
+        }
+
+        let labels = trailMapLabelItems(
+            for: [
+                overlay(id: "near", name: "Nearest", latitude: 40),
+                overlay(id: "nearby", name: "Nearby", latitude: 40.0001),
+                overlay(id: "far", name: "Farther", latitude: 40.002),
+            ],
+            limit: 3,
+            minimumSeparationMeters: 100,
+            prioritizingAround: Coordinate(latitude: 40, longitude: -111))
+
+        XCTAssertEqual(labels.map(\.name), ["Nearest", "Farther"])
+    }
+
+    func testTrailMapLabelsStayInsideTheVisibleMapArea() {
+        let region = MKCoordinateRegion(
+            center: CLLocationCoordinate2D(latitude: 40, longitude: -111),
+            span: MKCoordinateSpan(latitudeDelta: 1, longitudeDelta: 1))
+
+        let left = trailMapLabelCoordinateInsideRegion(
+            CLLocationCoordinate2D(latitude: 40, longitude: -111.49),
+            in: region)
+        let topRight = trailMapLabelCoordinateInsideRegion(
+            CLLocationCoordinate2D(latitude: 40.49, longitude: -110.49),
+            in: region)
+
+        XCTAssertEqual(left.latitude, 40, accuracy: 0.001)
+        XCTAssertEqual(left.longitude, -111.34, accuracy: 0.001)
+        XCTAssertEqual(topRight.latitude, 40.34, accuracy: 0.001)
+        XCTAssertEqual(topRight.longitude, -110.66, accuracy: 0.001)
+    }
+
+    func testMapOverviewLimitsJumpMarkersAndShowsRunMarkersWhenZoomed() {
+        let segmentID = UUID()
+        func marker(number: Int, latitude: Double, airtime: TimeInterval) -> SessionDetailJumpMarker {
+            SessionDetailJumpMarker(
+                id: "jump-\(number)",
+                segmentID: segmentID,
+                number: number,
+                coordinate: Coordinate(latitude: latitude, longitude: -111),
+                airtime: airtime)
+        }
+        let jumps = [
+            marker(number: 1, latitude: 40, airtime: 0.44),
+            marker(number: 2, latitude: 40.0001, airtime: 0.8),
+            marker(number: 3, latitude: 40.002, airtime: 0.7),
+            marker(number: 4, latitude: 40.004, airtime: 0.5),
+            marker(number: 5, latitude: 40.0045, airtime: 0.2),
+        ]
+
+        let overview = SessionMapOverlayPresentation.overviewJumps(jumps)
+
+        XCTAssertEqual(overview.map(\.number), [2, 3, 4])
+        XCTAssertFalse(SessionMapOverlayPresentation.isZoomedIn(cameraDistance: nil, initialDistance: 2_000))
+        XCTAssertTrue(SessionMapOverlayPresentation.isZoomedIn(cameraDistance: 800, initialDistance: 2_000))
+        XCTAssertFalse(SessionMapOverlayPresentation.showsRunMarkers(isZoomedIn: false, focusedSegmentID: nil))
+        XCTAssertTrue(SessionMapOverlayPresentation.showsRunMarkers(isZoomedIn: true, focusedSegmentID: nil))
+        XCTAssertTrue(SessionMapOverlayPresentation.showsRunMarkers(isZoomedIn: false, focusedSegmentID: segmentID))
     }
 
     @MainActor
@@ -3458,6 +3535,26 @@ final class BermsTests: XCTestCase {
         XCTAssertEqual(breakdown.total, 3_600, accuracy: 0.001)
     }
 
+    func testShortDayPresentationOmitsZeroStatsAndUnclassifiedTime() {
+        let start = Date(timeIntervalSince1970: 4_000)
+        let day = RideDay(startedAt: start)
+        day.endedAt = start.addingTimeInterval(4)
+        let breakdown = DayTimeBreakdown(day: day)
+
+        XCTAssertTrue(DaySummaryPresentation.detailMetrics(day: day, runCount: 0, liftCount: 0).isEmpty)
+        XCTAssertEqual(
+            DaySummaryPresentation.recapHighlights(day: day),
+            [
+                DaySummaryMetric(label: "Time", value: "00:04")
+            ])
+        XCTAssertTrue(DaySummaryPresentation.recapDayMetrics(day: day, runCount: 0, liftCount: 0).isEmpty)
+        XCTAssertFalse(DaySummaryPresentation.showsTimeBreakdown(day: day, breakdown: breakdown))
+
+        day.accumulatedPausedSeconds = 2
+        XCTAssertTrue(
+            DaySummaryPresentation.showsTimeBreakdown(day: day, breakdown: DayTimeBreakdown(day: day)))
+    }
+
     private func correctionRoutePoints(
         from start: Date, count: Int, speed: Double = 6, altitudeStep: Double = 0
     ) -> [RoutePoint] {
@@ -3478,7 +3575,7 @@ final class BermsTests: XCTestCase {
             a: ["Upper Dominion", "Pipeline", "Progression Drops"],
             b: ["Domboo"],
         ])
-        XCTAssertEqual(titles[a], "Upper Dominion → … → Progression Drops")
+        XCTAssertEqual(titles[a], "Upper Dominion → Progression Drops")
         XCTAssertEqual(titles[b], "Domboo")
     }
 
@@ -3501,7 +3598,7 @@ final class BermsTests: XCTestCase {
             b: ["Upper Dominion", "Pipeline", "Progression Drops"],
         ])
         XCTAssertEqual(titles[a], titles[b])
-        XCTAssertEqual(titles[a], "Upper Dominion → … → Progression Drops")
+        XCTAssertEqual(titles[a], "Upper Dominion → Progression Drops")
     }
 
     private func runContext(

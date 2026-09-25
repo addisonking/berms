@@ -21,10 +21,9 @@ final class ShareCardTests: XCTestCase {
         var configuration = ShareCardConfiguration()
         XCTAssertEqual(configuration.stats, ShareStatKind.defaultSelection)
 
-        for kind in ShareStatKind.allCases {
-            configuration.toggleStat(kind)
-        }
+        configuration.toggleStat(.distance)
         XCTAssertEqual(configuration.stats.count, ShareCardConfiguration.maximumStats)
+        XCTAssertFalse(configuration.canToggleStat(.topSpeed))
 
         for kind in configuration.stats {
             configuration.toggleStat(kind)
@@ -52,6 +51,13 @@ final class ShareCardTests: XCTestCase {
         XCTAssertEqual(
             ShareCardConfigurationStore.load(from: defaults).stats,
             ShareStatKind.defaultSelection)
+
+        var legacy = ShareCardConfiguration()
+        legacy.stats = [.descent, .distance, .topSpeed, .runs]
+        defaults.set(try JSONEncoder().encode(legacy), forKey: ShareCardConfigurationStore.key)
+        XCTAssertEqual(
+            ShareCardConfigurationStore.load(from: defaults).stats,
+            ShareStatKind.defaultSelection)
     }
 
     func testContentBuilderUsesDayNameResortAndSelectedStats() {
@@ -69,11 +75,65 @@ final class ShareCardTests: XCTestCase {
 
         XCTAssertEqual(content.title, "Powder day")
         XCTAssertTrue(content.meta.contains(content.resortName))
-        XCTAssertEqual(content.stats.map(\.kind), [.runs, .descent, .jumps])
+        XCTAssertEqual(content.stats.map(\.kind), [.runs, .descent])
         XCTAssertEqual(content.stats.first?.value, "1")
-        XCTAssertEqual(content.stats.last?.value, "—")
+        XCTAssertEqual(content.stats.last?.value, "492 ft")
         XCTAssertFalse(content.hasRoute)
         XCTAssertTrue(content.accessibilitySummary.contains("Powder day"))
+    }
+
+    func testShortSessionShareCardUsesDurationInsteadOfEmptyStats() {
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        let day = RideDay(startedAt: start)
+        day.endedAt = start.addingTimeInterval(4)
+
+        let content = ShareCardContentBuilder.build(
+            day: day,
+            base: nil,
+            trailDetails: nil,
+            manualCatalogID: nil,
+            configuration: ShareCardConfiguration())
+
+        XCTAssertEqual(content.title, "Unknown bike park")
+        XCTAssertEqual(content.stats.map(\.kind), [.duration])
+        XCTAssertEqual(content.stats.first?.value, "00:04")
+        XCTAssertEqual(ShareCardContentBuilder.availableStats(day: day, base: nil), [.duration])
+        XCTAssertFalse(content.hasRoute)
+    }
+
+    func testRunStatsHideUnavailableJumpMetrics() {
+        let day = makeDay()
+        let segment = day.segments[0]
+        let detail = SessionDetailSegment(
+            id: segment.id,
+            kind: .run,
+            startedAt: day.startedAt,
+            endedAt: day.startedAt.addingTimeInterval(30),
+            distanceMeters: segment.distanceMeters,
+            verticalMeters: segment.verticalMeters,
+            maximumSpeedMetersPerSecond: segment.maximumSpeedMetersPerSecond,
+            routePoints: segment.points,
+            jumps: [],
+            resortID: nil,
+            activeResort: "")
+
+        let metrics = RunStatsPresentation.metrics(segment: segment, detail: detail)
+
+        XCTAssertEqual(metrics.map(\.label), ["Duration", "Distance", "Descent", "Top speed"])
+    }
+
+    func testJumpStatsKeepAvailableAirtimeWithoutEmptyMeasurements() {
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        let jump = JumpEvent(
+            takeoffTimestamp: start,
+            landingTimestamp: start.addingTimeInterval(0.44),
+            takeoffMonotonicSeconds: 0,
+            landingMonotonicSeconds: 0.44)
+
+        let metrics = JumpStatsPresentation.metrics(jump: jump)
+
+        XCTAssertEqual(metrics.map(\.label), ["Airtime"])
+        XCTAssertEqual(metrics.first?.value, "0.44s")
     }
 
     func testFramingNeedsValidPointsAndCentersOnRoute() throws {
