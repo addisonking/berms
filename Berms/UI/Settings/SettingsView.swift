@@ -137,6 +137,7 @@ struct SettingsView: View {
         Section {
             ForEach(LiveStatMetric.allCases) { metric in
                 Toggle(metric.title, isOn: liveStatBinding(metric))
+                    .tint(Color.bermsSwitch)
                     .disabled(
                         !recorder.liveStatMetrics.contains(metric)
                             && recorder.liveStatMetrics.count >= LiveStatMetric.selectionLimit
@@ -182,6 +183,7 @@ struct SettingsView: View {
     private var correctionsSection: some View {
         Section {
             Toggle("Include corrections in exports", isOn: correctionsSharingBinding)
+                .tint(Color.bermsSwitch)
         } header: {
             Text("Corrections")
         } footer: {
@@ -192,6 +194,7 @@ struct SettingsView: View {
     private var diagnosticsSection: some View {
         Section {
             Toggle("Raw motion logging", isOn: rawMotionLoggingBinding)
+                .tint(Color.bermsSwitch)
             #if DEBUG
                 NavigationLink {
                     DayArchiveImportView()

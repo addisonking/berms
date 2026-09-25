@@ -26,6 +26,9 @@ extension Color {
     static let bermsInset = Color(uiColor: .tertiarySystemFill)
     static let bermsJump = Color.orange
     static let bermsOnJump = Color.black
+    /// Switches need a saturated tint: the app's `.label` tint makes them
+    /// invisible in dark mode, where track and knob are both white.
+    static let bermsSwitch = Color.green
 
     static func bermsDifficulty(_ difficulty: TrailDifficulty) -> Color {
         switch difficulty {

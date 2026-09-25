@@ -63,6 +63,7 @@ struct ShareCardSheet: View {
 
                 Section("Map") {
                     Toggle("Include map", isOn: $configuration.showsMap)
+                        .tint(Color.bermsSwitch)
                     if configuration.showsMap {
                         Picker("Map style", selection: $configuration.mapStyle) {
                             ForEach(ShareCardMapStyle.allCases) { style in
@@ -70,14 +71,17 @@ struct ShareCardSheet: View {
                             }
                         }
                         Toggle("Trail names", isOn: $configuration.showsTrails)
+                            .tint(Color.bermsSwitch)
                             .disabled((trailDetails?.overlays ?? []).isEmpty)
                         Toggle("Jump markers", isOn: $configuration.showsJumps)
+                            .tint(Color.bermsSwitch)
                             .disabled((base?.jumpMarkers ?? []).isEmpty)
                     }
                 }
 
                 Section("Branding") {
                     Toggle("Berms watermark", isOn: $configuration.showsWatermark)
+                        .tint(Color.bermsSwitch)
                 }
             }
             .navigationTitle("Share image")
