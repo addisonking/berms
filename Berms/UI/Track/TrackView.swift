@@ -42,7 +42,7 @@ struct TrackView: View {
             .navigationSubtitle(
                 recorder.isRecording
                     ? Text("")
-                    : Text("\(Date.now.formatted(.dateTime.weekday(.wide).month(.wide).day())) · Beta")
+                    : Text(Date.now.formatted(.dateTime.weekday(.wide).month(.wide).day()))
             )
             .toolbarBackground(.hidden, for: .navigationBar)
             .toolbarVisibility(recorder.isRecording ? .hidden : .visible, for: .navigationBar)
@@ -193,6 +193,13 @@ struct TrackView: View {
                 // The map is not visible then, so leave it out of the hierarchy.
                 if scenePhase == .background {
                     BermsBackground()
+                } else if recorder.isPaused {
+                    ContentUnavailableView {
+                        Label("Paused", systemImage: "pause.circle.fill")
+                    } description: {
+                        Text("Resume to continue recording.")
+                    }
+                    .frame(maxWidth: .infinity, minHeight: statusAreaHeight)
                 } else if recorder.lastSample == nil {
                     ScrollView {
                         ContentUnavailableView {
@@ -242,10 +249,14 @@ struct TrackView: View {
 
     private var liveStatsOverlay: some View {
         let run = recorder.currentRunMetrics
-        let runTitle =
-            run.map {
-                recorder.activeSegmentKind == .run ? "Run \($0.number)" : "Last run \($0.number)"
-            } ?? "Waiting for a run"
+        let runTitle: String
+        if recorder.isPaused {
+            runTitle = "Paused"
+        } else if let run {
+            runTitle = recorder.activeSegmentKind == .run ? "Run \(run.number)" : "Last run \(run.number)"
+        } else {
+            runTitle = "Recording"
+        }
 
         return VStack(spacing: BermsSpacing.control) {
             AdaptiveStatRow {
@@ -266,17 +277,19 @@ struct TrackView: View {
                 }
             }
 
-            VStack(spacing: BermsSpacing.control) {
-                ForEach(statRows, id: \.self) { row in
-                    AdaptiveStatRow {
-                        ForEach(row) { metric in
-                            statView(metric, run: run)
+            if !statRows.isEmpty {
+                VStack(spacing: BermsSpacing.control) {
+                    ForEach(statRows, id: \.self) { row in
+                        AdaptiveStatRow {
+                            ForEach(row) { metric in
+                                statView(metric, run: run)
+                            }
                         }
                     }
                 }
             }
 
-            AdaptiveStatRow {
+            if !recorder.isPaused && recorder.lastSample != nil {
                 TimelineView(.periodic(from: .now, by: 1)) { timeline in
                     Label(gpsStatusText(at: timeline.date), systemImage: "location.fill")
                         .font(.caption)
@@ -284,11 +297,6 @@ struct TrackView: View {
                             recorder.locationAuthorization == .denied
                                 || recorder.locationAuthorization == .restricted
                                 ? .red : Color.bermsMuted)
-                }
-                if !recorder.motionAvailable {
-                    Text("Motion off")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(Color.bermsMuted)
                 }
             }
 
@@ -327,7 +335,7 @@ struct TrackView: View {
     }
 
     private var statRows: [[LiveStatMetric]] {
-        let metrics = recorder.liveStatMetrics
+        let metrics = recorder.liveStatMetrics.filter { liveStatValue(for: $0) != nil }
         let columnCount = 3
         return stride(from: 0, to: metrics.count, by: columnCount).map { index in
             Array(metrics[index..<min(index + columnCount, metrics.count)])
@@ -336,51 +344,46 @@ struct TrackView: View {
 
     @ViewBuilder
     private func statView(_ metric: LiveStatMetric, run: WatchRideState.RunMetrics?) -> some View {
-        switch metric {
-        case .topSpeed:
+        if let value = liveStatValue(for: metric, run: run) {
             SummaryStat(
-                animatesValue: true, numericValue: true, label: metric.title,
-                value: run.map { BermsFormat.speed($0.topSpeedMetersPerSecond) } ?? "—")
-        case .distance:
-            SummaryStat(
-                animatesValue: true, numericValue: true, label: metric.title,
-                value: run.map { BermsFormat.distance($0.distanceMeters) } ?? "—")
-        case .longestJump:
-            SummaryStat(
-                animatesValue: true, numericValue: true, label: metric.title,
-                value: BermsFormat.jumpSize(recorder.activeLongestJumpLength))
-        case .highestAir:
-            SummaryStat(
-                animatesValue: true, numericValue: true, label: metric.title,
-                value: BermsFormat.jumpSize(recorder.activeHighestJump))
-        case .jumps:
-            SummaryStat(
-                animatesValue: true, numericValue: true, label: metric.title,
-                value: run?.jumpCount.map { String($0) } ?? "—")
-        case .bestAirtime:
-            SummaryStat(
-                animatesValue: true, numericValue: true, label: metric.title,
-                value: bestAirtime)
+                animatesValue: true, numericValue: true, label: metric.title, value: value)
         }
     }
 
-    private var bestAirtime: String {
-        guard let airtime = recorder.currentRunMetrics?.longestJumpAirtime, airtime > 0 else {
-            return "—"
+    private func liveStatValue(for metric: LiveStatMetric, run: WatchRideState.RunMetrics? = nil) -> String? {
+        let run = run ?? recorder.currentRunMetrics
+        switch metric {
+        case .topSpeed:
+            guard let speed = run?.topSpeedMetersPerSecond, speed > 0 else { return nil }
+            return BermsFormat.speed(speed)
+        case .distance:
+            guard let distance = run?.distanceMeters, distance > 0 else { return nil }
+            return BermsFormat.distance(distance)
+        case .longestJump:
+            guard recorder.activeLongestJumpLength > 0 else { return nil }
+            return BermsFormat.jumpSize(recorder.activeLongestJumpLength)
+        case .highestAir:
+            guard recorder.activeHighestJump > 0 else { return nil }
+            return BermsFormat.jumpSize(recorder.activeHighestJump)
+        case .jumps:
+            guard let count = run?.jumpCount else { return nil }
+            return String(count)
+        case .bestAirtime:
+            guard let airtime = run?.longestJumpAirtime, airtime > 0 else { return nil }
+            return BermsFormat.airtime(airtime)
         }
-        return BermsFormat.airtime(airtime)
     }
 
     private func gpsStatusText(at date: Date) -> String {
-        if recorder.isPaused { return "GPS paused" }
+        if recorder.isPaused { return "Paused" }
         switch recorder.locationAuthorization {
         case .denied, .restricted:
-            return "GPS off — check Settings"
+            return "Location off — check Settings"
         case .notDetermined:
-            return "Allow location to record"
+            return "Allow location"
         default:
-            guard let sample = recorder.lastSample else { return "Waiting for GPS" }
-            return date.timeIntervalSince(sample.timestamp) > 15 ? "GPS signal lost" : "GPS on"
+            guard let sample = recorder.lastSample else { return "Finding location" }
+            return date.timeIntervalSince(sample.timestamp) > 15 ? "Location signal lost" : "Location on"
         }
     }
 
@@ -477,11 +480,19 @@ struct TrackView: View {
                 }
                 ForEach(labeledTrails) { trail in
                     if let coordinate = TrailGeometryStore.shared.metrics(for: trail).labelCoordinate {
+                        let mapCoordinate = CLLocationCoordinate2D(
+                            latitude: coordinate.latitude,
+                            longitude: coordinate.longitude)
+                        let labelCoordinate =
+                            visibleRegion.map {
+                                trailMapLabelCoordinateInsideRegion(
+                                    mapCoordinate,
+                                    in: $0,
+                                    edgeMarginFraction: 0.22)
+                            } ?? mapCoordinate
                         Annotation(
                             "",
-                            coordinate: CLLocationCoordinate2D(
-                                latitude: coordinate.latitude,
-                                longitude: coordinate.longitude)
+                            coordinate: labelCoordinate
                         ) {
                             TrailMapLabel(
                                 name: trail.name,
@@ -648,27 +659,24 @@ struct TrackView: View {
         let center = Coordinate(
             latitude: visibleRegion.center.latitude,
             longitude: visibleRegion.center.longitude)
-        return
-            trailMapLabelRepresentatives(renderedTrails)
-            .compactMap { trail -> (trail: Trail, distance: Double)? in
-                guard let coordinate = TrailGeometryStore.shared.metrics(for: trail).labelCoordinate,
-                    coordinateIsVisible(coordinate, in: visibleRegion)
-                else { return nil }
-                return (trail, center.distance(to: coordinate))
-            }
-            .sorted { $0.distance < $1.distance }
-            .prefix(TrailMapRendering.labelLimit)
-            .map(\.trail)
+        let candidates = trailMapLabelRepresentatives(renderedTrails).filter { trail in
+            guard let coordinate = TrailGeometryStore.shared.metrics(for: trail).labelCoordinate else { return false }
+            return coordinateIsVisible(coordinate, in: visibleRegion)
+        }
+        return trailMapLabelsSeparated(
+            candidates,
+            around: center,
+            limit: TrailMapRendering.labelLimit,
+            minimumSeparationMeters: max(100, regionSpanMeters(visibleRegion) * 0.2))
     }
 
     private func coordinateIsVisible(
         _ coordinate: Coordinate,
         in region: MKCoordinateRegion
     ) -> Bool {
-        let halfLatitude = region.span.latitudeDelta / 2
-        let halfLongitude = region.span.longitudeDelta / 2
-        return abs(coordinate.latitude - region.center.latitude) <= halfLatitude
-            && abs(coordinate.longitude - region.center.longitude) <= halfLongitude
+        trailLabelCoordinateIsVisible(
+            CLLocationCoordinate2D(latitude: coordinate.latitude, longitude: coordinate.longitude),
+            in: region)
     }
 
     private var liveMapPaths: [LiveMapPath] {

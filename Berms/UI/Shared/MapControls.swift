@@ -58,20 +58,25 @@ struct MapLayersMenu: View {
         Menu {
             if showsRidePathControl {
                 Toggle("Ride path", isOn: $preferences.showsRidePath)
+                    .tint(Color.bermsSwitch)
             }
             if showsActualTrailsControl {
                 Toggle("Actual trails", isOn: $preferences.showsActualTrails)
+                    .tint(Color.bermsSwitch)
                     .disabled(!actualTrailsAvailable)
             }
             if showsJumpsControl {
                 Toggle("Jumps", isOn: $preferences.showsJumps)
+                    .tint(Color.bermsSwitch)
             }
             if showsLiftPathsControl {
                 Toggle("Lift paths", isOn: $preferences.showsLiftPaths)
+                    .tint(Color.bermsSwitch)
                     .disabled(!liftPathsAvailable)
             }
             if showsPreviousRunsControl {
                 Toggle("Previous runs", isOn: $preferences.showsPreviousRunsInLiveMap)
+                    .tint(Color.bermsSwitch)
             }
             if let onSettings {
                 Divider()

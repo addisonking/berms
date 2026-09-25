@@ -46,10 +46,18 @@ struct DayRow: View {
 
     private var metadata: String {
         let runCount = day.segments.filter { $0.kind == .run }.count
-        let runLabel = runCount == 1 ? "1 run" : "\(runCount) runs"
-        let stats = "\(runLabel)  ·  \(BermsFormat.distance(day.distanceMeters))"
-        guard day.hasCustomName else { return "\(time)  ·  \(stats)" }
-        return "\(dayLabel)  ·  \(time)  ·  \(stats)"
+        var parts: [String] = []
+        if day.hasCustomName {
+            parts.append(dayLabel)
+        }
+        parts.append(time)
+        if runCount > 0 {
+            parts.append(runCount == 1 ? "1 run" : "\(runCount) runs")
+        }
+        if day.distanceMeters > 0 {
+            parts.append(BermsFormat.distance(day.distanceMeters))
+        }
+        return parts.joined(separator: "  ·  ")
     }
 
     private var dayLabel: String {

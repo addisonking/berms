@@ -43,13 +43,6 @@ struct SettingsView: View {
         )
     }
 
-    private var jumpDetectionFooter: String {
-        let configuration = recorder.jumpSensitivity.configuration
-        let airtime = String(format: "%.2f", configuration.minimumAirtime)
-        let speed = String(format: "%.1f", configuration.minimumRidingSpeed)
-        return "Detects \(airtime) s of air at \(speed) m/s or faster."
-    }
-
     var body: some View {
         NavigationStack {
             Form {
@@ -58,7 +51,7 @@ struct SettingsView: View {
                 liveActivitySection
                 jumpDetectionSection
                 correctionsSection
-                diagnosticsSection
+                dataSection
                 Section {
                     NavigationLink {
                         AboutView()
@@ -68,7 +61,6 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("Settings")
-            .navigationSubtitle("Beta")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
@@ -133,7 +125,7 @@ struct SettingsView: View {
         } header: {
             Text("Jump detection")
         } footer: {
-            Text(jumpDetectionFooter)
+            Text("More sensitive catches smaller jumps. Less sensitive filters small bumps.")
         }
     }
 
@@ -148,21 +140,14 @@ struct SettingsView: View {
         }
     }
 
-    private var diagnosticsSection: some View {
+    private var dataSection: some View {
         Section {
-            Toggle("Raw motion logging", isOn: rawMotionLoggingBinding)
+            Toggle("Detailed ride logs", isOn: rawMotionLoggingBinding)
                 .tint(Color.bermsSwitch)
-            #if DEBUG
-                NavigationLink {
-                    DayArchiveImportView()
-                } label: {
-                    Label("Import day export", systemImage: "square.and.arrow.down")
-                }
-            #endif
         } header: {
-            Text("Diagnostics")
+            Text("Data")
         } footer: {
-            Text("Saves motion samples for re-analysis. Uses more storage.")
+            Text("Includes location and movement details in day exports for support. Uses more storage.")
         }
     }
 }

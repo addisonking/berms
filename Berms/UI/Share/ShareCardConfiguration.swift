@@ -38,7 +38,7 @@ enum ShareStatKind: String, CaseIterable, Codable, Identifiable {
         }
     }
 
-    static let defaultSelection: [ShareStatKind] = [.descent, .distance, .topSpeed, .runs]
+    static let defaultSelection: [ShareStatKind] = [.descent, .runs, .jumps, .liftTime]
 }
 
 enum ShareCardMapStyle: String, CaseIterable, Codable, Identifiable {
@@ -90,12 +90,16 @@ struct ShareCardConfiguration: Equatable, Codable {
 
 enum ShareCardConfigurationStore {
     static let key = "berms.shareCard.configuration"
+    private static let legacyDefaultSelection: [ShareStatKind] = [.descent, .distance, .topSpeed, .runs]
 
     static func load(from defaults: UserDefaults = .standard) -> ShareCardConfiguration {
         guard let data = defaults.data(forKey: key),
-            let configuration = try? JSONDecoder().decode(ShareCardConfiguration.self, from: data)
+            var configuration = try? JSONDecoder().decode(ShareCardConfiguration.self, from: data)
         else {
             return ShareCardConfiguration()
+        }
+        if configuration.stats == legacyDefaultSelection {
+            configuration.stats = ShareStatKind.defaultSelection
         }
         return configuration.normalized
     }

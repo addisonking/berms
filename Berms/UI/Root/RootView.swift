@@ -24,15 +24,17 @@ struct RootView: View {
         let message: String
     }
 
-    private static let storageProblemTitle = "Storage problem"
-    private static let trailImportProblemTitle = "Trail import problem"
+    private static let storageProblemTitle = "Saved rides unavailable"
+    private static let trailImportProblemTitle = "Trail data unavailable"
+    private static let trailImportProblemMessage =
+        "Berms couldn't load trail data. You can still record rides, but trail names may be missing."
 
     private static func initialStartupIssue() -> StartupIssue? {
         if let issue = PersistenceController.shared.storeIssue {
             return StartupIssue(title: storageProblemTitle, message: issue.message)
         }
-        if let issue = PersistenceController.shared.catalogImportIssue {
-            return StartupIssue(title: trailImportProblemTitle, message: issue)
+        if PersistenceController.shared.catalogImportIssue != nil {
+            return StartupIssue(title: trailImportProblemTitle, message: trailImportProblemMessage)
         }
         return nil
     }
@@ -70,8 +72,10 @@ struct RootView: View {
         .onChange(of: persistence.catalogImportIssue) { _, issue in
             // The catalog import runs after launch, so its failure arrives late.
             // Never replace an alert the rider has not dismissed yet.
-            guard let issue, startupIssue == nil else { return }
-            startupIssue = StartupIssue(title: Self.trailImportProblemTitle, message: issue)
+            guard issue != nil, startupIssue == nil else { return }
+            startupIssue = StartupIssue(
+                title: Self.trailImportProblemTitle,
+                message: Self.trailImportProblemMessage)
         }
         .alert(item: $startupIssue) { issue in
             Alert(

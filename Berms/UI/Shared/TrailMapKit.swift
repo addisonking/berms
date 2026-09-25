@@ -99,6 +99,39 @@ func trailLabelCoordinate(for points: [RoutePoint]) -> CLLocationCoordinate2D? {
     return CLLocationCoordinate2D(latitude: point.latitude, longitude: point.longitude)
 }
 
+func trailLabelCoordinateIsVisible(
+    _ coordinate: CLLocationCoordinate2D,
+    in region: MKCoordinateRegion,
+    edgeMarginFraction: Double = 0
+) -> Bool {
+    let margin = min(max(0, edgeMarginFraction), 0.49)
+    let halfLatitude = region.span.latitudeDelta * (0.5 - margin)
+    let halfLongitude = region.span.longitudeDelta * (0.5 - margin)
+    return abs(coordinate.latitude - region.center.latitude) <= halfLatitude
+        && abs(coordinate.longitude - region.center.longitude) <= halfLongitude
+}
+
+func trailMapLabelCoordinateInsideRegion(
+    _ coordinate: CLLocationCoordinate2D,
+    in region: MKCoordinateRegion,
+    edgeMarginFraction: Double = 0.16
+) -> CLLocationCoordinate2D {
+    let horizontalSpan = region.span.longitudeDelta
+    let verticalSpan = region.span.latitudeDelta
+    guard horizontalSpan > 0, verticalSpan > 0 else { return coordinate }
+
+    let margin = min(max(0, edgeMarginFraction), 0.49)
+    let latitudeMargin = verticalSpan * margin
+    let longitudeMargin = horizontalSpan * margin
+    return CLLocationCoordinate2D(
+        latitude: min(
+            max(coordinate.latitude, region.center.latitude - verticalSpan / 2 + latitudeMargin),
+            region.center.latitude + verticalSpan / 2 - latitudeMargin),
+        longitude: min(
+            max(coordinate.longitude, region.center.longitude - horizontalSpan / 2 + longitudeMargin),
+            region.center.longitude + horizontalSpan / 2 - longitudeMargin))
+}
+
 /// True when a trail box overlaps the visible region. Used to keep a
 /// several-hundred-trail catalog from building off-screen overlays.
 func trailBoundsIntersect(_ bounds: GeoBounds, region: MKCoordinateRegion) -> Bool {
@@ -128,7 +161,13 @@ struct TrailMapLabelItem: Identifiable {
 /// pills. The longest matched slice represents the trail.
 func trailMapLabelItems(
     for overlays: [TrailMapOverlay],
-    limit: Int = TrailMapRendering.labelLimit
+    limit: Int = TrailMapRendering.labelLimit,
+    minimumSeparationMeters: Double = 0,
+    prioritizingAround center: Coordinate? = nil,
+    avoidingCoordinates: [Coordinate] = [],
+    avoidanceDistanceMeters: Double = 0,
+    within region: MKCoordinateRegion? = nil,
+    edgeMarginFraction: Double = 0
 ) -> [TrailMapLabelItem] {
     var order: [String] = []
     var representatives: [String: TrailMapOverlay] = [:]
@@ -144,10 +183,22 @@ func trailMapLabelItems(
             order.append(key)
         }
     }
-    return order.prefix(limit).compactMap { key in
+    var candidates = order.compactMap { key -> TrailMapLabelItem? in
         guard let overlay = representatives[key],
-            let coordinate = trailLabelCoordinate(for: overlay.points)
+            let originalCoordinate = trailLabelCoordinate(for: overlay.points)
         else { return nil }
+        if let region,
+            !trailLabelCoordinateIsVisible(originalCoordinate, in: region)
+        {
+            return nil
+        }
+        let coordinate =
+            region.map {
+                trailMapLabelCoordinateInsideRegion(
+                    originalCoordinate,
+                    in: $0,
+                    edgeMarginFraction: edgeMarginFraction)
+            } ?? originalCoordinate
         return TrailMapLabelItem(
             id: key,
             name: overlay.name,
@@ -155,6 +206,34 @@ func trailMapLabelItems(
             color: overlay.color,
             coordinate: coordinate)
     }
+
+    if let center {
+        candidates.sort { lhs, rhs in
+            let left = Coordinate(latitude: lhs.coordinate.latitude, longitude: lhs.coordinate.longitude)
+            let right = Coordinate(latitude: rhs.coordinate.latitude, longitude: rhs.coordinate.longitude)
+            return center.distance(to: left) < center.distance(to: right)
+        }
+    }
+
+    guard limit > 0 else { return [] }
+    var selected: [TrailMapLabelItem] = []
+    for candidate in candidates {
+        let coordinate = Coordinate(latitude: candidate.coordinate.latitude, longitude: candidate.coordinate.longitude)
+        let nearJump = avoidingCoordinates.contains {
+            coordinate.distance(to: $0) < avoidanceDistanceMeters
+        }
+        guard !nearJump else { continue }
+        let collides = selected.contains { item in
+            let selectedCoordinate = Coordinate(
+                latitude: item.coordinate.latitude,
+                longitude: item.coordinate.longitude)
+            return coordinate.distance(to: selectedCoordinate) < minimumSeparationMeters
+        }
+        guard !collides else { continue }
+        selected.append(candidate)
+        if selected.count == limit { break }
+    }
+    return selected
 }
 
 @MainActor
@@ -204,6 +283,36 @@ func trailMapLabelRepresentatives(_ trails: [Trail]) -> [Trail] {
         }
     }
     return order.compactMap { representatives[$0] }
+}
+
+func trailMapLabelsSeparated(
+    _ trails: [Trail],
+    around center: Coordinate,
+    limit: Int,
+    minimumSeparationMeters: Double
+) -> [Trail] {
+    guard limit > 0 else { return [] }
+    let candidates = trails.compactMap { trail -> (trail: Trail, coordinate: Coordinate)? in
+        guard let point = trailLabelCoordinate(for: trail.points) else { return nil }
+        return (
+            trail,
+            Coordinate(latitude: point.latitude, longitude: point.longitude)
+        )
+    }.sorted {
+        center.distance(to: $0.coordinate) < center.distance(to: $1.coordinate)
+    }
+
+    var selected: [(trail: Trail, coordinate: Coordinate)] = []
+    for candidate in candidates {
+        guard
+            !selected.contains(where: {
+                $0.coordinate.distance(to: candidate.coordinate) < minimumSeparationMeters
+            })
+        else { continue }
+        selected.append(candidate)
+        if selected.count == limit { break }
+    }
+    return selected.map(\.trail)
 }
 
 func trailDistance(from coordinate: Coordinate, to points: [RoutePoint]) -> Double {
@@ -304,10 +413,12 @@ struct TrailMapLabel: View {
             Text(name)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.primary)
-                .fixedSize(horizontal: false, vertical: true)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: 160, alignment: .leading)
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
+        .padding(.horizontal, BermsSpacing.compact)
+        .padding(.vertical, BermsSpacing.tight)
         .background(.regularMaterial, in: Capsule())
         .accessibilityLabel("\(name), \(difficulty.title) trail")
         .allowsHitTesting(false)

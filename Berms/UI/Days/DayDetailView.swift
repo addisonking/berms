@@ -57,6 +57,15 @@ struct DayDetailView: View {
         DayTimeBreakdown(day: day)
     }
 
+    private var summaryMetrics: [DaySummaryMetric] {
+        DaySummaryPresentation.detailMetrics(day: day, runCount: runs.count, liftCount: lifts.count)
+    }
+
+    private var hasPreparedRoute: Bool {
+        guard let detailBase else { return true }
+        return detailBase.runs.contains { $0.routePoints.count > 1 }
+    }
+
     private var runRouteTitles: [UUID: String] {
         var sequences: [UUID: [String]] = [:]
         for segment in runs {
@@ -319,28 +328,17 @@ struct DayDetailView: View {
     }
 
     private var resolvedResortName: String {
-        resolvedCatalog?.resortName ?? "Not matched"
+        resolvedCatalog?.resortName ?? "Unknown"
     }
 
     private var summary: some View {
         VStack(spacing: BermsSpacing.content) {
-            AdaptiveStatRow {
-                SummaryStat(
-                    label: "Descent", value: BermsFormat.elevation(day.descentMeters), emphasis: true)
-                SummaryStat(
-                    label: "Distance", value: BermsFormat.distance(day.distanceMeters), emphasis: true)
-            }
-            AdaptiveStatRow {
-                SummaryStat(label: "Runs", value: "\(runs.count)")
-                SummaryStat(label: "Top speed", value: BermsFormat.speed(day.maximumSpeedMetersPerSecond))
-            }
-            AdaptiveStatRow {
-                SummaryStat(
-                    label: day.activityMode.activeTimeTitle,
-                    value: BermsFormat.duration(day.activeSeconds))
-                SummaryStat(
-                    label: "Longest jump",
-                    value: day.jumpCount > 0 ? BermsFormat.jumpSize(day.maximumJumpLengthMeters) : "—")
+            ForEach(DaySummaryPresentation.rows(of: summaryMetrics), id: \.self) { row in
+                AdaptiveStatRow {
+                    ForEach(row) { metric in
+                        SummaryStat(label: metric.label, value: metric.value)
+                    }
+                }
             }
         }
     }
@@ -360,7 +358,7 @@ struct DayDetailView: View {
 
     @ViewBuilder
     private var mapSection: some View {
-        if !runs.isEmpty {
+        if !runs.isEmpty && hasPreparedRoute {
             Section {
                 dayMap
                     .listRowInsets(EdgeInsets())
@@ -370,7 +368,7 @@ struct DayDetailView: View {
 
     @ViewBuilder
     private var timeSection: some View {
-        if !day.segments.isEmpty {
+        if DaySummaryPresentation.showsTimeBreakdown(day: day, breakdown: timeBreakdown) {
             Section {
                 DayTimeBreakdownView(
                     breakdown: timeBreakdown,
@@ -429,8 +427,6 @@ struct DayDetailView: View {
                 jumpSummary
             } header: {
                 Text("Jumps")
-            } footer: {
-                Text(jumpTrustFooter)
             }
         }
     }
@@ -453,40 +449,24 @@ struct DayDetailView: View {
         return "\(range) · \(BermsFormat.elevation(day.liftMeters)) lifted"
     }
 
-    private var jumpTrustFooter: String {
-        let sensitivity = JumpSensitivity.stored
-        let configuration = sensitivity.configuration
-        let airtime = String(format: "%.2f", configuration.minimumAirtime)
-        let speed = String(format: "%.1f", configuration.minimumRidingSpeed)
-        return "Auto-detected: \(airtime) s air at \(speed) m/s. Adjust in Settings."
-    }
-
     private var jumpSummaryCount: Int {
         detailBase?.jumpCount ?? day.jumpCount
     }
 
     private var jumpSummary: some View {
         VStack(spacing: BermsSpacing.content) {
-            AdaptiveStatRow {
-                SummaryStat(
-                    label: "Longest jump",
-                    value: detailBase.map { BermsFormat.jumpSize($0.longestJumpLengthMeters) } ?? "…")
-                SummaryStat(
-                    label: "Highest air",
-                    value: detailBase.map { BermsFormat.jumpSize($0.highestJumpMeters) } ?? "…")
-            }
-            AdaptiveStatRow {
-                SummaryStat(label: "Total jumps", value: "\(jumpSummaryCount)")
-                SummaryStat(
-                    label: "Total airtime",
-                    value: detailBase.map { BermsFormat.duration($0.totalJumpAirtime) } ?? "…")
-            }
-            AdaptiveStatRow {
-                SummaryStat(
-                    label: "Longest airtime", value: BermsFormat.airtime(day.longestJumpAirtime))
-                SummaryStat(
-                    label: "Total jump distance",
-                    value: detailBase.map { BermsFormat.distance($0.totalJumpDistanceMeters) } ?? "…")
+            ForEach(
+                DaySummaryPresentation.rows(
+                    of: DaySummaryPresentation.jumpDetailMetrics(
+                        day: day,
+                        base: detailBase
+                    )), id: \.self
+            ) { row in
+                AdaptiveStatRow {
+                    ForEach(row) { metric in
+                        SummaryStat(label: metric.label, value: metric.value)
+                    }
+                }
             }
         }
     }
@@ -745,7 +725,7 @@ enum RouteTitleBuilder {
         for (id, title) in titles {
             idsByTitle[title, default: []].append(id)
         }
-        for (title, ids) in idsByTitle where ids.count > 1 {
+        for (_, ids) in idsByTitle where ids.count > 1 {
             for id in ids {
                 guard let parts = sequences[id], parts.count > 2 else { continue }
                 let others = ids.compactMap { $0 == id ? nil : sequences[$0] }
@@ -762,7 +742,7 @@ enum RouteTitleBuilder {
         }
         let joined = parts.joined(separator: " → ")
         guard joined.count > 28 else { return joined }
-        return "\(parts[0]) → … → \(parts[parts.count - 1])"
+        return "\(parts[0]) → \(parts[parts.count - 1])"
     }
 
     private static func differentiator(in parts: [String], versus others: [[String]]) -> String? {
@@ -795,12 +775,14 @@ private struct CompactRunRow: View {
                     .font(.caption.weight(.semibold).monospacedDigit())
                     .foregroundStyle(.tertiary)
                 Text(trailTitle)
-                    .font(.headline)
+                    .font(.footnote.weight(.semibold))
                     .lineLimit(1)
-                Spacer(minLength: BermsSpacing.compact)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 Text(durationTitle)
                     .font(.subheadline.weight(.semibold))
                     .monospacedDigit()
+                    .fixedSize()
             }
             HStack(spacing: BermsSpacing.compact) {
                 Text(metadataLine)
