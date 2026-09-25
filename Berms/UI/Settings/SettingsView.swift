@@ -46,12 +46,14 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
-                trailsSection
                 trackScreenSection
                 liveActivitySection
                 jumpDetectionSection
                 correctionsSection
                 dataSection
+                #if DEBUG
+                    developerSection
+                #endif
                 Section {
                     NavigationLink {
                         AboutView()
@@ -70,17 +72,19 @@ struct SettingsView: View {
         }
     }
 
-    private var trailsSection: some View {
-        Section {
-            NavigationLink {
-                TrailLibraryView()
-            } label: {
-                Label("Trail Library", systemImage: "map")
+    #if DEBUG
+        private var developerSection: some View {
+            Section {
+                NavigationLink {
+                    TrailLibraryView()
+                } label: {
+                    Label("Trail catalog", systemImage: "map")
+                }
+            } header: {
+                Text("Developer")
             }
-        } header: {
-            Text("Trails")
         }
-    }
+    #endif
 
     private var trackScreenSection: some View {
         Section {
