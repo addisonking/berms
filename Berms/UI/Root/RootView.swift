@@ -13,9 +13,9 @@ struct RootView: View {
     @ObservedObject private var persistence = PersistenceController.shared
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var mapLayerPreferences = MapLayerPreferences()
-    @StateObject private var trailCatalogSelection = TrailCatalogSelection()
     @State private var selectedTab: AppTab = .track
     @State private var pendingDayID: UUID?
+    @State private var pendingRecapDayID: UUID?
     @State private var startupIssue: StartupIssue? = RootView.initialStartupIssue()
 
     private struct StartupIssue: Identifiable {
@@ -42,18 +42,18 @@ struct RootView: View {
             Tab("Track", systemImage: "location.fill", value: AppTab.track) {
                 TrackView(recorder: recorder) { day in
                     pendingDayID = day.id
+                    pendingRecapDayID = day.id
                     selectedTab = .days
                 }
             }
             Tab("Days", systemImage: "calendar", value: AppTab.days) {
-                DaysView(pendingDayID: $pendingDayID) {
+                DaysView(pendingDayID: $pendingDayID, pendingRecapDayID: $pendingRecapDayID) {
                     selectedTab = .track
                 }
             }
         }
         .tint(.bermsTrail)
         .environmentObject(mapLayerPreferences)
-        .environmentObject(trailCatalogSelection)
         .onAppear { recorder.resumeIfNeeded() }
         // SwiftUI's scene lifecycle does not call the app delegate's
         // applicationDidEnterBackground, so route it through the scene phase.

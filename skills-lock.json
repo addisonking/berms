@@ -36,6 +36,12 @@
       "sourceType": "github",
       "skillPath": "swiftui-whats-new-27/SKILL.md",
       "computedHash": "33c097354c14985ccf7571cfda16b79eabe5ef14db176aa349297341d25dd8d2"
+    },
+    "unslop-ui": {
+      "source": "jcarterjohnson/vibecoded-design-tells",
+      "sourceType": "github",
+      "skillPath": "skill/SKILL.md",
+      "computedHash": "7d5f3f93cee70b37979b31c77316c65fc25d64581678f80aea57b2f593877aab"
     }
   }
 }

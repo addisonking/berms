@@ -1,6 +1,17 @@
 import MapKit
 import SwiftUI
 
+/// Buckets run starts that sit in the same ~20 m of ground.
+private struct RunStartKey: Hashable {
+    let latitude: Int
+    let longitude: Int
+
+    init(latitude: Double, longitude: Double) {
+        self.latitude = Int((latitude * 5_000).rounded())
+        self.longitude = Int((longitude * 5_000).rounded())
+    }
+}
+
 struct SessionRouteMap: View {
     let base: SessionDetailBase
     let trailDetails: SessionDetailTrailDetails?
@@ -14,6 +25,11 @@ struct SessionRouteMap: View {
     @Namespace private var mapScope
     @State private var position: MapCameraPosition = .automatic
     @State private var selectedRunID: UUID?
+    @State private var cameraDistance: CLLocationDistance?
+
+    private static let zoomedInDistance: CLLocationDistance = 1_500
+    private static let notableJumpAirtime: TimeInterval = 0.4
+    private static let zoomedOutLabelLimit = 5
 
     private var segments: [SessionDetailSegment] {
         if let focusedSegmentID {
@@ -44,10 +60,42 @@ struct SessionRouteMap: View {
         return base.jumpMarkers.filter { $0.segmentID == focusedSegmentID }
     }
 
+    private var isZoomedIn: Bool {
+        (cameraDistance ?? 0) < Self.zoomedInDistance
+    }
+
+    /// Zoomed out, only jumps worth looking at; every marker once the camera is
+    /// close enough for them to be readable.
+    private var visibleJumps: [SessionDetailJumpMarker] {
+        guard !isZoomedIn else { return jumps }
+        return jumps.filter { $0.airtime >= Self.notableJumpAirtime }
+    }
+
     private var trails: [TrailMapOverlay] {
         (trailDetails?.overlays ?? [])
             .filter { focusedSegmentID == nil || $0.segmentID == focusedSegmentID }
             .map(TrailMapOverlay.init(detail:))
+    }
+
+    /// Runs often start from the same lift top, so exact start markers stack and
+    /// only the top one stays visible. Fan co-located starts out in a small ring.
+    private var runMarkerOffsets: [UUID: CGSize] {
+        var groups: [RunStartKey: [UUID]] = [:]
+        for segment in segments where segment.kind == .run {
+            guard let point = segment.routePoints.first else { continue }
+            groups[RunStartKey(latitude: point.latitude, longitude: point.longitude), default: []]
+                .append(segment.id)
+        }
+
+        var offsets: [UUID: CGSize] = [:]
+        for ids in groups.values where ids.count > 1 {
+            let radius = min(34, 8 + Double(ids.count) * 4)
+            for (index, id) in ids.enumerated() {
+                let angle = (2 * Double.pi / Double(ids.count)) * Double(index) - Double.pi / 2
+                offsets[id] = CGSize(width: radius * cos(angle), height: radius * sin(angle))
+            }
+        }
+        return offsets
     }
 
     var body: some View {
@@ -71,21 +119,24 @@ struct SessionRouteMap: View {
                         Annotation(
                             "", coordinate: CLLocationCoordinate2D(latitude: point.latitude, longitude: point.longitude)
                         ) {
-                            if let onRunSelected {
-                                Button {
-                                    onRunSelected(segment.id)
-                                } label: {
-                                    RunNumberMarker(number: focusedRunNumber ?? index + 1, isSelected: false)
-                                        .frame(minWidth: BermsSpacing.target, minHeight: BermsSpacing.target)
-                                        .contentShape(.circle)
+                            Group {
+                                if let onRunSelected {
+                                    Button {
+                                        onRunSelected(segment.id)
+                                    } label: {
+                                        RunNumberMarker(number: focusedRunNumber ?? index + 1, isSelected: false)
+                                            .frame(minWidth: BermsSpacing.target, minHeight: BermsSpacing.target)
+                                            .contentShape(.circle)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .accessibilityHint("Opens this run")
+                                } else {
+                                    RunNumberMarker(
+                                        number: focusedRunNumber ?? index + 1,
+                                        isSelected: focusedSegmentID == segment.id)
                                 }
-                                .buttonStyle(.plain)
-                                .accessibilityHint("Opens this run")
-                            } else {
-                                RunNumberMarker(
-                                    number: focusedRunNumber ?? index + 1,
-                                    isSelected: focusedSegmentID == segment.id)
                             }
+                            .offset(runMarkerOffsets[segment.id] ?? .zero)
                         }
                     }
                 }
@@ -101,16 +152,14 @@ struct SessionRouteMap: View {
                 }
             }
             if preferences.showsJumps {
-                ForEach(jumps) { jump in
+                ForEach(visibleJumps) { jump in
                     Annotation(
                         "",
                         coordinate: CLLocationCoordinate2D(
                             latitude: jump.coordinate.latitude,
                             longitude: jump.coordinate.longitude)
                     ) {
-                        JumpMapMarker(
-                            number: jump.number, airtime: jump.airtime,
-                            showsAirtime: focusedSegmentID != nil)
+                        JumpMapMarker(number: jump.number, airtime: jump.airtime)
                     }
                 }
             }
@@ -118,7 +167,12 @@ struct SessionRouteMap: View {
                 ForEach(trails) { trail in
                     trailMapContent(coordinates: trail.coordinates, difficulty: trail.difficulty)
                 }
-                ForEach(trailMapLabelItems(for: trails)) { label in
+                ForEach(
+                    trailMapLabelItems(
+                        for: trails,
+                        limit: isZoomedIn
+                            ? TrailMapRendering.labelLimit : Self.zoomedOutLabelLimit)
+                ) { label in
                     Annotation("", coordinate: label.coordinate) {
                         TrailMapLabel(name: label.name, difficulty: label.difficulty, color: label.color)
                     }
@@ -150,6 +204,9 @@ struct SessionRouteMap: View {
                 .padding(BermsSpacing.control)
         }
         .mapScope(mapScope)
+        .onMapCameraChange(frequency: .onEnd) { context in
+            cameraDistance = context.camera.distance
+        }
         .onAppear { recenter() }
         .onChange(of: selectedRunID) { _, id in
             guard let id else { return }

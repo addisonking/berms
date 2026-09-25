@@ -6,6 +6,7 @@ import UIKit
 /// Native List/Form margins remain system-owned. These values are used where
 /// Berms owns the surrounding layout, so adjacent screens share one rhythm.
 enum BermsSpacing {
+    static let tight: CGFloat = 4
     static let compact: CGFloat = 8
     static let control: CGFloat = 12
     static let content: CGFloat = 16
@@ -23,6 +24,11 @@ extension Color {
     static let bermsMuted = Color(uiColor: .secondaryLabel)
     static let bermsOnAccent = Color(uiColor: .systemBackground)
     static let bermsInset = Color(uiColor: .tertiarySystemFill)
+    static let bermsJump = Color.orange
+    static let bermsOnJump = Color.black
+    /// Switches need a saturated tint: the app's `.label` tint makes them
+    /// invisible in dark mode, where track and knob are both white.
+    static let bermsSwitch = Color.green
 
     static func bermsDifficulty(_ difficulty: TrailDifficulty) -> Color {
         switch difficulty {
@@ -51,12 +57,13 @@ struct SummaryStat: View {
     let label: String
     let value: String
     var tint: Color = .primary
+    var emphasis = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: BermsSpacing.tight) {
             Text(value)
                 .bermsValueMotion(value, numeric: numericValue, enabled: animatesValue)
-                .font(.title3.weight(.semibold))
+                .font(emphasis ? .title.weight(.semibold) : .title3.weight(.semibold))
                 .foregroundStyle(tint)
                 .monospacedDigit()
                 .fixedSize(horizontal: false, vertical: true)
@@ -101,6 +108,86 @@ struct AdaptiveStatRow<Content: View>: View {
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: BermsSpacing.content))
             : AnyLayout(HStackLayout(alignment: .top, spacing: BermsSpacing.content))
         layout { content }
+    }
+}
+
+/// Wall-clock split of a day: one proportional bar plus labeled rows.
+struct DayTimeBreakdownView: View {
+    let breakdown: DayTimeBreakdown
+    let ridingTitle: String
+
+    private enum Part: String, Identifiable {
+        case riding
+        case lifts
+        case stopped
+        case paused
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .riding: "Riding"
+            case .lifts: "Lifts"
+            case .stopped: "Other time"
+            case .paused: "Paused"
+            }
+        }
+
+        var style: AnyShapeStyle {
+            switch self {
+            case .riding: AnyShapeStyle(.primary)
+            case .lifts: AnyShapeStyle(.secondary)
+            case .stopped: AnyShapeStyle(.tertiary)
+            case .paused: AnyShapeStyle(.quaternary)
+            }
+        }
+    }
+
+    private var slices: [(part: Part, seconds: TimeInterval)] {
+        let all: [(Part, TimeInterval)] = [
+            (.riding, breakdown.riding),
+            (.lifts, breakdown.lifts),
+            (.stopped, breakdown.stopped),
+            (.paused, breakdown.paused),
+        ]
+        return all.filter { $0.1 > 0 }.map { (part: $0.0, seconds: $0.1) }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: BermsSpacing.control) {
+            if breakdown.total > 0 {
+                bar
+            }
+            ForEach(slices, id: \.part.id) { slice in
+                LabeledContent(title(for: slice.part), value: value(for: slice.seconds))
+            }
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    private var bar: some View {
+        GeometryReader { proxy in
+            let spacing = 2 * Double(max(0, slices.count - 1))
+            let available = max(0, proxy.size.width - spacing)
+            HStack(spacing: 2) {
+                ForEach(slices, id: \.part.id) { slice in
+                    Capsule()
+                        .fill(slice.part.style)
+                        .frame(width: max(2, available * slice.seconds / breakdown.total))
+                }
+            }
+        }
+        .frame(height: 8)
+        .accessibilityHidden(true)
+    }
+
+    private func title(for part: Part) -> String {
+        part == .riding ? ridingTitle : part.title
+    }
+
+    private func value(for seconds: TimeInterval) -> String {
+        let share = Int((seconds / breakdown.total * 100).rounded())
+        return "\(BermsFormat.duration(seconds)) · \(share)%"
     }
 }
 

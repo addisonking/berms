@@ -9,12 +9,18 @@ struct TrackView: View {
     @ObservedObject var recorder: RideRecorder
     @Query private var trails: [Trail]
     @EnvironmentObject private var mapLayerPreferences: MapLayerPreferences
-    @EnvironmentObject private var trailCatalogSelection: TrailCatalogSelection
     @Namespace private var mapScope
     @State private var mapPosition: MapCameraPosition = .userLocation(followsHeading: false, fallback: .automatic)
     @State private var visibleRegion: MKCoordinateRegion?
     @State private var mapWasBackgrounded = false
-    @State private var liveStatsHeight: CGFloat = 320
+    @State private var liveStatsHeight: CGFloat = Layout.initialStatsHeight
+
+    private enum Layout {
+        static let readingMeasure: CGFloat = 300
+        static let buttonMeasure: CGFloat = 260
+        static let initialStatsHeight: CGFloat = 320
+        static let maximumStatsHeightFraction: CGFloat = 0.65
+    }
     @State private var showingStopConfirmation = false
     @State private var showingSettings = false
     let onDayFinished: (RideDay) -> Void
@@ -109,9 +115,6 @@ struct TrackView: View {
         .onChange(of: isPreviewingResort) { _, _ in
             recenterMapPosition()
         }
-        .onChange(of: trailCatalogSelection.manualCatalogID) { _, _ in
-            recenterMapPosition()
-        }
         .onAppear {
             // Preview framing only. A rider who panned the live map keeps it.
             guard isPreviewingResort else { return }
@@ -149,7 +152,7 @@ struct TrackView: View {
                             .font(.subheadline)
                             .foregroundStyle(Color.bermsMuted)
                             .multilineTextAlignment(.center)
-                            .frame(maxWidth: 300)
+                            .frame(maxWidth: Self.Layout.readingMeasure)
                     }
 
                     startButton
@@ -158,7 +161,7 @@ struct TrackView: View {
                         .font(.caption)
                         .foregroundStyle(Color.bermsMuted)
                         .multilineTextAlignment(.center)
-                        .frame(maxWidth: 300)
+                        .frame(maxWidth: Self.Layout.readingMeasure)
                     if recorder.isRestoring {
                         ProgressView("Restoring…")
                     }
@@ -181,7 +184,8 @@ struct TrackView: View {
 
     private var recordingContent: some View {
         GeometryReader { geometry in
-            let panelHeight = min(liveStatsHeight, max(0, geometry.size.height * 0.65))
+            let panelHeight = min(
+                liveStatsHeight, max(0, geometry.size.height * Self.Layout.maximumStatsHeightFraction))
             let statusAreaHeight = max(0, geometry.size.height - panelHeight - BermsSpacing.content)
             ZStack(alignment: .bottom) {
                 // MapKit keeps rendering offscreen while the app records in the
@@ -224,7 +228,9 @@ struct TrackView: View {
                 }
                 .scrollBounceBehavior(.basedOnSize)
                 .frame(height: panelHeight)
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 30, style: .continuous))
+                .background(
+                    .regularMaterial, in: RoundedRectangle(cornerRadius: BermsSpacing.section, style: .continuous)
+                )
                 .padding(.horizontal, BermsSpacing.content)
                 .padding(.bottom, BermsSpacing.content)
             }
@@ -394,8 +400,8 @@ struct TrackView: View {
             )
             .foregroundStyle(Color.bermsOnAccent)
             .font(.headline)
-            .frame(maxWidth: 260)
-            .padding(.vertical, 8)
+            .frame(maxWidth: Self.Layout.buttonMeasure)
+            .padding(.vertical, BermsSpacing.compact)
         }
         .buttonStyle(.borderedProminent)
         .tint(.bermsTrail)
@@ -411,20 +417,21 @@ struct TrackView: View {
         return TrailCatalogRegistry.resort(containing: coordinate)
     }
 
-    /// The resort chosen in Settings, when it matches the activity season.
-    private var selectedCatalog: TrailCatalogDescriptor? {
-        guard let manualID = trailCatalogSelection.manualCatalogID,
-            let catalog = TrailCatalogRegistry.catalog(withID: manualID),
-            catalog.season == recorder.activeActivityMode.season
+    /// Nearest resort to the rider while they are not inside one, so trails
+    /// line up on the drive in without anyone picking a resort.
+    private var previewCatalog: TrailCatalogDescriptor? {
+        guard !recorder.isRecording, riderResort == nil, let coordinate = currentCoordinate,
+            let resort = TrailCatalogRegistry.resort(nearest: coordinate, withinMeters: 5_000)
         else { return nil }
-        return catalog
+        return TrailCatalogRegistry.catalog(
+            forResortID: resort.id, season: recorder.activeActivityMode.season)
     }
 
-    /// Outside every resort the selection previews that resort, so a rider can
-    /// line up trails before they arrive. Inside a resort GPS always wins, and a
-    /// rider who is recording always follows their own position.
+    /// Outside every resort the nearest one previews on the map. Inside a resort
+    /// GPS always wins, and a rider who is recording always follows their own
+    /// position.
     private var isPreviewingResort: Bool {
-        !recorder.isRecording && riderResort == nil && selectedCatalog != nil
+        previewCatalog != nil
     }
 
     private var liveCatalog: TrailCatalogDescriptor? {
@@ -433,14 +440,14 @@ struct TrackView: View {
                 for: recorder.activeActivityMode,
                 coordinate: currentCoordinate)
         }
-        return selectedCatalog
+        return previewCatalog
     }
 
     /// Only bound the camera to a resort the rider is actually looking at:
     /// the previewed one, or the one they are standing in.
     private var liveResort: ResortDescriptor? {
         if isPreviewingResort {
-            guard let catalog = selectedCatalog else { return nil }
+            guard let catalog = previewCatalog else { return nil }
             return TrailCatalogRegistry.resort(withID: catalog.resortID)
         }
         return riderResort
@@ -531,7 +538,7 @@ struct TrackView: View {
                         : mapPosition.followsUserLocation ? "Following location" : "Not following")
             }
         }
-        .padding(.top, BermsSpacing.control)
+        .padding(.top, BermsSpacing.content)
         .padding(.trailing, BermsSpacing.content)
     }
 

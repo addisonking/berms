@@ -44,6 +44,8 @@ struct FullScreenSummaryMap: View {
 }
 
 struct RunMapView: View {
+    private static let mapPreviewHeight: CGFloat = 320
+
     @Environment(\.modelContext) private var modelContext
     let number: Int
     let segment: RideSegment
@@ -57,6 +59,9 @@ struct RunMapView: View {
     @State private var jumpComparisons: SessionJumpComparisons = .empty
     @State private var isPreparing = false
     @State private var prepareFailed = false
+    @State private var showingSplitSheet = false
+    @State private var correctionError: String?
+    @Environment(\.dismiss) private var dismiss
 
     init(
         number: Int,
@@ -129,7 +134,7 @@ struct RunMapView: View {
                                 focusedSegmentID: segment.id, focusedRunNumber: number,
                                 onExpand: { showingFullScreenMap = true }
                             )
-                            .frame(height: 320)
+                            .frame(height: Self.mapPreviewHeight)
                             .listRowInsets(EdgeInsets())
                         }
                     }
@@ -152,34 +157,105 @@ struct RunMapView: View {
         }
         .navigationTitle("Run \(number)")
         .navigationBarTitleDisplayMode(.inline)
-        .task(id: preparedDetail == nil) { await prepareIfNeeded() }
-        .task(id: segment.id) { await prepareJumpComparisons() }
-    }
-
-    @ViewBuilder
-    private var jumpsSection: some View {
-        Section("Jumps") {
-            if jumps.isEmpty {
-                Text("No jumps detected in this run.")
-                    .foregroundStyle(.secondary)
-            } else {
-                ForEach(Array(jumps.enumerated()), id: \.offset) { index, jump in
-                    let attemptID = jumpAttemptID(index: index)
-                    let feature = jumpComparisons.feature(forAttemptID: attemptID)
-                    NavigationLink {
-                        JumpComparisonView(
-                            attempt: attempt(at: index, jump: jump),
-                            feature: feature)
+        .toolbar {
+            if segment.kind == .run {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showingSplitSheet = true
                     } label: {
-                        RunJumpRow(
-                            number: index + 1,
-                            jump: jump,
-                            attemptID: attemptID,
-                            feature: feature)
+                        Label("Split run", systemImage: "scissors")
                     }
                 }
             }
         }
+        .sheet(isPresented: $showingSplitSheet) {
+            SplitRunSheet(segment: segment) { index in
+                splitRun(at: index)
+            }
+        }
+        .alert(
+            "Couldn't split run",
+            isPresented: Binding(
+                get: { correctionError != nil },
+                set: { if !$0 { correctionError = nil } })
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(correctionError ?? "")
+        }
+        .task(id: preparedDetail == nil) { await prepareIfNeeded() }
+        .task(id: segment.id) { await prepareJumpComparisons() }
+    }
+
+    private func splitRun(at index: Int) {
+        do {
+            try SegmentEditor.split(segment, at: index, in: modelContext)
+            showingSplitSheet = false
+            dismiss()
+        } catch {
+            correctionError = error.localizedDescription
+        }
+    }
+
+    @ViewBuilder
+    private var jumpsSection: some View {
+        Section {
+            if jumps.isEmpty {
+                Text("No jumps detected in this run.")
+                    .foregroundStyle(.secondary)
+            } else {
+                if notableJumps.isEmpty {
+                    Text("No jumps over 0.4 s or 5 m in this run.")
+                        .foregroundStyle(.secondary)
+                }
+                ForEach(notableJumps, id: \.index) { entry in
+                    jumpLink(index: entry.index, jump: entry.jump)
+                }
+                if !smallerJumps.isEmpty {
+                    DisclosureGroup("Smaller catches (\(smallerJumps.count))") {
+                        ForEach(smallerJumps, id: \.index) { entry in
+                            jumpLink(index: entry.index, jump: entry.jump)
+                        }
+                    }
+                }
+            }
+        } header: {
+            Text("Jumps")
+        } footer: {
+            Text("Notable: 0.4 s of air or 5 m long.")
+        }
+    }
+
+    private func jumpLink(index: Int, jump: JumpEvent) -> some View {
+        let attemptID = jumpAttemptID(index: index)
+        let feature = jumpComparisons.feature(forAttemptID: attemptID)
+        return NavigationLink {
+            JumpComparisonView(
+                attempt: attempt(at: index, jump: jump),
+                feature: feature)
+        } label: {
+            RunJumpRow(
+                number: index + 1,
+                jump: jump,
+                attemptID: attemptID,
+                feature: feature)
+        }
+    }
+
+    private var notableJumps: [(index: Int, jump: JumpEvent)] {
+        jumps.enumerated()
+            .filter { isNotable($0.element) }
+            .map { (index: $0.offset, jump: $0.element) }
+    }
+
+    private var smallerJumps: [(index: Int, jump: JumpEvent)] {
+        jumps.enumerated()
+            .filter { !isNotable($0.element) }
+            .map { (index: $0.offset, jump: $0.element) }
+    }
+
+    private func isNotable(_ jump: JumpEvent) -> Bool {
+        jump.airtime >= 0.4 || (jump.lengthMeters ?? 0) >= 5
     }
 
     private var jumps: [JumpEvent] {
@@ -329,7 +405,7 @@ struct JumpStatsGrid: View {
 
     var body: some View {
         LazyVGrid(
-            columns: Array(repeating: GridItem(.flexible()), count: dynamicTypeSize.isAccessibilitySize ? 1 : 2),
+            columns: Array(repeating: GridItem(.flexible()), count: dynamicTypeSize.isAccessibilitySize ? 1 : 3),
             alignment: .leading, spacing: BermsSpacing.content
         ) {
             SummaryStat(label: "Length", value: BermsFormat.jumpSize(jump.lengthMeters))
@@ -347,7 +423,7 @@ struct RunJumpRow: View {
     let feature: SessionJumpFeature?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: BermsSpacing.tight) {
             Text("Jump \(number)")
                 .font(.headline)
             Text(jumpStatsLine(jump))
@@ -385,6 +461,7 @@ struct RunJumpRow: View {
 }
 
 struct JumpComparisonView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let attempt: SessionJumpAttempt
     let feature: SessionJumpFeature?
 
@@ -398,6 +475,16 @@ struct JumpComparisonView: View {
         attempts.max(by: { ($0.jump.lengthMeters ?? 0) < ($1.jump.lengthMeters ?? 0) })?.id
     }
 
+    private func comparisonTitle(for other: SessionJumpAttempt) -> some View {
+        Text("Run \(other.runNumber) · Jump \(other.jumpNumber)")
+            .font(.headline)
+    }
+
+    private func comparisonValue(for other: SessionJumpAttempt) -> some View {
+        Text(BermsFormat.jumpSize(other.jump.lengthMeters))
+            .font(.headline.monospacedDigit())
+    }
+
     var body: some View {
         List {
             Section("Run \(attempt.runNumber) · Jump \(attempt.jumpNumber)") {
@@ -406,13 +493,18 @@ struct JumpComparisonView: View {
             if attempts.count > 1 {
                 Section {
                     ForEach(attempts, id: \.id) { other in
-                        VStack(alignment: .leading, spacing: 3) {
-                            HStack {
-                                Text("Run \(other.runNumber) · Jump \(other.jumpNumber)")
-                                    .font(.headline)
-                                Spacer()
-                                Text(BermsFormat.jumpSize(other.jump.lengthMeters))
-                                    .font(.headline.monospacedDigit())
+                        VStack(alignment: .leading, spacing: BermsSpacing.tight) {
+                            if dynamicTypeSize.isAccessibilitySize {
+                                VStack(alignment: .leading, spacing: BermsSpacing.tight) {
+                                    comparisonTitle(for: other)
+                                    comparisonValue(for: other)
+                                }
+                            } else {
+                                HStack {
+                                    comparisonTitle(for: other)
+                                    Spacer()
+                                    comparisonValue(for: other)
+                                }
                             }
                             Text(jumpStatsLine(other.jump))
                                 .font(.caption)
@@ -434,7 +526,7 @@ struct JumpComparisonView: View {
                     Text("Across runs")
                 } footer: {
                     Text(
-                        "Jumps are matched by takeoff and landing location. Only runs from this session are compared."
+                        "Matched by takeoff and landing location."
                     )
                 }
             } else {
@@ -484,87 +576,71 @@ struct TrailSequenceCard: View {
     }
 }
 
-struct SegmentRow: View {
-    let number: Int
+/// Fast split: pick the stop that marks where one run ended and the next began.
+private struct SplitRunSheet: View {
     let segment: RideSegment
-    let detail: SessionDetailSegment?
-    var trailName: String?
-    let isPreparingDetails: Bool
+    let onSplit: (Int) -> Void
 
-    init(
-        number: Int,
-        segment: RideSegment,
-        detail: SessionDetailSegment? = nil,
-        trailName: String? = nil,
-        isPreparingDetails: Bool = false
-    ) {
-        self.number = number
-        self.segment = segment
-        self.detail = detail
-        self.trailName = trailName
-        self.isPreparingDetails = isPreparingDetails
+    @Environment(\.dismiss) private var dismiss
+
+    private var candidates: [SegmentEditor.SplitCandidate] {
+        SegmentEditor.splitCandidates(for: segment)
     }
 
     var body: some View {
-        AdaptiveStatRow {
-            Text("\(number)")
-                .font(.headline.monospacedDigit())
-                .accessibilityLabel("Run \(number)")
-            VStack(alignment: .leading, spacing: 3) {
-                Text(trailTitle)
-                    .font(.headline)
-                Text("Run \(number) · \(durationTitle)")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(Color.bermsMuted)
-                if let detail, detail.kind == .run, !detail.jumps.isEmpty {
-                    Text(jumpSummary(detail))
-                        .font(.caption)
-                        .foregroundStyle(Color.bermsMuted)
+        NavigationStack {
+            List {
+                Section {
+                    if candidates.isEmpty {
+                        Text("No stops long enough to suggest a split point.")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(candidates) { candidate in
+                            Button {
+                                onSplit(candidate.index)
+                            } label: {
+                                row(for: candidate)
+                            }
+                        }
+                    }
+                } header: {
+                    Text("Stops")
+                } footer: {
+                    Text(
+                        "Split points come from stops of 15 s or more."
+                    )
                 }
-                Text(
-                    kind == .run
-                        ? BermsFormat.elevation(verticalMeters) + " descent"
-                        : BermsFormat.elevation(verticalMeters) + " up"
-                )
-                .font(.caption)
-                .foregroundStyle(Color.bermsMuted)
+                if let midpoint = SegmentEditor.midpointCandidate(for: segment) {
+                    Section {
+                        Button("Split in the middle") {
+                            onSplit(midpoint.index)
+                        }
+                    } footer: {
+                        Text("Use this when the run has no obvious stop.")
+                    }
+                }
             }
-            Spacer()
-            Text(BermsFormat.speed(maximumSpeedMetersPerSecond))
-                .font(.subheadline.weight(.semibold))
-                .monospacedDigit()
+            .navigationTitle("Split run")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
         }
     }
 
-    private var trailTitle: String {
-        if let trailName { return trailName }
-        return isPreparingDetails ? "Loading trail details…" : "Trail not identified"
-    }
-
-    private func jumpSummary(_ detail: SessionDetailSegment) -> String {
-        let count = detail.jumps.count
-        let countLabel = count == 1 ? "1 jump" : "\(count) jumps"
-        guard let longest = detail.jumps.compactMap(\.lengthMeters).max(), longest > 0 else {
-            return "\(countLabel) · \(BermsFormat.airtime(detail.jumps.map(\.airtime).max() ?? 0))"
+    private func row(for candidate: SegmentEditor.SplitCandidate) -> some View {
+        VStack(alignment: .leading, spacing: BermsSpacing.tight) {
+            Text(candidate.timestamp.formatted(date: .omitted, time: .shortened))
+                .font(.headline)
+            Text(
+                "Stopped \(BermsFormat.duration(candidate.stoppedSeconds)) · "
+                    + "\(BermsFormat.distance(candidate.distanceFromStart)) in"
+            )
+            .font(.caption)
+            .foregroundStyle(Color.bermsMuted)
         }
-        return "\(countLabel) · \(BermsFormat.jumpSize(longest)) longest"
-    }
-
-    private var durationTitle: String {
-        // Reading the segment duration decodes its route, which is the work moved off
-        // the main actor while preparation runs.
-        detail.map { BermsFormat.duration($0.duration) } ?? "…"
-    }
-
-    private var kind: SegmentKind {
-        detail?.kind ?? segment.kind
-    }
-
-    private var verticalMeters: Double {
-        detail?.verticalMeters ?? segment.verticalMeters
-    }
-
-    private var maximumSpeedMetersPerSecond: Double {
-        detail?.maximumSpeedMetersPerSecond ?? segment.maximumSpeedMetersPerSecond
+        .accessibilityElement(children: .combine)
     }
 }

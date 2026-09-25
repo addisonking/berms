@@ -171,7 +171,9 @@ struct BermsLiveActivity: Widget {
     }
 
     private func speed(_ metersPerSecond: Double) -> String {
-        String(format: "%.1f mph", metersPerSecond * 2.23694)
+        isMetric
+            ? String(format: "%.1f km/h", metersPerSecond * 3.6)
+            : String(format: "%.1f mph", metersPerSecond * 2.23694)
     }
 
     private func airtime(_ seconds: TimeInterval) -> String {

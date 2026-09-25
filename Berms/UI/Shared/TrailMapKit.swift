@@ -182,7 +182,7 @@ func trailMapContent(
 
     if difficulty == .doubleBlack {
         MapPolyline(coordinates: coordinates)
-            .stroke(.red, style: trailMapAccentStrokeStyle())
+            .stroke(Color.bermsDifficultyAccent(.doubleBlack) ?? .primary, style: trailMapAccentStrokeStyle())
     }
 }
 

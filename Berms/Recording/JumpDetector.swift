@@ -478,6 +478,12 @@ enum JumpSensitivity: String, CaseIterable, Identifiable, Equatable, Sendable {
         }
         return configuration
     }
+
+    /// The rider's saved choice, shared by the recorder and the day screen.
+    static var stored: JumpSensitivity {
+        JumpSensitivity(rawValue: UserDefaults.standard.string(forKey: "berms.jumpSensitivity") ?? "")
+            ?? .standard
+    }
 }
 
 struct JumpReplayResult: Sendable {

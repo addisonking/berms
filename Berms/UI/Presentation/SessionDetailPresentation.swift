@@ -84,6 +84,21 @@ final class SessionDetailPresentationCache: ObservableObject {
         runEntries[key]
     }
 
+    /// Drops every cached presentation for a day. Corrections rewrite segments
+    /// in place, so stale bases would otherwise keep the old shape on screen.
+    func invalidate(dayID: UUID) {
+        let prefix = dayID.uuidString
+        let stale = entries.keys.filter { $0.hasPrefix(prefix) }
+        for key in stale { entries[key] = nil }
+        order.removeAll { $0.hasPrefix(prefix) }
+        let staleRuns = runEntries.keys.filter { $0.hasPrefix(prefix) }
+        for key in staleRuns { runEntries[key] = nil }
+        runOrder.removeAll { $0.hasPrefix(prefix) }
+        if !(stale.isEmpty && staleRuns.isEmpty) {
+            revision &+= 1
+        }
+    }
+
     func storeRun(_ entry: RunEntry, for key: String) {
         runEntries[key] = entry
         runOrder.removeAll { $0 == key }

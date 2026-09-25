@@ -16,7 +16,9 @@ enum BermsFormat {
     }
 
     static func speed(_ metersPerSecond: Double) -> String {
-        String(format: "%.1f mph", metersPerSecond * 2.23694)
+        isMetric
+            ? String(format: "%.1f km/h", metersPerSecond * 3.6)
+            : String(format: "%.1f mph", metersPerSecond * 2.23694)
     }
 
     static func distance(_ meters: Double) -> String {
@@ -47,6 +49,8 @@ enum BermsFormat {
     }
 
     static func elevation(_ meters: Double) -> String {
-        isMetric ? String(format: "%.0f m", meters) : String(format: "%.0f ft", meters * 3.28084)
+        let value = isMetric ? meters : meters * 3.28084
+        let unit = isMetric ? "m" : "ft"
+        return "\(value.formatted(.number.precision(.fractionLength(0)))) \(unit)"
     }
 }

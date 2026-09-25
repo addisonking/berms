@@ -83,9 +83,24 @@ enum TrailCatalogRegistry {
             .min { coordinate.distance(to: $0.boundary.center) < coordinate.distance(to: $1.boundary.center) }
     }
 
+    /// Nearest resort when the rider is not inside one, so the live map can
+    /// preview trails on the drive in without anyone picking a resort.
+    static func resort(nearest coordinate: Coordinate, withinMeters meters: Double) -> ResortDescriptor? {
+        resorts
+            .map { ($0, coordinate.distance(to: $0.boundary.center)) }
+            .filter { $0.1 <= meters }
+            .min { $0.1 < $1.1 }?
+            .0
+    }
+
     static func catalog(withID id: String?) -> TrailCatalogDescriptor? {
         guard let id else { return nil }
         return allCatalogs.first { $0.id == id }
+    }
+
+    /// The catalog a season ships for a resort, ignoring GPS.
+    static func catalog(forResortID id: String, season: SeasonBucket) -> TrailCatalogDescriptor? {
+        (catalogsBySeason[season] ?? []).first { $0.resortID == id }
     }
 
     /// Safety net when the manifest resource is missing. Match the original
@@ -115,19 +130,41 @@ enum TrailCatalogRegistry {
         }
     }
 
-    /// The catalog a recorded day belongs to. A deliberate manual selection
-    /// wins; otherwise the first GPS point must land inside a resort. Nil means
-    /// "no resort" so per-run resolution can still match every resort on a trip.
+    /// The catalog a recorded day belongs to. A rider override wins; otherwise
+    /// the route votes on resorts, so starting in the parking lot or stopping
+    /// outside the boundary still resolves the day the rider actually rode.
+    static func resolvedCatalogID(
+        mode: ActivityMode,
+        manualSelectionID: String?,
+        routePoints: [Coordinate]
+    ) -> String? {
+        if let manual = catalog(withID: manualSelectionID), manual.season == mode.season {
+            return manual.id
+        }
+        let candidates = catalogsBySeason[mode.season] ?? []
+        guard !candidates.isEmpty else { return nil }
+        let minimumVotes = max(1, routePoints.count / 20)
+        var votes: [String: Int] = [:]
+        for point in routePoints {
+            guard let resort = resort(containing: point) else { continue }
+            votes[resort.id, default: 0] += 1
+        }
+        guard let best = votes.max(by: { $0.value < $1.value }), best.value >= minimumVotes else {
+            return nil
+        }
+        return candidates.first { $0.resortID == best.key }?.id
+    }
+
+    /// Single-point convenience used where only the start is known.
     static func resolvedCatalogID(
         mode: ActivityMode,
         manualSelectionID: String?,
         firstPoint: Coordinate?
     ) -> String? {
-        if let manual = catalog(withID: manualSelectionID), manual.season == mode.season {
-            return manual.id
-        }
-        guard let firstPoint else { return nil }
-        return catalog(for: mode, coordinate: firstPoint)?.id
+        resolvedCatalogID(
+            mode: mode,
+            manualSelectionID: manualSelectionID,
+            routePoints: firstPoint.map { [$0] } ?? [])
     }
 
     static func trails(_ trails: [Trail], for catalog: TrailCatalogDescriptor) -> [Trail] {
@@ -143,88 +180,15 @@ enum TrailCatalogRegistry {
 }
 
 extension TrailCatalogRegistry {
-    /// The catalog a recorded day presents with: the manual choice when its
-    /// season matches, otherwise the resort the day's first GPS point lands in.
+    /// The catalog a recorded day presents with: the rider's override when its
+    /// season matches, otherwise the resort the ride mostly happened in.
     /// Nil means the day is not tied to any resort, so nothing is assumed.
     static func resolvedCatalog(for day: RideDay) -> TrailCatalogDescriptor? {
         resolvedCatalogID(
             mode: day.activityMode,
             manualSelectionID: day.catalogID,
-            firstPoint: day.firstRecordedCoordinate
+            routePoints: day.sampledRouteCoordinates()
         ).flatMap(catalog(withID:))
-    }
-}
-
-@MainActor
-final class TrailCatalogSelection: ObservableObject {
-    static let selectionKey = "berms.trailCatalog.activeSelection"
-
-    /// The persisted manual resort choice, readable before a ride starts.
-    static func persistedCatalogID(defaults: UserDefaults = .standard) -> String? {
-        defaults.string(forKey: selectionKey)
-    }
-
-    private let defaults: UserDefaults
-    @Published private(set) var manualCatalogID: String?
-
-    init(defaults: UserDefaults = .standard) {
-        self.defaults = defaults
-        let stored = defaults.string(forKey: Self.selectionKey)
-        manualCatalogID = TrailCatalogRegistry.catalog(withID: stored)?.id
-    }
-
-    /// The catalog a browse surface shows. Browsing is deliberate, so the
-    /// manual choice wins and GPS is ignored.
-    var browseCatalog: TrailCatalogDescriptor {
-        manualCatalogID.flatMap(TrailCatalogRegistry.catalog(withID:))
-            ?? TrailCatalogRegistry.defaultCatalog
-    }
-
-    var selectionID: String {
-        manualCatalogID ?? TrailCatalogRegistry.automaticSelectionID
-    }
-
-    var selectionLabel: String {
-        manualCatalogID.flatMap(TrailCatalogRegistry.catalog(withID:))?.resortName
-            ?? "Automatic"
-    }
-
-    func setSelectionID(_ id: String) {
-        let newValue =
-            id == TrailCatalogRegistry.automaticSelectionID
-            ? nil
-            : TrailCatalogRegistry.catalog(withID: id)?.id
-        manualCatalogID = newValue
-        if let newValue {
-            defaults.set(newValue, forKey: Self.selectionKey)
-        } else {
-            defaults.removeObject(forKey: Self.selectionKey)
-        }
-    }
-
-    func catalog(
-        for mode: ActivityMode,
-        coordinate: Coordinate? = nil
-    ) -> TrailCatalogDescriptor? {
-        if let manualCatalogID,
-            let manualCatalog = TrailCatalogRegistry.catalog(withID: manualCatalogID),
-            manualCatalog.season == mode.season
-        {
-            return manualCatalog
-        }
-        return TrailCatalogRegistry.catalog(for: mode, coordinate: coordinate)
-    }
-
-    func trails(_ trails: [Trail], near coordinate: Coordinate? = nil) -> [Trail] {
-        self.trails(trails, mode: .bikePark, near: coordinate)
-    }
-
-    func trails(
-        _ trails: [Trail], mode: ActivityMode,
-        near coordinate: Coordinate? = nil
-    ) -> [Trail] {
-        guard let catalog = catalog(for: mode, coordinate: coordinate) else { return [] }
-        return TrailCatalogRegistry.trails(trails, for: catalog)
     }
 }
 

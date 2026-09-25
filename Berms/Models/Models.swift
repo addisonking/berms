@@ -88,6 +88,7 @@ final class RideDay {
     @Attribute(.externalStorage) var checkpointData: Data?
     var pausedAt: Date?
     var accumulatedPausedSeconds: Double?
+    @Attribute(.externalStorage) var correctionsData: Data?
 
     @Relationship(deleteRule: .cascade, inverse: \RideSegment.day)
     var segments: [RideSegment]
@@ -108,6 +109,7 @@ final class RideDay {
         self.maximumSpeedMetersPerSecond = 0
         self.pausedAt = nil
         self.accumulatedPausedSeconds = nil
+        self.correctionsData = nil
         self.segments = []
     }
 
@@ -145,13 +147,31 @@ final class RideDay {
         duration(at: .now)
     }
 
-    /// First GPS point of the day, used to resolve which resort it belongs to.
+    /// First GPS point of the day, used when only the start is known.
     var firstRecordedCoordinate: Coordinate? {
         for segment in segments.sorted(by: { $0.startedAt < $1.startedAt }) {
             guard let point = segment.points.first else { continue }
             return Coordinate(latitude: point.latitude, longitude: point.longitude)
         }
         return nil
+    }
+
+    /// Evenly sampled coordinates across the whole ride, so resort detection
+    /// survives a start outside the boundary without scanning every point.
+    func sampledRouteCoordinates(limit: Int = 120) -> [Coordinate] {
+        let points =
+            segments
+            .sorted { $0.startedAt < $1.startedAt }
+            .flatMap(\.points)
+        guard limit > 0 else { return [] }
+        guard points.count > limit else {
+            return points.map { Coordinate(latitude: $0.latitude, longitude: $0.longitude) }
+        }
+        let step = Double(points.count) / Double(limit)
+        return (0..<limit).map { index in
+            let point = points[Int(Double(index) * step)]
+            return Coordinate(latitude: point.latitude, longitude: point.longitude)
+        }
     }
 
     func duration(at date: Date) -> TimeInterval {
@@ -209,6 +229,19 @@ final class RideDay {
         activeSeconds = runs.reduce(0) { $0 + $1.duration }
         liftSeconds = lifts.reduce(0) { $0 + $1.duration }
         maximumSpeedMetersPerSecond = runs.map(\.maximumSpeedMetersPerSecond).max() ?? 0
+    }
+
+    /// Rider corrections are kept with the day so a reclassify or split can
+    /// later travel with the diagnostics as a detection signal.
+    var corrections: [SegmentCorrection] {
+        guard let correctionsData else { return [] }
+        return (try? JSONDecoder().decode([SegmentCorrection].self, from: correctionsData)) ?? []
+    }
+
+    func appendCorrection(_ correction: SegmentCorrection) {
+        var all = corrections
+        all.append(correction)
+        correctionsData = try? JSONEncoder().encode(all)
     }
 
     private var normalizedName: String? {
@@ -272,6 +305,63 @@ final class RideSegment {
         guard let jumpData else { return [] }
         return (try? JSONDecoder().decode([JumpEvent].self, from: jumpData)) ?? []
     }
+}
+
+/// Where a day's wall-clock time went. `stopped` is the honest residual: time
+/// that was not paused, not a run, and not a lift.
+struct DayTimeBreakdown: Sendable {
+    let riding: TimeInterval
+    let lifts: TimeInterval
+    let stopped: TimeInterval
+    let paused: TimeInterval
+
+    var total: TimeInterval { riding + lifts + stopped + paused }
+
+    init(day: RideDay, at date: Date = .now) {
+        let end = day.endedAt ?? date
+        paused =
+            (day.accumulatedPausedSeconds ?? 0)
+            + (day.pausedAt.map { max(0, end.timeIntervalSince($0)) } ?? 0)
+        riding = day.activeSeconds
+        lifts = day.liftSeconds
+        stopped = max(0, end.timeIntervalSince(day.startedAt) - paused - riding - lifts)
+    }
+}
+
+/// A rider correction to automatic segmentation, stored on the day.
+struct SegmentCorrection: Codable, Identifiable, Sendable {
+    enum Kind: String, Codable, Sendable {
+        case split
+        case markLift
+        case markRun
+    }
+
+    let id: UUID
+    let kind: Kind
+    let segmentID: UUID
+    let at: Date
+    let originalKind: SegmentKind?
+    let correctedKind: SegmentKind?
+    let splitTimestamp: Date?
+
+    init(
+        kind: Kind, segmentID: UUID, at: Date = .now,
+        originalKind: SegmentKind? = nil, correctedKind: SegmentKind? = nil,
+        splitTimestamp: Date? = nil
+    ) {
+        self.id = UUID()
+        self.kind = kind
+        self.segmentID = segmentID
+        self.at = at
+        self.originalKind = originalKind
+        self.correctedKind = correctedKind
+        self.splitTimestamp = splitTimestamp
+    }
+}
+
+/// Opt-in gate for attaching rider corrections to an exported archive.
+enum CorrectionsSharing {
+    static let key = "berms.shareCorrections"
 }
 
 struct BermsDataExport: Codable, Sendable {

@@ -754,7 +754,7 @@ final class RideRecorder: ObservableObject {
                     kind: "session_started", timestamp: day.startedAt,
                     detectorVersion: jumpDetector.detectorVersion,
                     detail:
-                        "Berms recording started; mode=\(mode.rawValue),catalog=\(TrailCatalogSelection.persistedCatalogID() ?? "automatic")"
+                        "Berms recording started; mode=\(mode.rawValue)"
                 ))
             diagnosticLogger?.append(
                 RawDiagnosticRecord(
@@ -873,15 +873,10 @@ final class RideRecorder: ObservableObject {
             ))
 
         day.endedAt = stopDate
-        day.catalogID = TrailCatalogRegistry.resolvedCatalogID(
-            mode: day.activityMode,
-            manualSelectionID: TrailCatalogSelection.persistedCatalogID(),
-            firstPoint: day.firstRecordedCoordinate)
         clearCheckpoint(for: day)
         updateTotals(for: day)
         guard saveContext(detail: "stop") else {
             day.endedAt = nil
-            day.catalogID = nil
             day.beginPause(at: stopDate)
             resetTrackingState(clearLastSample: false)
             updateLiveActivity(force: true)
