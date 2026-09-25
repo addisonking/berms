@@ -74,8 +74,8 @@ struct DayDetailView: View {
             + SessionDetailPresentationPreheater.trailRevision(for: trails)
     }
 
-    /// The catalog the day presents with: the manual choice, else the resort its
-    /// first GPS point lands in. Nil means no resort, so nothing is assumed.
+    /// The catalog the day presents with: the rider's override when set, else
+    /// the resort the ride mostly happened in. Nil means no resort matched.
     private var resolvedCatalog: TrailCatalogDescriptor? {
         TrailCatalogRegistry.resolvedCatalog(for: day)
     }
@@ -86,49 +86,6 @@ struct DayDetailView: View {
 
     private var catalogSelectionID: String {
         dayCatalogID ?? TrailCatalogRegistry.automaticSelectionID
-    }
-
-    private var selectableCatalogs: [TrailCatalogDescriptor] {
-        var seenResortNames: Set<String> = []
-        return TrailCatalogRegistry.allCatalogs
-            .filter { $0.season == day.activityMode.season }
-            .filter { seenResortNames.insert($0.resortName).inserted }
-    }
-
-    private var resortSelection: Binding<String?> {
-        Binding(
-            get: { day.catalogID },
-            set: { newValue in
-                day.catalogID = newValue
-                do {
-                    try modelContext.save()
-                } catch {
-                    saveErrorMessage = "The resort could not be saved. \(error.localizedDescription)"
-                }
-            })
-    }
-
-    /// What the day resolves to from GPS alone, so the caption can tell a
-    /// detected resort apart from one the rider picked.
-    private var gpsCatalog: TrailCatalogDescriptor? {
-        TrailCatalogRegistry.resolvedCatalogID(
-            mode: day.activityMode,
-            manualSelectionID: nil,
-            firstPoint: day.firstRecordedCoordinate
-        ).flatMap(TrailCatalogRegistry.catalog(withID:))
-    }
-
-    private var resortCaption: String {
-        if let manualID = day.catalogID {
-            guard manualID == gpsCatalog?.id else {
-                return "Using this resort until you switch back to Automatic."
-            }
-            return "Detected from GPS: \(gpsCatalog?.resortName ?? "this resort")."
-        }
-        guard let gpsCatalog else {
-            return "No resort detected from GPS. Pick one if this ride was at a resort."
-        }
-        return "Detected from GPS: \(gpsCatalog.resortName)."
     }
 
     private func preparationCacheKey(for trails: [Trail]) -> String {
@@ -152,7 +109,6 @@ struct DayDetailView: View {
     var body: some View {
         List {
             summarySection
-            resortSection
             mapSection
             timeSection
             runsSection
@@ -362,6 +318,10 @@ struct DayDetailView: View {
         }
     }
 
+    private var resolvedResortName: String {
+        resolvedCatalog?.resortName ?? "Not matched"
+    }
+
     private var summary: some View {
         VStack(spacing: BermsSpacing.content) {
             AdaptiveStatRow {
@@ -388,21 +348,13 @@ struct DayDetailView: View {
     private var summarySection: some View {
         Section("Day summary") {
             LabeledContent("Activity", value: day.activityMode.title)
+            LabeledContent("Resort", value: resolvedResortName)
             if day.segments.isEmpty {
                 LabeledContent("Started", value: day.startedAt.formatted(date: .omitted, time: .shortened))
                 LabeledContent("Duration", value: BermsFormat.duration(day.duration))
             } else {
                 summary
             }
-        }
-    }
-
-    private var resortSection: some View {
-        Section {
-            resortPicker
-            Text(resortCaption)
-                .font(.caption)
-                .foregroundStyle(Color.bermsMuted)
         }
     }
 
@@ -490,16 +442,6 @@ struct DayDetailView: View {
                 .textInputAutocapitalization(.sentences)
                 .accessibilityLabel("Session journal")
         }
-    }
-
-    private var resortPicker: some View {
-        Picker("Resort", selection: resortSelection) {
-            Text("Automatic").tag(String?.none)
-            ForEach(selectableCatalogs) { catalog in
-                Text(catalog.resortName).tag(String?.some(catalog.id))
-            }
-        }
-        .pickerStyle(.menu)
     }
 
     private var timeFooter: String {

@@ -147,13 +147,31 @@ final class RideDay {
         duration(at: .now)
     }
 
-    /// First GPS point of the day, used to resolve which resort it belongs to.
+    /// First GPS point of the day, used when only the start is known.
     var firstRecordedCoordinate: Coordinate? {
         for segment in segments.sorted(by: { $0.startedAt < $1.startedAt }) {
             guard let point = segment.points.first else { continue }
             return Coordinate(latitude: point.latitude, longitude: point.longitude)
         }
         return nil
+    }
+
+    /// Evenly sampled coordinates across the whole ride, so resort detection
+    /// survives a start outside the boundary without scanning every point.
+    func sampledRouteCoordinates(limit: Int = 120) -> [Coordinate] {
+        let points =
+            segments
+            .sorted { $0.startedAt < $1.startedAt }
+            .flatMap(\.points)
+        guard limit > 0 else { return [] }
+        guard points.count > limit else {
+            return points.map { Coordinate(latitude: $0.latitude, longitude: $0.longitude) }
+        }
+        let step = Double(points.count) / Double(limit)
+        return (0..<limit).map { index in
+            let point = points[Int(Double(index) * step)]
+            return Coordinate(latitude: point.latitude, longitude: point.longitude)
+        }
     }
 
     func duration(at date: Date) -> TimeInterval {

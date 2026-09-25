@@ -6,7 +6,6 @@ import UIKit
 struct SettingsView: View {
     @ObservedObject var recorder: RideRecorder
     @Environment(\.dismiss) private var dismiss
-    @EnvironmentObject private var trailCatalogSelection: TrailCatalogSelection
 
     private var sensitivityBinding: Binding<JumpSensitivity> {
         Binding(
@@ -26,13 +25,6 @@ struct SettingsView: View {
         Binding(
             get: { UserDefaults.standard.bool(forKey: CorrectionsSharing.key) },
             set: { UserDefaults.standard.set($0, forKey: CorrectionsSharing.key) })
-    }
-
-    private var resortSelectionBinding: Binding<String> {
-        Binding(
-            get: { trailCatalogSelection.selectionID },
-            set: { trailCatalogSelection.setSelectionID($0) }
-        )
     }
 
     private var liveStatBinding: (LiveStatMetric) -> Binding<Bool> {
@@ -56,31 +48,6 @@ struct SettingsView: View {
         let airtime = String(format: "%.2f", configuration.minimumAirtime)
         let speed = String(format: "%.1f", configuration.minimumRidingSpeed)
         return "Detects \(airtime) s of air at \(speed) m/s or faster."
-    }
-
-    private var selectedCatalog: TrailCatalogDescriptor? {
-        trailCatalogSelection.manualCatalogID.flatMap(TrailCatalogRegistry.catalog(withID:))
-    }
-
-    /// Resorts that ship trails for the season the rider is in, plus a resort
-    /// they picked earlier so the menu can still show that selection.
-    private var selectableCatalogs: [TrailCatalogDescriptor] {
-        let mode = recorder.activeActivityMode
-        var catalogs = TrailCatalogRegistry.catalogs.filter { $0.season == mode.season }
-        if let selectedCatalog, !catalogs.contains(where: { $0.id == selectedCatalog.id }) {
-            catalogs.append(selectedCatalog)
-        }
-        return catalogs
-    }
-
-    private var catalogCaption: String {
-        guard let selectedCatalog else {
-            return "Matches trails from GPS."
-        }
-        guard selectedCatalog.season == recorder.activeActivityMode.season else {
-            return "No \(recorder.activeActivityMode.title.lowercased()) trails here; Automatic is used."
-        }
-        return "Using this resort until you switch back."
     }
 
     var body: some View {
@@ -118,16 +85,6 @@ struct SettingsView: View {
             } label: {
                 Label("Trail Library", systemImage: "map")
             }
-            Picker("Resort", selection: resortSelectionBinding) {
-                Text("Automatic").tag(TrailCatalogRegistry.automaticSelectionID)
-                ForEach(selectableCatalogs) { catalog in
-                    Text(catalog.resortName).tag(catalog.id)
-                }
-            }
-            .pickerStyle(.menu)
-            Text(catalogCaption)
-                .font(.caption)
-                .foregroundStyle(Color.bermsMuted)
         } header: {
             Text("Trails")
         }

@@ -33,8 +33,8 @@ struct TrailLibraryView: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Query(sort: \Trail.updatedAt, order: .reverse) private var trails: [Trail]
+    @Query(sort: \RideDay.startedAt, order: .reverse) private var days: [RideDay]
     @EnvironmentObject private var mapLayerPreferences: MapLayerPreferences
-    @EnvironmentObject private var trailCatalogSelection: TrailCatalogSelection
     @Namespace private var mapScope
     @State private var mapPosition: MapCameraPosition = .automatic
     @State private var searchText = ""
@@ -42,25 +42,10 @@ struct TrailLibraryView: View {
     @State private var selectedTrailID: UUID?
     @State private var sort: TrailLibrarySort = .difficulty
     @State private var visibleRegion: MKCoordinateRegion?
-
-    private var activeCatalog: TrailCatalogDescriptor {
-        trailCatalogSelection.browseCatalog
-    }
-
-    private var selectableCatalogs: [TrailCatalogDescriptor] {
-        var seenResortNames: Set<String> = []
-        return TrailCatalogRegistry.catalogs.filter { seenResortNames.insert($0.resortName).inserted }
-    }
-
-    private var catalogSelection: Binding<String> {
-        Binding(
-            get: { trailCatalogSelection.selectionID },
-            set: { trailCatalogSelection.setSelectionID($0) })
-    }
+    @State private var hasFramedInitially = false
 
     private var visibleTrails: [Trail] {
-        let catalogTrails = trailCatalogSelection.trails(trails)
-        return catalogTrails.filter { trail in
+        trails.filter { trail in
             let matchesSearch =
                 searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 || trail.name.localizedCaseInsensitiveContains(searchText)
@@ -86,20 +71,17 @@ struct TrailLibraryView: View {
         }
     }
 
+    /// One section per resort, so a catalog of twenty resorts stays navigable.
     private var sections: [TrailLibrarySection] {
-        let trails = sortedTrails
-        guard sort == .difficulty else {
-            guard !trails.isEmpty else { return [] }
-            return [TrailLibrarySection(id: "all", title: nil, trails: trails)]
-        }
-        return TrailDifficulty.allCases.compactMap { difficulty in
-            let matching = trails.filter { $0.difficulty == difficulty }
-            guard !matching.isEmpty else { return nil }
-            return TrailLibrarySection(
-                id: difficulty.rawValue,
-                title: "\(difficulty.title) · \(matching.count)",
-                trails: matching)
-        }
+        let grouped = Dictionary(grouping: sortedTrails, by: \.resort)
+        return grouped.keys.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+            .compactMap { resort in
+                guard let trails = grouped[resort], !trails.isEmpty else { return nil }
+                return TrailLibrarySection(
+                    id: resort,
+                    title: "\(resort) · \(trails.count)",
+                    trails: trails)
+            }
     }
 
     /// Off-screen trails are skipped so a several-hundred-trail catalog does
@@ -114,27 +96,32 @@ struct TrailLibraryView: View {
     }
 
     private var visibleBounds: GeoBounds? {
-        visibleTrails.compactMap { TrailGeometryStore.shared.metrics(for: $0).bounds }
+        bounds(of: visibleTrails)
+    }
+
+    /// The library opens on the resort the rider last rode so a catalog of
+    /// twenty resorts does not frame the whole map from the start. Tapping a
+    /// trail later reframes the map wherever the rider looks.
+    private var initialFocusBounds: GeoBounds? {
+        if let lastDay = days.first(where: \.isFinished),
+            let catalog = TrailCatalogRegistry.resolvedCatalog(for: lastDay),
+            let resortBounds = bounds(of: TrailCatalogRegistry.trails(trails, for: catalog))
+        {
+            return resortBounds
+        }
+        return sections.first.flatMap { bounds(of: $0.trails) }
+    }
+
+    private func bounds(of trails: [Trail]) -> GeoBounds? {
+        trails.compactMap { TrailGeometryStore.shared.metrics(for: $0).bounds }
             .reduce(nil as GeoBounds?) { total, bounds in
                 total.map { $0.union(bounds) } ?? bounds
             }
     }
 
-    /// True when the active catalog has a drawable trail, so a filter that
-    /// matches nothing does not read as a missing catalog.
-    private var catalogHasGeometry: Bool {
-        trailCatalogSelection.trails(trails)
-            .contains { TrailGeometryStore.shared.metrics(for: $0).hasGeometry }
-    }
-
     private var mapConfiguration: RouteMapConfiguration? {
-        let boundary = TrailCatalogRegistry.resort(withID: activeCatalog.resortID)?.boundary
-        if let visibleBounds {
-            return RouteMapConfiguration(bounds: visibleBounds, boundary: boundary)
-        }
-        // An empty filter still gets the resort map behind the list.
-        guard catalogHasGeometry, let boundary else { return nil }
-        return RouteMapConfiguration(points: [], boundary: boundary)
+        guard let visibleBounds else { return nil }
+        return RouteMapConfiguration(bounds: visibleBounds)
     }
 
     private var trailCountTitle: String {
@@ -191,25 +178,9 @@ struct TrailLibraryView: View {
             .listSectionSpacing(.compact)
         }
         .navigationTitle("Trail Library")
-        .navigationSubtitle(activeCatalog.resortName)
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $searchText, prompt: "Search trails")
         .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Menu {
-                    Picker("Resort", selection: catalogSelection) {
-                        Text("Automatic").tag(TrailCatalogRegistry.automaticSelectionID)
-                        ForEach(selectableCatalogs) { catalog in
-                            Text(catalog.resortName).tag(catalog.id)
-                        }
-                    }
-                } label: {
-                    Label("Resort", systemImage: "mountain.2")
-                        .labelStyle(.iconOnly)
-                }
-                .accessibilityLabel("Resort, \(trailCatalogSelection.selectionLabel)")
-                .accessibilityHint("Switches resorts")
-            }
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     Picker("Sort", selection: $sort) {
@@ -283,15 +254,11 @@ struct TrailLibraryView: View {
                     .mapStyle(.bermsMonochrome)
                     .mapControls { MapScaleView() }
                     .onMapCameraChange(frequency: .onEnd) { context in
-                        // The map reports the previous framing after a resort or
-                        // filter change, and trusting it culls every trail.
+                        // The map reports the previous framing after a filter
+                        // change, and trusting it culls every trail.
                         guard mapConfiguration.contains(cameraRegion: context.region) else { return }
                         visibleRegion = context.region
                     }
-                    // A new catalog replaces every overlay at once, and MapKit
-                    // leaves the map empty when it takes that swap alongside a
-                    // camera change. A fresh map applies both.
-                    .id(activeCatalog.id)
 
                 }
 
@@ -324,11 +291,14 @@ struct TrailLibraryView: View {
     }
 
     private func recenterMap() {
-        guard let configuration = mapConfiguration else {
+        let targetBounds = hasFramedInitially ? visibleBounds : (initialFocusBounds ?? visibleBounds)
+        guard let targetBounds else {
             mapPosition = .automatic
             visibleRegion = nil
             return
         }
+        let configuration = RouteMapConfiguration(bounds: targetBounds)
+        hasFramedInitially = true
         mapPosition = configuration.initialPosition
         visibleRegion = configuration.framingRegion
     }

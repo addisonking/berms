@@ -9,7 +9,6 @@ struct TrackView: View {
     @ObservedObject var recorder: RideRecorder
     @Query private var trails: [Trail]
     @EnvironmentObject private var mapLayerPreferences: MapLayerPreferences
-    @EnvironmentObject private var trailCatalogSelection: TrailCatalogSelection
     @Namespace private var mapScope
     @State private var mapPosition: MapCameraPosition = .userLocation(followsHeading: false, fallback: .automatic)
     @State private var visibleRegion: MKCoordinateRegion?
@@ -114,9 +113,6 @@ struct TrackView: View {
             }
         }
         .onChange(of: isPreviewingResort) { _, _ in
-            recenterMapPosition()
-        }
-        .onChange(of: trailCatalogSelection.manualCatalogID) { _, _ in
             recenterMapPosition()
         }
         .onAppear {
@@ -421,20 +417,21 @@ struct TrackView: View {
         return TrailCatalogRegistry.resort(containing: coordinate)
     }
 
-    /// The resort chosen in Settings, when it matches the activity season.
-    private var selectedCatalog: TrailCatalogDescriptor? {
-        guard let manualID = trailCatalogSelection.manualCatalogID,
-            let catalog = TrailCatalogRegistry.catalog(withID: manualID),
-            catalog.season == recorder.activeActivityMode.season
+    /// Nearest resort to the rider while they are not inside one, so trails
+    /// line up on the drive in without anyone picking a resort.
+    private var previewCatalog: TrailCatalogDescriptor? {
+        guard !recorder.isRecording, riderResort == nil, let coordinate = currentCoordinate,
+            let resort = TrailCatalogRegistry.resort(nearest: coordinate, withinMeters: 5_000)
         else { return nil }
-        return catalog
+        return TrailCatalogRegistry.catalog(
+            forResortID: resort.id, season: recorder.activeActivityMode.season)
     }
 
-    /// Outside every resort the selection previews that resort, so a rider can
-    /// line up trails before they arrive. Inside a resort GPS always wins, and a
-    /// rider who is recording always follows their own position.
+    /// Outside every resort the nearest one previews on the map. Inside a resort
+    /// GPS always wins, and a rider who is recording always follows their own
+    /// position.
     private var isPreviewingResort: Bool {
-        !recorder.isRecording && riderResort == nil && selectedCatalog != nil
+        previewCatalog != nil
     }
 
     private var liveCatalog: TrailCatalogDescriptor? {
@@ -443,14 +440,14 @@ struct TrackView: View {
                 for: recorder.activeActivityMode,
                 coordinate: currentCoordinate)
         }
-        return selectedCatalog
+        return previewCatalog
     }
 
     /// Only bound the camera to a resort the rider is actually looking at:
     /// the previewed one, or the one they are standing in.
     private var liveResort: ResortDescriptor? {
         if isPreviewingResort {
-            guard let catalog = selectedCatalog else { return nil }
+            guard let catalog = previewCatalog else { return nil }
             return TrailCatalogRegistry.resort(withID: catalog.resortID)
         }
         return riderResort

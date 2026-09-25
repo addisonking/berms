@@ -11,7 +11,6 @@ import UIKit
         @ObservedObject var mapper: TrailMapper
         @ObservedObject var recorder: RideRecorder
         @EnvironmentObject private var mapLayerPreferences: MapLayerPreferences
-        @EnvironmentObject private var trailCatalogSelection: TrailCatalogSelection
         @State private var mapPosition: MapCameraPosition = .automatic
         @State private var authoredMapCameraDistance: CLLocationDistance = .greatestFiniteMagnitude
         @State private var showingStartSheet = false
@@ -265,12 +264,12 @@ import UIKit
         }
 
         private var activeCatalog: TrailCatalogDescriptor {
-            trailCatalogSelection.catalog(for: .bikePark, coordinate: activeLocation)
-                ?? trailCatalogSelection.browseCatalog
+            TrailCatalogRegistry.catalog(for: .bikePark, coordinate: activeLocation)
+                ?? TrailCatalogRegistry.defaultCatalog
         }
 
         private var visibleTrails: [Trail] {
-            trailCatalogSelection.trails(trails, near: activeLocation)
+            TrailCatalogRegistry.trails(trails, for: activeCatalog)
         }
 
         private var activeLocation: Coordinate? {

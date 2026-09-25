@@ -251,25 +251,48 @@ final class BermsTests: XCTestCase {
         XCTAssertEqual(trails.first { $0.name == "Lower Asylum" }?.passCount, 2)
     }
 
-    @MainActor
-    func testManualTrailCatalogSelectionShowsTheSelectedResortAwayFromGPS() {
-        let suiteName = "BermsTests.catalogSelection.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defer { defaults.removePersistentDomain(forName: suiteName) }
+    func testDayCatalogResolutionVotesAcrossTheWholeRoute() {
+        let creek = Coordinate(latitude: 41.1844, longitude: -74.5033)
+        let city = Coordinate(latitude: 40.7128, longitude: -74.0060)
 
-        let selection = TrailCatalogSelection(defaults: defaults)
-        selection.setSelectionID(TrailCatalogRegistry.mountainCreek.id)
+        let ride =
+            Array(repeating: city, count: 40)
+            + Array(repeating: creek, count: 40)
+        XCTAssertEqual(
+            TrailCatalogRegistry.resolvedCatalogID(
+                mode: .bikePark, manualSelectionID: nil, routePoints: ride),
+            TrailCatalogRegistry.mountainCreekCatalogID,
+            "A ride that starts outside the boundary still resolves the resort it rode in")
 
-        let creekTrail = Trail(
-            name: "Creek trail", difficulty: .green,
-            resort: TrailCatalogRegistry.mountainCreek.resortName)
-        let otherTrail = Trail(name: "Other trail", difficulty: .blue, resort: "Other Resort")
-        let visible = selection.trails(
-            [creekTrail, otherTrail],
-            near: Coordinate(latitude: 40.7128, longitude: -74.0060)
-        )
+        let strayPoint =
+            Array(repeating: city, count: 40)
+            + [creek]
+        XCTAssertNil(
+            TrailCatalogRegistry.resolvedCatalogID(
+                mode: .bikePark, manualSelectionID: nil, routePoints: strayPoint),
+            "One stray point near a boundary does not claim the day")
+    }
 
-        XCTAssertEqual(visible.map(\.name), ["Creek trail"])
+    func testDayCatalogResolutionHonoursTheRiderOverride() {
+        let creek = Coordinate(latitude: 41.1844, longitude: -74.5033)
+        let whistler = Coordinate(latitude: 50.0891, longitude: -122.9634)
+
+        XCTAssertEqual(
+            TrailCatalogRegistry.resolvedCatalogID(
+                mode: .bikePark,
+                manualSelectionID: TrailCatalogRegistry.mountainCreekCatalogID,
+                routePoints: Array(repeating: whistler, count: 20)),
+            TrailCatalogRegistry.mountainCreekCatalogID,
+            "A rider override beats the route vote")
+    }
+
+    func testNearestResortOnlyPreviewsWithinRange() {
+        let creek = Coordinate(latitude: 41.1844, longitude: -74.5033)
+        let nearby = TrailCatalogRegistry.resort(nearest: creek, withinMeters: 5_000)
+        XCTAssertEqual(nearby?.id, TrailCatalogRegistry.mountainCreekResortID)
+
+        let city = Coordinate(latitude: 40.7128, longitude: -74.0060)
+        XCTAssertNil(TrailCatalogRegistry.resort(nearest: city, withinMeters: 5_000))
     }
 
     func testActivityModeResolvesSeasonalMountainCreekCatalogs() {

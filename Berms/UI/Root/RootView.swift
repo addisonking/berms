@@ -13,7 +13,6 @@ struct RootView: View {
     @ObservedObject private var persistence = PersistenceController.shared
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var mapLayerPreferences = MapLayerPreferences()
-    @StateObject private var trailCatalogSelection = TrailCatalogSelection()
     @State private var selectedTab: AppTab = .track
     @State private var pendingDayID: UUID?
     @State private var pendingRecapDayID: UUID?
@@ -55,7 +54,6 @@ struct RootView: View {
         }
         .tint(.bermsTrail)
         .environmentObject(mapLayerPreferences)
-        .environmentObject(trailCatalogSelection)
         .onAppear { recorder.resumeIfNeeded() }
         // SwiftUI's scene lifecycle does not call the app delegate's
         // applicationDidEnterBackground, so route it through the scene phase.
