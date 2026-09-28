@@ -14,19 +14,19 @@ final class RideRecorder: ObservableObject {
     private static let liveStatMetricsKey = "berms.liveStatMetrics"
     static let activityModeKey = "berms.activityMode"
 
-    @Published var activeDay: RideDay?
-    @Published var phase: DetectorPhase = .idle
-    @Published var activePoints: [TrackSample] = []
-    @Published var lastSample: TrackSample?
-    @Published var locationAuthorization: CLAuthorizationStatus = .notDetermined
-    @Published var motionAvailable = true
+    @Published private(set) var activeDay: RideDay?
+    @Published private(set) var phase: DetectorPhase = .idle
+    @Published private(set) var activePoints: [TrackSample] = []
+    @Published private(set) var lastSample: TrackSample?
+    @Published private(set) var locationAuthorization: CLAuthorizationStatus = .notDetermined
+    @Published private(set) var motionAvailable = true
     @Published private(set) var jumpSensitivity: JumpSensitivity
     @Published private(set) var rawMotionLoggingEnabled: Bool
     @Published private(set) var liveActivityMetric: BermsLiveActivityMetric
     @Published private(set) var liveStatMetrics: [LiveStatMetric]
-    @Published var selectedActivityMode: ActivityMode
-    @Published var isRestoring = false
-    @Published var needsRecoveryPrompt = false
+    @Published private(set) var selectedActivityMode: ActivityMode
+    @Published private(set) var isRestoring = false
+    @Published private(set) var needsRecoveryPrompt = false
     @Published var errorMessage: String?
 
     let locationService = LocationService()
@@ -53,7 +53,7 @@ final class RideRecorder: ObservableObject {
     private var authorizationSubscription: AnyCancellable?
     private var liveActivityNotificationObserver: NSObjectProtocol?
     var pendingRecoveryDay: RideDay?
-    var migrationTask: Task<Void, Never>?
+    private(set) var migrationTask: Task<Void, Never>?
 
     init(
         context: ModelContext? = nil,
@@ -144,6 +144,54 @@ final class RideRecorder: ObservableObject {
 
     var effectiveAuthorizationStatus: CLAuthorizationStatus {
         authorizationOverride ?? locationService.authorizationStatus
+    }
+
+    // The recorder extensions write this session state, and `private` setters
+    // do not cross files. Keep those writes funneled through these mutators so
+    // no other file can move recording state around directly.
+    func adoptSession(_ day: RideDay) {
+        activeDay = day
+    }
+
+    func clearActiveSession() {
+        activeDay = nil
+    }
+
+    func adoptActivityMode(_ mode: ActivityMode) {
+        selectedActivityMode = mode
+        UserDefaults.standard.set(mode.rawValue, forKey: Self.activityModeKey)
+    }
+
+    func setPhase(_ phase: DetectorPhase) {
+        self.phase = phase
+    }
+
+    func setActivePoints(_ points: [TrackSample]) {
+        activePoints = points
+    }
+
+    func setLastSample(_ sample: TrackSample?) {
+        lastSample = sample
+    }
+
+    func setLocationAuthorization(_ status: CLAuthorizationStatus) {
+        locationAuthorization = status
+    }
+
+    func setMotionAvailable(_ available: Bool) {
+        motionAvailable = available
+    }
+
+    func setRestoring(_ restoring: Bool) {
+        isRestoring = restoring
+    }
+
+    func setNeedsRecoveryPrompt(_ needsPrompt: Bool) {
+        needsRecoveryPrompt = needsPrompt
+    }
+
+    func setMigrationTask(_ task: Task<Void, Never>?) {
+        migrationTask = task
     }
 
     var currentWatchRideState: WatchRideState {

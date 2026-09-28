@@ -104,7 +104,7 @@ extension RideRecorder {
             return
         }
 
-        migrationTask = Task { [weak self] in
+        let task = Task { [weak self] in
             let work = await Task.detached(priority: .utility) {
                 () -> ([RebuiltDaySummary], [RepairedRoute], [RepairedRoute]) in
                 let rebuiltDays = dayInputs.compactMap { input -> RebuiltDaySummary? in
@@ -160,6 +160,7 @@ extension RideRecorder {
                 repairedSegments: work.1,
                 repairedPasses: work.2)
         }
+        setMigrationTask(task)
     }
 
     private func applyDiagnosticMigration(
@@ -167,7 +168,7 @@ extension RideRecorder {
         repairedSegments: [RepairedRoute],
         repairedPasses: [RepairedRoute]
     ) {
-        defer { migrationTask = nil }
+        defer { setMigrationTask(nil) }
 
         if let segments = try? context.fetch(FetchDescriptor<RideSegment>()) {
             let segmentsByID = Dictionary(

@@ -29,9 +29,8 @@ extension RideRecorder {
         do {
             try context.save()
             Self.pruneOldDiagnosticLogs()
-            activeDay = day
-            selectedActivityMode = mode
-            UserDefaults.standard.set(mode.rawValue, forKey: Self.activityModeKey)
+            adoptSession(day)
+            adoptActivityMode(mode)
             diagnosticLogger = RawLogWriter(url: Self.debugLogURL(for: day.id))
             diagnosticLogger?.append(
                 RawDiagnosticRecord(
@@ -48,12 +47,12 @@ extension RideRecorder {
             jumpDetector.reset()
             jumpsForCurrentRun.removeAll(keepingCapacity: true)
             latestTrackContext = nil
-            lastSample = nil
+            setLastSample(nil)
             lastSampleTimestamp = nil
             lastCheckpointDate = nil
             trackingBoundaryDate = day.startedAt
-            activePoints = []
-            phase = .idle
+            setActivePoints([])
+            setPhase(.idle)
             UserDefaults.standard.set(true, forKey: "berms.recordingActive")
             BermsLiveActivityCoordinator.shared.start(
                 rideID: day.id,
@@ -171,7 +170,7 @@ extension RideRecorder {
         BermsLiveActivityCoordinator.shared.end()
 
         resetTrackingState(clearLastSample: true)
-        activeDay = nil
+        clearActiveSession()
         watchStateSink?.publish(.idle, force: true)
         UserDefaults.standard.set(false, forKey: "berms.recordingActive")
         return day
@@ -183,8 +182,8 @@ extension RideRecorder {
 
         startDiagnosticMigrationIfNeeded()
 
-        isRestoring = true
-        defer { isRestoring = false }
+        setRestoring(true)
+        defer { setRestoring(false) }
         guard UserDefaults.standard.bool(forKey: "berms.recordingActive"), activeDay == nil else {
             if !UserDefaults.standard.bool(forKey: "berms.recordingActive") {
                 BermsLiveActivityCoordinator.shared.endAll()
@@ -206,7 +205,7 @@ extension RideRecorder {
 
         guard autoResume else {
             pendingRecoveryDay = day
-            needsRecoveryPrompt = true
+            setNeedsRecoveryPrompt(true)
             return
         }
         restore(day: day)
@@ -223,14 +222,14 @@ extension RideRecorder {
     func resumePendingSession() {
         guard let day = pendingRecoveryDay else { return }
         pendingRecoveryDay = nil
-        needsRecoveryPrompt = false
+        setNeedsRecoveryPrompt(false)
         restore(day: day)
     }
 
     func discardPendingSession() {
         guard let day = pendingRecoveryDay else { return }
         pendingRecoveryDay = nil
-        needsRecoveryPrompt = false
+        setNeedsRecoveryPrompt(false)
         discardUnfinishedSession(day)
     }
 
@@ -239,7 +238,7 @@ extension RideRecorder {
         motionService.stop()
         diagnosticLogger?.close()
         diagnosticLogger = nil
-        activeDay = nil
+        clearActiveSession()
         watchStateSink?.publish(.idle, force: true)
         resetTrackingState(clearLastSample: true)
         context.delete(day)
@@ -250,15 +249,14 @@ extension RideRecorder {
     }
 
     private func restore(day: RideDay) {
-        activeDay = day
-        selectedActivityMode = day.activityMode
-        UserDefaults.standard.set(day.activityMode.rawValue, forKey: Self.activityModeKey)
-        lastSample = nil
+        adoptSession(day)
+        adoptActivityMode(day.activityMode)
+        setLastSample(nil)
         lastSampleTimestamp = nil
         lastCheckpointDate = nil
         trackingBoundaryDate = day.startedAt
-        activePoints = []
-        phase = .idle
+        setActivePoints([])
+        setPhase(.idle)
         diagnosticLogger = RawLogWriter(url: Self.debugLogURL(for: day.id))
         diagnosticLogger?.append(
             RawDiagnosticRecord(
@@ -296,11 +294,11 @@ extension RideRecorder {
                 detector.restore(kind: kind, points: checkpoint.points)
                 normalizer.seed(with: checkpoint.points.last)
                 jumpsForCurrentRun = kind == .run ? checkpoint.jumps : []
-                activePoints = checkpoint.points
-                lastSample = checkpoint.points.last
+                setActivePoints(checkpoint.points)
+                setLastSample(checkpoint.points.last)
                 lastSampleTimestamp = checkpoint.points.last?.timestamp
                 lastCheckpointDate = checkpoint.points.last?.timestamp
-                phase = detector.phase
+                setPhase(detector.phase)
             }
         }
         jumpDetector.reset()

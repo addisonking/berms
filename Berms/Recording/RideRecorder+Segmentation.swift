@@ -21,9 +21,9 @@ extension RideRecorder {
 
     func resetTrackingState(clearLastSample: Bool, resetAltitudeFusion: Bool = true) {
         detector.reset()
-        activePoints = []
+        setActivePoints([])
         if clearLastSample {
-            lastSample = nil
+            setLastSample(nil)
         }
         lastSampleTimestamp = nil
         trackingBoundaryDate = nil
@@ -35,7 +35,7 @@ extension RideRecorder {
         jumpsForCurrentRun.removeAll(keepingCapacity: true)
         latestTrackContext = nil
         lastCheckpointDate = nil
-        phase = .idle
+        setPhase(.idle)
     }
 
     func clearCheckpoint(for day: RideDay) {
@@ -87,8 +87,8 @@ extension RideRecorder {
             if kind == .run {
                 jumpsForCurrentRun.removeAll(keepingCapacity: true)
             }
-            phase = kind == .lift ? .lift : .run
-            activePoints = points
+            setPhase(kind == .lift ? .lift : .run)
+            setActivePoints(points)
             diagnosticLogger?.append(
                 RawDiagnosticRecord(
                     kind: "detector_started",
@@ -98,7 +98,7 @@ extension RideRecorder {
                     detail: kind.title))
             checkpointIfNeeded(at: points.last?.timestamp ?? now(), force: true)
         case .updated:
-            activePoints = detector.currentPoints
+            setActivePoints(detector.currentPoints)
         case .finished(let draft):
             for jumpEvent in jumpDetector.finish() {
                 handleJumpEvent(jumpEvent)

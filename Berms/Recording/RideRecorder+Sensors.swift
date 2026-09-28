@@ -10,12 +10,12 @@ extension RideRecorder {
             self?.consume(location: location, isStationary: stationary)
         }
         locationService.stop()
-        locationAuthorization = locationService.authorizationStatus
+        setLocationAuthorization(locationService.authorizationStatus)
     }
 
     func startSensors() {
         locationService.authorizationChangeHandler = { [weak self] status in
-            self?.locationAuthorization = status
+            self?.setLocationAuthorization(status)
             self?.diagnosticLogger?.append(
                 RawDiagnosticRecord(
                     kind: "location_authorization",
@@ -77,14 +77,14 @@ extension RideRecorder {
             }
         }
         motionService.start()
-        motionAvailable = motionService.motionAvailable
+        setMotionAvailable(motionService.motionAvailable)
         altitudeFusion.reset(barometerAvailable: motionService.altimeterAvailable)
         let backgroundAccess: BackgroundLocationAccess =
             BermsLiveActivityCoordinator.shared.isActivityActive ? .liveActivity : .activitySession
         locationService.start(backgroundAccess: backgroundAccess) { [weak self] location, stationary in
             self?.consume(location: location, isStationary: stationary)
         }
-        locationAuthorization = locationService.authorizationStatus
+        setLocationAuthorization(locationService.authorizationStatus)
         diagnosticLogger?.append(
             RawDiagnosticRecord(
                 kind: "location_service_started",
@@ -226,8 +226,8 @@ extension RideRecorder {
         lastSampleTimestamp = sample.timestamp
 
         let events = detector.process(sample)
-        lastSample = sample
-        phase = detector.phase
+        setLastSample(sample)
+        setPhase(detector.phase)
 
         for event in events {
             handle(event)
@@ -267,11 +267,11 @@ extension RideRecorder {
             ))
 
         if detector.phase != .idle {
-            activePoints = detector.currentPoints
-            phase = detector.phase
+            setActivePoints(detector.currentPoints)
+            setPhase(detector.phase)
             checkpointIfNeeded(at: location.timestamp)
         } else {
-            activePoints = []
+            setActivePoints([])
         }
         updateLiveActivity(force: phaseBefore != phase)
         logMemoryFootprint(at: arrivalDate)
