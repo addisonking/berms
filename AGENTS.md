@@ -58,6 +58,7 @@ The `BermsTests` XCTest target runs on the iOS Simulator against the app host.
 - Build for the connected device with DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild -project Berms.xcodeproj -scheme Berms -destination 'id=DEVICE_ID' -derivedDataPath /tmp/berms-device-build -allowProvisioningUpdates build.
 - Install the signed app with DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun devicectl device install app --device DEVICE_ID /tmp/berms-device-build/Build/Products/Debug-iphoneos/Berms.app.
 - Device installation requires a paired phone, an Apple account available to Xcode, and provisioning profiles that include Berms's HealthKit capability and its Watch targets.
+- To point a fresh clone at another Apple account, run `python3 scripts/configure-signing.py TEAM_ID BUNDLE_ID`; it swaps the team and every bundle id (see docs/building.md).
 
 ## iOS Simulator interaction (AXe)
 
