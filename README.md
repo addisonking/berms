@@ -51,6 +51,8 @@ location, motion, and health data stay on device. there are no accounts, no soci
 
 swiftui and swiftdata, targeting ios 26 with a watchos 26 watch app and a macos 26 studio app. requires xcode.
 
+for building and installing on your own iphone, apple watch, and mac, see [docs/building.md](docs/building.md).
+
 ```sh
 ./scripts/format.sh   # swift-format with repo config
 ./scripts/lint.sh     # strict lint, runs in CI
