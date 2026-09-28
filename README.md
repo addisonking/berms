@@ -35,9 +35,13 @@ The Days tab keeps a day-by-day archive with a month calendar and jump-to-date. 
 
 The watch app mirrors the live session: heart rate, top speed, jump airtime, run count, and phone connection status, with pause, resume, finish, and Water Lock controls. Heart rate is collected through a workout session on the watch and is not written to Health as a duplicate workout. A Live Activity on the Lock Screen and Dynamic Island shows the current run and stats, and can pause or resume without opening the app.
 
+![Berms watch app controls and live stats](docs/screenshots/watch.png)
+
 ## BermsStudio
 
 A separate macOS app for post-ride video. Drop in GoPro clips and a Berms day export, and it matches footage to runs by timestamp, lets you trim clips per run, and exports stitched videos or clips renamed by day, run, and trail. Requires `ffmpeg` and `ffprobe`.
+
+![BermsStudio session list and run detail](docs/screenshots/studio.png)
 
 ## Privacy
 
