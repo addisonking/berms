@@ -409,6 +409,8 @@ final class RideRecorder: ObservableObject {
     private let context: ModelContext
     private let watchStateSink: WatchRideStateSink?
     private let authorizationOverride: CLAuthorizationStatus?
+    private let now: () -> Date
+    private let uptime: () -> TimeInterval
     private let detector = ParkLapDetector()
     private let jumpDetector: JumpDetector
     private var normalizer = TrackSampleNormalizer()
@@ -430,7 +432,9 @@ final class RideRecorder: ObservableObject {
     init(
         context: ModelContext? = nil,
         watchStateSink: WatchRideStateSink? = WatchConnectivityCoordinator.shared,
-        authorizationOverride: CLAuthorizationStatus? = nil
+        authorizationOverride: CLAuthorizationStatus? = nil,
+        now: (() -> Date)? = nil,
+        uptime: (() -> TimeInterval)? = nil
     ) {
         selectedActivityMode =
             ActivityMode(
@@ -450,6 +454,8 @@ final class RideRecorder: ObservableObject {
         self.context = context ?? PersistenceController.shared.container.mainContext
         self.watchStateSink = watchStateSink
         self.authorizationOverride = authorizationOverride
+        self.now = now ?? { .now }
+        self.uptime = uptime ?? { ProcessInfo.processInfo.systemUptime }
         if let lifts = try? self.context.fetch(FetchDescriptor<LearnedLift>()) {
             detector.setLearnedLifts(lifts.map(\.profile))
         }
@@ -529,7 +535,7 @@ final class RideRecorder: ObservableObject {
             descentMeters: liveDescent,
             speedMetersPerSecond: currentSpeed,
             run: currentRunMetrics,
-            updatedAt: .now,
+            updatedAt: now(),
             activityModeRawValue: day.activityMode.rawValue
         )
     }
@@ -736,7 +742,7 @@ final class RideRecorder: ObservableObject {
             return false
         }
 
-        let day = RideDay()
+        let day = RideDay(startedAt: now())
         day.activityModeRawValue = mode.rawValue
         // The resort is resolved from GPS when the ride stops. Until then the
         // day stays untagged so per-run resolution can match every resort.
@@ -799,14 +805,14 @@ final class RideRecorder: ObservableObject {
         }
         diagnosticLogger?.append(RawDiagnosticRecord(kind: "app_background", detail: "Scene entered background"))
         logMemoryFootprint(force: true)
-        checkpointIfNeeded(at: .now, force: true)
+        checkpointIfNeeded(at: now(), force: true)
         diagnosticLogger?.flush()
     }
 
     @discardableResult
     func pause() -> Bool {
         guard let day = activeDay, !day.isPaused else { return false }
-        let pauseDate = Date.now
+        let pauseDate = now()
         let phaseBefore = phase
         objectWillChange.send()
         locationService.stop()
@@ -835,7 +841,7 @@ final class RideRecorder: ObservableObject {
         guard effectiveAuthorizationStatus != .denied,
             effectiveAuthorizationStatus != .restricted
         else { return false }
-        let resumeDate = Date.now
+        let resumeDate = now()
         let pausedDuration = day.endPause(at: resumeDate)
         objectWillChange.send()
         resetTrackingState(clearLastSample: true)
@@ -855,7 +861,7 @@ final class RideRecorder: ObservableObject {
     @discardableResult
     func stop() -> RideDay? {
         guard let day = activeDay else { return nil }
-        let stopDate = Date.now
+        let stopDate = now()
         let wasPaused = day.isPaused
         locationService.stop()
         motionService.stop()
@@ -1362,10 +1368,12 @@ final class RideRecorder: ObservableObject {
             ))
     }
 
-    private func consume(location: CLLocation, isStationary: Bool) {
+    /// One accepted location fix, straight from Core Location. Internal so
+    /// integration tests can replay a whole ride without a location manager.
+    func consume(location: CLLocation, isStationary: Bool) {
         guard let day = activeDay, !day.isPaused else { return }
-        let arrivalDate = Date.now
-        let arrivalMonotonicSeconds = ProcessInfo.processInfo.systemUptime
+        let arrivalDate = now()
+        let arrivalMonotonicSeconds = uptime()
         let locationAge = max(0, arrivalDate.timeIntervalSince(location.timestamp))
         let trackMonotonicSeconds = arrivalMonotonicSeconds - locationAge
         let cycling = motionService.isCycling
@@ -1545,7 +1553,9 @@ final class RideRecorder: ObservableObject {
         logMemoryFootprint(at: arrivalDate)
     }
 
-    private func consume(deviceMotion sample: DeviceMotionSample) {
+    /// One device-motion sample, straight from Core Motion. Internal for the
+    /// same reason as `consume(location:isStationary:)`.
+    func consume(deviceMotion sample: DeviceMotionSample) {
         guard activeDay != nil, !isPaused, let context = latestTrackContext else { return }
         if let trackingBoundaryDate, sample.recordedAt < trackingBoundaryDate { return }
         for event in jumpDetector.process(sample, context: context) {
@@ -1629,11 +1639,11 @@ final class RideRecorder: ObservableObject {
             diagnosticLogger?.append(
                 RawDiagnosticRecord(
                     kind: "detector_started",
-                    timestamp: points.first?.timestamp ?? .now,
+                    timestamp: points.first?.timestamp ?? now(),
                     runNumber: kind == .run ? completedRunCount + 1 : nil,
                     phaseAfter: kind.rawValue,
                     detail: kind.title))
-            checkpointIfNeeded(at: points.last?.timestamp ?? .now, force: true)
+            checkpointIfNeeded(at: points.last?.timestamp ?? now(), force: true)
         case .updated:
             activePoints = detector.currentPoints
         case .finished(let draft):
@@ -1720,7 +1730,7 @@ final class RideRecorder: ObservableObject {
                 stored.topRadius = profile.topRadius
                 stored.observationCount = profile.observationCount
                 stored.confidence = profile.confidence
-                stored.lastObservedAt = .now
+                stored.lastObservedAt = now()
             } else {
                 context.insert(LearnedLift(profile: profile))
             }
@@ -1730,7 +1740,8 @@ final class RideRecorder: ObservableObject {
 
     /// Periodic footprint sampling so a background session leaves evidence if
     /// the system terminates it for memory.
-    private func logMemoryFootprint(at date: Date = .now, force: Bool = false) {
+    private func logMemoryFootprint(at date: Date? = nil, force: Bool = false) {
+        let date = date ?? now()
         guard force || lastFootprintLogDate.map({ date.timeIntervalSince($0) >= 30 }) ?? true else { return }
         lastFootprintLogDate = date
 

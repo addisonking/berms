@@ -101,6 +101,7 @@
 		100000000000000000000096 /* DayArchiveImportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000082 /* DayArchiveImportView.swift */; };
 		100000000000000000000097 /* SegmentEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000083 /* SegmentEditor.swift */; };
 		100000000000000000000098 /* DayRecapSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000084 /* DayRecapSheet.swift */; };
+		100000000000000000000099 /* RecordingIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000085 /* RecordingIntegrationTests.swift */; };
 /* End PBXBuildFile section */
 /* Begin PBXFileReference section */
 		200000000000000000000001 /* BermsApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BermsApp.swift; sourceTree = "<group>"; };
@@ -191,6 +192,7 @@
 		200000000000000000000082 /* DayArchiveImportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayArchiveImportView.swift; sourceTree = "<group>"; };
 		200000000000000000000083 /* SegmentEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SegmentEditor.swift; sourceTree = "<group>"; };
 		200000000000000000000084 /* DayRecapSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayRecapSheet.swift; sourceTree = "<group>"; };
+		200000000000000000000085 /* RecordingIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingIntegrationTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -228,7 +230,7 @@
 /* Begin PBXGroup section */
 		500000000000000000000001 = {isa = PBXGroup; children = (500000000000000000000002 /* Berms */, 500000000000000000000033 /* BermsStudio */, 500000000000000000000003 /* BermsTests */, 500000000000000000000005 /* BermsLiveActivity */, 500000000000000000000006 /* BermsWatchExtension */, 500000000000000000000008 /* BermsWatch */, 500000000000000000000004 /* Products */); sourceTree = "<group>"; };
 		500000000000000000000002 /* Berms */ = {isa = PBXGroup; children = (500000000000000000000009 /* App */, 500000000000000000000010 /* Models */, 500000000000000000000011 /* Recording */, 500000000000000000000012 /* Route */, 500000000000000000000013 /* Trails */, 500000000000000000000014 /* Connectivity */, 500000000000000000000015 /* LiveActivity */, 500000000000000000000016 /* UI */, 500000000000000000000035 /* DayArchive */, 500000000000000000000017 /* Resources */, 200000000000000000000010 /* Info.plist */); path = Berms; sourceTree = "<group>"; };
-		500000000000000000000003 /* BermsTests */ = {isa = PBXGroup; children = (200000000000000000000009 /* BermsTests.swift */, 200000000000000000000013 /* ParkDayTests.swift */, 200000000000000000000040 /* WatchLifecycleChecks.swift */, 200000000000000000000074 /* ShareCardTests.swift */); path = BermsTests; sourceTree = "<group>"; };
+		500000000000000000000003 /* BermsTests */ = {isa = PBXGroup; children = (200000000000000000000009 /* BermsTests.swift */, 200000000000000000000013 /* ParkDayTests.swift */, 200000000000000000000040 /* WatchLifecycleChecks.swift */, 200000000000000000000074 /* ShareCardTests.swift */, 200000000000000000000085 /* RecordingIntegrationTests.swift */); path = BermsTests; sourceTree = "<group>"; };
 		500000000000000000000005 /* BermsLiveActivity */ = {isa = PBXGroup; children = (200000000000000000000021 /* BermsLiveActivity.swift */, 200000000000000000000022 /* Widget Info.plist */); path = BermsLiveActivity; sourceTree = "<group>"; };
 		500000000000000000000006 /* BermsWatchExtension */ = {isa = PBXGroup; children = (500000000000000000000018 /* App */, 500000000000000000000019 /* Views */, 500000000000000000000020 /* Model */, 500000000000000000000021 /* Connectivity */, 500000000000000000000022 /* Health */, 200000000000000000000037 /* WatchRideProtocol.swift for Watch */, 500000000000000000000023 /* Resources */, 200000000000000000000034 /* Watch extension Info.plist */, 200000000000000000000035 /* BermsWatchExtension.entitlements */); path = BermsWatchExtension; sourceTree = "<group>"; };
 		500000000000000000000008 /* BermsWatch */ = {isa = PBXGroup; children = (200000000000000000000036 /* Watch app Info.plist */); path = BermsWatch; sourceTree = "<group>"; };
@@ -283,7 +285,7 @@
 
 /* Begin PBXSourcesBuildPhase section */
 		400000000000000000000003 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (100000000000000000000094, 100000000000000000000001, 100000000000000000000002, 100000000000000000000003, 100000000000000000000004, 100000000000000000000005, 100000000000000000000006, 100000000000000000000007, 100000000000000000000012, 100000000000000000000014, 100000000000000000000015, 100000000000000000000016, 100000000000000000000017, 100000000000000000000018, 100000000000000000000019, 100000000000000000000020, 100000000000000000000026, 100000000000000000000027, 100000000000000000000028, 100000000000000000000042, 100000000000000000000043, 100000000000000000000044, 100000000000000000000045, 100000000000000000000046, 100000000000000000000047, 100000000000000000000048, 100000000000000000000049, 100000000000000000000050, 100000000000000000000051, 100000000000000000000052, 100000000000000000000053, 100000000000000000000054, 100000000000000000000055, 100000000000000000000056, 100000000000000000000057, 100000000000000000000078, 100000000000000000000079, 100000000000000000000080, 100000000000000000000081, 100000000000000000000082, 100000000000000000000083, 100000000000000000000084, 100000000000000000000086, 100000000000000000000089, 100000000000000000000093, 100000000000000000000095, 100000000000000000000096, 100000000000000000000097, 100000000000000000000098); runOnlyForDeploymentPostprocessing = 0; };
-		400000000000000000000005 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (100000000000000000000009, 100000000000000000000013, 100000000000000000000085); runOnlyForDeploymentPostprocessing = 0; };
+		400000000000000000000005 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (100000000000000000000009, 100000000000000000000013, 100000000000000000000085, 100000000000000000000099); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
