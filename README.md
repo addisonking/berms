@@ -6,14 +6,7 @@ The idea is set and forget. Start a session in the morning, put your phone away,
 
 Berms is a focused bike park tracker, not a social network. It does one thing and tries to do it well.
 
-<p align="center">
-  <img src="docs/screenshots/track.png" width="150" alt="Track tab ready to start">
-  <img src="docs/screenshots/days.png" width="150" alt="Days archive">
-  <img src="docs/screenshots/day-summary.png" width="150" alt="Day summary with map">
-  <img src="docs/screenshots/day-runs.png" width="150" alt="Runs with trail names and time breakdown">
-  <img src="docs/screenshots/run-detail.png" width="150" alt="Run detail with jumps">
-  <img src="docs/screenshots/share-card.png" width="150" alt="Share card">
-</p>
+![Berms screens: day archive, day summary, runs with trail names, run detail with jumps, and a share card](docs/screenshots/overview.png)
 
 ## Recording
 
