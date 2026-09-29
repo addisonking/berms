@@ -24,7 +24,6 @@ extension RideRecorder {
             liftCount: completedLiftCount,
             longestAirtime: activeLongestJumpAirtime,
             totalAirtime: activeTotalJumpAirtime,
-            activityModeRawValue: day.activityMode.rawValue,
             force: force
         )
         watchStateSink?.publish(currentWatchRideState, force: force)

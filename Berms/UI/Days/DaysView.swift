@@ -138,7 +138,7 @@ struct DaysView: View {
         ContentUnavailableView {
             Label("No days yet", systemImage: "mountain.2.fill")
         } description: {
-            Text("Finish a session and it will appear here.")
+            Text("Finish a ride and it will appear here.")
         } actions: {
             Button("Start tracking", action: onStartTracking)
                 .buttonStyle(.borderedProminent)

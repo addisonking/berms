@@ -264,7 +264,10 @@ import UIKit
         }
 
         private var activeCatalog: TrailCatalogDescriptor {
-            TrailCatalogRegistry.catalog(for: .bikePark, coordinate: activeLocation)
+            guard let activeLocation,
+                let resort = TrailCatalogRegistry.resort(containing: activeLocation)
+            else { return TrailCatalogRegistry.defaultCatalog }
+            return TrailCatalogRegistry.catalog(forResortID: resort.id)
                 ?? TrailCatalogRegistry.defaultCatalog
         }
 

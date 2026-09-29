@@ -31,7 +31,7 @@ enum DaySummaryPresentation {
             to: &metrics)
         appendPositive(
             BermsFormat.duration(day.activeSeconds),
-            label: day.activityMode.activeTimeTitle,
+            label: "Riding time",
             when: day.activeSeconds,
             to: &metrics)
         appendPositive(
@@ -211,7 +211,7 @@ struct DayRecapSheet: View {
                     Section("Time") {
                         DayTimeBreakdownView(
                             breakdown: breakdown,
-                            ridingTitle: day.activityMode.activeTimeTitle)
+                            ridingTitle: "Riding time")
                     }
                 }
                 if !jumpMetrics.isEmpty {

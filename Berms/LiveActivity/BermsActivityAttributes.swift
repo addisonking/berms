@@ -41,23 +41,13 @@ public struct BermsActivityAttributes: ActivityAttributes {
         public var longestAirtime: TimeInterval
         public var totalAirtime: TimeInterval
         public var lastUpdated: Date
-        public var activityModeRawValue: String?
-
-        public var isSkiDay: Bool {
-            activityModeRawValue == "ski"
-        }
-
-        public var activityTitle: String {
-            isSkiDay ? "Ski day" : "Berms"
-        }
 
         public init(
             phase: String, isPaused: Bool, runCount: Int, startedAt: Date,
             elapsedSeconds: TimeInterval, distanceMeters: Double, descentMeters: Double,
             topSpeedMetersPerSecond: Double, metric: BermsLiveActivityMetric = .descent,
             jumpCount: Int = 0, liftCount: Int = 0, longestAirtime: TimeInterval = 0,
-            totalAirtime: TimeInterval = 0, lastUpdated: Date = .now,
-            activityModeRawValue: String? = nil
+            totalAirtime: TimeInterval = 0, lastUpdated: Date = .now
         ) {
             self.phase = phase
             self.isPaused = isPaused
@@ -73,7 +63,6 @@ public struct BermsActivityAttributes: ActivityAttributes {
             self.longestAirtime = longestAirtime
             self.totalAirtime = totalAirtime
             self.lastUpdated = lastUpdated
-            self.activityModeRawValue = activityModeRawValue
         }
     }
 

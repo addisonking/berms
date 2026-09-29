@@ -6,11 +6,6 @@ import SwiftData
 extension RideRecorder {
     @discardableResult
     func start() -> Bool {
-        start(mode: selectedActivityMode)
-    }
-
-    @discardableResult
-    func start(mode: ActivityMode) -> Bool {
         guard activeDay == nil else { return false }
         guard effectiveAuthorizationStatus != .denied,
             effectiveAuthorizationStatus != .restricted
@@ -21,7 +16,6 @@ extension RideRecorder {
         }
 
         let day = RideDay(startedAt: now())
-        day.activityModeRawValue = mode.rawValue
         // The resort is resolved from GPS when the ride stops. Until then the
         // day stays untagged so per-run resolution can match every resort.
         day.catalogID = nil
@@ -30,14 +24,12 @@ extension RideRecorder {
             try context.save()
             Self.pruneOldDiagnosticLogs()
             adoptSession(day)
-            adoptActivityMode(mode)
             diagnosticLogger = RawLogWriter(url: Self.debugLogURL(for: day.id))
             diagnosticLogger?.append(
                 RawDiagnosticRecord(
                     kind: "session_started", timestamp: day.startedAt,
                     detectorVersion: jumpDetector.detectorVersion,
-                    detail:
-                        "Berms recording started; mode=\(mode.rawValue)"
+                    detail: "Berms recording started"
                 ))
             diagnosticLogger?.append(
                 RawDiagnosticRecord(
@@ -57,8 +49,7 @@ extension RideRecorder {
             BermsLiveActivityCoordinator.shared.start(
                 rideID: day.id,
                 startedAt: day.startedAt,
-                metric: liveActivityMetric,
-                activityModeRawValue: day.activityMode.rawValue
+                metric: liveActivityMetric
             )
             startSensors()
             updateLiveActivity(force: true)
@@ -250,7 +241,6 @@ extension RideRecorder {
 
     private func restore(day: RideDay) {
         adoptSession(day)
-        adoptActivityMode(day.activityMode)
         setLastSample(nil)
         lastSampleTimestamp = nil
         lastCheckpointDate = nil
@@ -268,8 +258,7 @@ extension RideRecorder {
         BermsLiveActivityCoordinator.shared.start(
             rideID: day.id,
             startedAt: day.startedAt,
-            metric: liveActivityMetric,
-            activityModeRawValue: day.activityMode.rawValue
+            metric: liveActivityMetric
         )
         if day.isPaused {
             resetTrackingState(clearLastSample: true)

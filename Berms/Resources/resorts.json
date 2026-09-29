@@ -12,7 +12,6 @@
       "catalogs": [
         {
           "id": "mountain-creek-resort",
-          "season": "summer",
           "resource": "mountain-creek-ridepal-trails-with-metadata",
           "version": "mountain-creek-ridepal-v4",
           "stableIDNamespace": "berms:ridepal",
@@ -35,12 +34,6 @@
             "lower-asylum-196712": "lower-asylum-1f4u6s",
             "lower-asylum-dud3va": "lower-asylum-1f4u6s"
           }
-        },
-        {
-          "id": "mountain-creek-winter",
-          "season": "winter",
-          "version": "mountain-creek-winter-v1",
-          "stableIDNamespace": "berms:mountain-creek-winter"
         }
       ]
     },
@@ -55,7 +48,6 @@
       "catalogs": [
         {
           "id": "whistler-resort",
-          "season": "summer",
           "resource": "whistler-ridepal-trails-with-metadata",
           "version": "whistler-ridepal-v1",
           "stableIDNamespace": "berms:whistler",

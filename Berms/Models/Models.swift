@@ -1,79 +1,11 @@
 import Foundation
 import SwiftData
 
-enum SeasonBucket: String, Codable, CaseIterable, Identifiable, Sendable {
-    case summer
-    case winter
-
-    var id: String { rawValue }
-
-    var title: String {
-        rawValue.capitalized
-    }
-}
-
-enum ActivityMode: String, Codable, CaseIterable, Identifiable, Sendable {
-    case bikePark
-    case ski
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .bikePark: "Bike"
-        case .ski: "Ski"
-        }
-    }
-
-    var readyTitle: String {
-        switch self {
-        case .bikePark: "Ready to ride"
-        case .ski: "Ready to ski"
-        }
-    }
-
-    var readyDescription: String {
-        switch self {
-        case .bikePark: "Track runs, lifts, and routes."
-        case .ski: "Track ski runs, lifts, and your day on the mountain."
-        }
-    }
-
-    var startTitle: String {
-        switch self {
-        case .bikePark: "Start"
-        case .ski: "Start ski day"
-        }
-    }
-
-    var systemImage: String {
-        switch self {
-        case .bikePark: "figure.outdoor.cycle"
-        case .ski: "snowflake"
-        }
-    }
-
-    var season: SeasonBucket {
-        switch self {
-        case .bikePark: .summer
-        case .ski: .winter
-        }
-    }
-
-    var activeTimeTitle: String {
-        switch self {
-        case .bikePark: "Riding time"
-        case .ski: "Ski time"
-        }
-    }
-}
-
 @Model
 final class RideDay {
     @Attribute(.unique) var id: UUID
     var name: String?
     var notes: String?
-    var activityModeRawValue: String?
     var catalogID: String?
     var startedAt: Date
     var endedAt: Date?
@@ -97,7 +29,6 @@ final class RideDay {
         self.id = UUID()
         self.name = nil
         self.notes = nil
-        self.activityModeRawValue = nil
         self.catalogID = nil
         self.startedAt = startedAt
         self.endedAt = nil
@@ -116,10 +47,6 @@ final class RideDay {
     var isFinished: Bool { endedAt != nil }
 
     var isPaused: Bool { endedAt == nil && pausedAt != nil }
-
-    var activityMode: ActivityMode {
-        ActivityMode(rawValue: activityModeRawValue ?? "") ?? .bikePark
-    }
 
     var displayName: String {
         normalizedName ?? startedAt.formatted(date: .abbreviated, time: .shortened)
@@ -376,7 +303,6 @@ struct BermsDataExport: Codable, Sendable {
         let id: String
         let name: String?
         let notes: String?
-        let activityMode: ActivityMode?
         let catalogID: String?
         let startedAt: Date
         let endedAt: Date?
@@ -521,7 +447,7 @@ struct BermsDataExport: Codable, Sendable {
         days = [
             Day(
                 id: day.id.uuidString, name: day.name, notes: day.notes,
-                activityMode: day.activityMode, catalogID: day.catalogID,
+                catalogID: day.catalogID,
                 startedAt: day.startedAt, endedAt: day.endedAt, segments: segments)
         ]
         parsed = Parsed(dayID: day.id.uuidString, runCount: runs.count, runs: runs)

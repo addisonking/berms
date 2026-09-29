@@ -197,13 +197,13 @@ final class BermsTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
         let firstCatalog = TrailCatalogDescriptor(
-            id: "catalog-a", season: .summer, resortID: "resort-a",
+            id: "catalog-a", resortID: "resort-a",
             resortName: "Resort A", bundledResourceName: "a",
             importVersion: "a-v1",
             stableIDNamespace: "berms:catalog-a", legacyImportVersionKeys: [],
             difficultyOverrides: [:], aliases: [:])
         let secondCatalog = TrailCatalogDescriptor(
-            id: "catalog-b", season: .summer, resortID: "resort-b",
+            id: "catalog-b", resortID: "resort-b",
             resortName: "Resort B", bundledResourceName: "b",
             importVersion: "b-v1",
             stableIDNamespace: "berms:catalog-b", legacyImportVersionKeys: [],
@@ -337,7 +337,7 @@ final class BermsTests: XCTestCase {
             + Array(repeating: creek, count: 40)
         XCTAssertEqual(
             TrailCatalogRegistry.resolvedCatalogID(
-                mode: .bikePark, manualSelectionID: nil, routePoints: ride),
+                manualSelectionID: nil, routePoints: ride),
             TrailCatalogRegistry.mountainCreekCatalogID,
             "A ride that starts outside the boundary still resolves the resort it rode in")
 
@@ -346,7 +346,7 @@ final class BermsTests: XCTestCase {
             + [creek]
         XCTAssertNil(
             TrailCatalogRegistry.resolvedCatalogID(
-                mode: .bikePark, manualSelectionID: nil, routePoints: strayPoint),
+                manualSelectionID: nil, routePoints: strayPoint),
             "One stray point near a boundary does not claim the day")
     }
 
@@ -356,7 +356,6 @@ final class BermsTests: XCTestCase {
 
         XCTAssertEqual(
             TrailCatalogRegistry.resolvedCatalogID(
-                mode: .bikePark,
                 manualSelectionID: TrailCatalogRegistry.mountainCreekCatalogID,
                 routePoints: Array(repeating: whistler, count: 20)),
             TrailCatalogRegistry.mountainCreekCatalogID,
@@ -370,18 +369,6 @@ final class BermsTests: XCTestCase {
 
         let city = Coordinate(latitude: 40.7128, longitude: -74.0060)
         XCTAssertNil(TrailCatalogRegistry.resort(nearest: city, withinMeters: 5_000))
-    }
-
-    func testActivityModeResolvesSeasonalMountainCreekCatalogs() {
-        XCTAssertEqual(ActivityMode.bikePark.season, .summer)
-        XCTAssertEqual(ActivityMode.ski.season, .winter)
-        XCTAssertEqual(
-            TrailCatalogRegistry.catalog(for: .bikePark)?.id,
-            TrailCatalogRegistry.mountainCreek.id)
-        XCTAssertEqual(
-            TrailCatalogRegistry.catalog(for: .ski)?.id,
-            TrailCatalogRegistry.mountainCreekWinter.id)
-        XCTAssertNil(TrailCatalogRegistry.mountainCreekWinter.bundledResourceName)
     }
 
     func testBundledResortManifestLoadsAndResolvesResources() throws {
@@ -425,13 +412,10 @@ final class BermsTests: XCTestCase {
             }
         }
 
-        let summer = TrailCatalogRegistry.mountainCreek
-        XCTAssertEqual(summer.resortID, TrailCatalogRegistry.mountainCreekResortID)
-        XCTAssertEqual(summer.difficultyOverrides.count, 12)
-        XCTAssertEqual(summer.aliases.count, 2)
-        XCTAssertEqual(
-            TrailCatalogRegistry.catalogsBySeason[.winter]?.first?.id,
-            TrailCatalogRegistry.mountainCreekWinter.id)
+        let mountainCreek = TrailCatalogRegistry.mountainCreek
+        XCTAssertEqual(mountainCreek.resortID, TrailCatalogRegistry.mountainCreekResortID)
+        XCTAssertEqual(mountainCreek.difficultyOverrides.count, 12)
+        XCTAssertEqual(mountainCreek.aliases.count, 2)
     }
 
     func testResortManifestDecodesMultipleResorts() throws {
@@ -440,19 +424,17 @@ final class BermsTests: XCTestCase {
             {"schemaVersion":1,"resorts":[
               {"id":"resort-a","name":"Resort A","anchor":{"latitude":40,"longitude":-105},
                "bounds":{"center":{"latitude":40,"longitude":-105},"radiusMeters":1500},
-               "catalogs":[{"id":"a-summer","season":"summer","resource":"a","version":"a-v1","stableIDNamespace":"berms:a"}]},
+               "catalogs":[{"id":"a","resource":"a","version":"a-v1","stableIDNamespace":"berms:a"}]},
               {"id":"resort-b","name":"Resort B","region":"Utah","anchor":{"latitude":41,"longitude":-106},
                "bounds":{"center":{"latitude":41,"longitude":-106},"radiusMeters":2500},
-               "catalogs":[{"id":"b-winter","season":"winter","version":"b-v1","stableIDNamespace":"berms:b",
+               "catalogs":[{"id":"b","version":"b-v1","stableIDNamespace":"berms:b",
                  "difficultyOverrides":{"x":"black"},"aliases":{"old-x":"x"}}]}
             ]}
             """.utf8)
 
         let manifest = try ResortCatalogLoader.decode(data)
         XCTAssertEqual(manifest.resorts.map(\.id), ["resort-a", "resort-b"])
-        XCTAssertEqual(manifest.catalogs.map(\.id), ["a-summer", "b-winter"])
-        XCTAssertEqual(manifest.resorts[0].seasons, [.summer])
-        XCTAssertEqual(manifest.resorts[1].seasons, [.winter])
+        XCTAssertEqual(manifest.catalogs.map(\.id), ["a", "b"])
         XCTAssertEqual(manifest.resorts[1].region, "Utah")
         XCTAssertEqual(manifest.catalogs[0].resortID, "resort-a")
         XCTAssertEqual(manifest.catalogs[0].resortName, "Resort A")
@@ -477,7 +459,7 @@ final class BermsTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
         let catalog = TrailCatalogDescriptor(
-            id: "test-resort-summer", season: .summer, resortID: "test-resort",
+            id: "test-resort", resortID: "test-resort",
             resortName: "Test Resort", bundledResourceName: nil,
             importVersion: "test-v1",
             stableIDNamespace: "berms:test-resort",
@@ -569,43 +551,24 @@ final class BermsTests: XCTestCase {
 
         XCTAssertEqual(
             TrailCatalogRegistry.resolvedCatalogID(
-                mode: .bikePark, manualSelectionID: nil, firstPoint: whistler),
+                manualSelectionID: nil, firstPoint: whistler),
             "whistler-resort")
         XCTAssertEqual(
             TrailCatalogRegistry.resolvedCatalogID(
-                mode: .bikePark, manualSelectionID: nil, firstPoint: creek),
+                manualSelectionID: nil, firstPoint: creek),
             TrailCatalogRegistry.mountainCreekCatalogID)
         XCTAssertNil(
             TrailCatalogRegistry.resolvedCatalogID(
-                mode: .bikePark, manualSelectionID: nil, firstPoint: city),
+                manualSelectionID: nil, firstPoint: city),
             "A ride outside every resort boundary stays unassigned")
         XCTAssertEqual(
             TrailCatalogRegistry.resolvedCatalogID(
-                mode: .bikePark,
                 manualSelectionID: TrailCatalogRegistry.mountainCreekCatalogID,
                 firstPoint: whistler),
             TrailCatalogRegistry.mountainCreekCatalogID)
         XCTAssertNil(
             TrailCatalogRegistry.resolvedCatalogID(
-                mode: .bikePark, manualSelectionID: nil, firstPoint: nil))
-        // A winter selection does not apply to a summer ride.
-        XCTAssertEqual(
-            TrailCatalogRegistry.resolvedCatalogID(
-                mode: .bikePark,
-                manualSelectionID: TrailCatalogRegistry.mountainCreekWinterCatalogID,
-                firstPoint: whistler),
-            "whistler-resort")
-        // GPS resolution has to respect the activity's season.
-        XCTAssertEqual(
-            TrailCatalogRegistry.resolvedCatalogID(
-                mode: .ski, manualSelectionID: nil, firstPoint: creek),
-            TrailCatalogRegistry.mountainCreekWinterCatalogID)
-        XCTAssertEqual(
-            TrailCatalogRegistry.resolvedCatalogID(
-                mode: .bikePark,
-                manualSelectionID: TrailCatalogRegistry.mountainCreekWinterCatalogID,
-                firstPoint: creek),
-            TrailCatalogRegistry.mountainCreekCatalogID)
+                manualSelectionID: nil, firstPoint: nil))
     }
 
     /// Slugs repeat across parks, so a shared namespace silently merges two
@@ -783,45 +746,33 @@ final class BermsTests: XCTestCase {
             "A short ride must not allow a regional camera")
     }
 
-    func testSeasonalTrailSelectionDoesNotLeakSummerTrailsIntoWinter() {
-        let summerTrail = Trail(
-            name: "Summer trail", difficulty: .green,
+    func testTrailSelectionScopesTrailsToTheirCatalog() {
+        let catalogTrail = Trail(
+            name: "Catalog trail", difficulty: .green,
             resort: TrailCatalogRegistry.mountainCreek.resortName,
             catalogID: TrailCatalogRegistry.mountainCreek.id)
         let legacyTrail = Trail(
             name: "Legacy trail", difficulty: .blue,
             resort: TrailCatalogRegistry.mountainCreek.resortName)
-        let winterTrail = Trail(
-            name: "Winter trail", difficulty: .blue,
-            resort: TrailCatalogRegistry.mountainCreekWinter.resortName,
-            catalogID: TrailCatalogRegistry.mountainCreekWinter.id)
+        let otherTrail = Trail(
+            name: "Other trail", difficulty: .blue,
+            resort: "Other Resort", catalogID: "other-resort")
 
         XCTAssertEqual(
             TrailCatalogRegistry.trails(
-                [summerTrail, legacyTrail], for: TrailCatalogRegistry.mountainCreek
+                [catalogTrail, legacyTrail, otherTrail],
+                for: TrailCatalogRegistry.mountainCreek
             ).map(\.name),
-            ["Summer trail", "Legacy trail"]
-        )
-        XCTAssertEqual(
-            TrailCatalogRegistry.trails(
-                [summerTrail, legacyTrail, winterTrail],
-                for: TrailCatalogRegistry.mountainCreekWinter
-            ).map(\.name),
-            ["Winter trail"]
+            ["Catalog trail", "Legacy trail"]
         )
     }
 
-    func testRideDayDefaultsToBikeAndExportsSeasonalMetadata() throws {
+    func testRideDayExportKeepsItsCatalog() throws {
         let day = RideDay(startedAt: Date(timeIntervalSince1970: 1_700_000_000))
-        XCTAssertEqual(day.activityMode, .bikePark)
+        day.catalogID = TrailCatalogRegistry.mountainCreekCatalogID
 
-        day.activityModeRawValue = ActivityMode.ski.rawValue
-        day.catalogID = TrailCatalogRegistry.mountainCreekWinter.id
-
-        XCTAssertEqual(day.activityMode, .ski)
         let export = BermsDataExport(day: day)
-        XCTAssertEqual(export.days.first?.activityMode, .ski)
-        XCTAssertEqual(export.days.first?.catalogID, TrailCatalogRegistry.mountainCreekWinter.id)
+        XCTAssertEqual(export.days.first?.catalogID, TrailCatalogRegistry.mountainCreekCatalogID)
     }
 
     @MainActor
@@ -1934,14 +1885,12 @@ final class BermsTests: XCTestCase {
             phase: "run", isPaused: false, runCount: 2, startedAt: .now,
             elapsedSeconds: 120, distanceMeters: 2_000, descentMeters: 300,
             topSpeedMetersPerSecond: 14, metric: .totalAirtime, jumpCount: 4,
-            liftCount: 1, longestAirtime: 0.84, totalAirtime: 2.4,
-            activityModeRawValue: ActivityMode.ski.rawValue
+            liftCount: 1, longestAirtime: 0.84, totalAirtime: 2.4
         )
         let data = try JSONEncoder().encode(state)
         let decoded = try JSONDecoder().decode(BermsActivityAttributes.ContentState.self, from: data)
 
         XCTAssertEqual(decoded, state)
-        XCTAssertTrue(decoded.isSkiDay)
         XCTAssertFalse(attributes.rideID.isEmpty)
     }
 
@@ -1958,15 +1907,13 @@ final class BermsTests: XCTestCase {
             run: .init(
                 number: 2, distanceMeters: 450, descentMeters: 90, topSpeedMetersPerSecond: 18,
                 longestJumpAirtime: 0.84, jumpCount: 2),
-            updatedAt: Date(timeIntervalSince1970: 142),
-            activityModeRawValue: ActivityMode.ski.rawValue
+            updatedAt: Date(timeIntervalSince1970: 142)
         )
 
         XCTAssertEqual(
             try WatchRideCodec.decode(
                 WatchRideState.self,
                 from: WatchRideCodec.encode(state)), state)
-        XCTAssertTrue(state.isSkiDay)
         XCTAssertEqual(
             try WatchRideCodec.decode(
                 WatchRideCommand.self,

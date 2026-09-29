@@ -129,7 +129,7 @@ enum ShareCardContentBuilder {
         {
             return catalog.resortName
         }
-        return day.activityMode == .ski ? "Unknown ski area" : "Unknown bike park"
+        return "Unknown bike park"
     }
 
     private static func statValues(day: RideDay, base: SessionDetailBase?) -> [ShareStatKind: String] {

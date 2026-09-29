@@ -84,7 +84,7 @@
                     Section {
                         Picker("Catalog", selection: $selectedCatalogID) {
                             ForEach(TrailCatalogRegistry.allCatalogs) { option in
-                                Text("\(option.resortName) · \(option.season.title)")
+                                Text(option.resortName)
                                     .tag(option.id)
                             }
                         }
