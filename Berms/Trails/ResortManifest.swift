@@ -27,11 +27,6 @@ struct ResortDescriptor: Identifiable, Hashable, Sendable {
     let catalogs: [TrailCatalogDescriptor]
 
     var displayName: String { name }
-
-    var seasons: [SeasonBucket] {
-        var seen: Set<SeasonBucket> = []
-        return catalogs.map(\.season).filter { seen.insert($0).inserted }
-    }
 }
 
 enum ResortCatalogLoader {
@@ -93,7 +88,6 @@ enum ResortCatalogLoader {
                     catalogs: resort.catalogs.map { catalog in
                         TrailCatalogDescriptor(
                             id: catalog.id,
-                            season: catalog.season,
                             resortID: resort.id,
                             resortName: resort.name,
                             bundledResourceName: catalog.resource,
@@ -130,7 +124,6 @@ enum ResortCatalogLoader {
 
     private struct CatalogDTO: Decodable {
         let id: String
-        let season: SeasonBucket
         let resource: String?
         let version: String
         let stableIDNamespace: String

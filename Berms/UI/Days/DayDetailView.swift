@@ -345,7 +345,6 @@ struct DayDetailView: View {
 
     private var summarySection: some View {
         Section("Day summary") {
-            LabeledContent("Activity", value: day.activityMode.title)
             LabeledContent("Resort", value: resolvedResortName)
             if day.segments.isEmpty {
                 LabeledContent("Started", value: day.startedAt.formatted(date: .omitted, time: .shortened))
@@ -372,7 +371,7 @@ struct DayDetailView: View {
             Section {
                 DayTimeBreakdownView(
                     breakdown: timeBreakdown,
-                    ridingTitle: day.activityMode.activeTimeTitle)
+                    ridingTitle: "Riding time")
             } header: {
                 Text("Time")
             } footer: {
@@ -522,7 +521,7 @@ struct DayDetailView: View {
         .frame(height: Self.mapPreviewHeight)
         .fullScreenCover(isPresented: $showingFullScreenMap) {
             FullScreenSummaryMap(
-                title: day.activityMode == .ski ? "Ski Map" : "Ride Map",
+                title: "Ride Map",
                 base: detailBase,
                 trailDetails: trailDetails,
                 focusedSegmentID: nil,

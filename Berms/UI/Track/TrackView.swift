@@ -48,10 +48,7 @@ struct TrackView: View {
             .toolbarVisibility(recorder.isRecording ? .hidden : .visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    HStack(spacing: 0) {
-                        activityModePicker
-                        settingsButton
-                    }
+                    settingsButton
                 }
             }
             .animation(reduceMotion ? nil : BermsMotion.content, value: recorder.isRecording)
@@ -142,13 +139,13 @@ struct TrackView: View {
             ScrollView {
                 VStack(spacing: BermsSpacing.section) {
                     VStack(spacing: BermsSpacing.compact) {
-                        Image(systemName: recorder.selectedActivityMode.systemImage)
+                        Image(systemName: "mountain.2.fill")
                             .font(.largeTitle.weight(.semibold))
                             .foregroundStyle(Color.bermsTrail)
                             .accessibilityHidden(true)
-                        Text(recorder.selectedActivityMode.readyTitle)
+                        Text("Ready to track")
                             .font(.title2.weight(.semibold))
-                        Text(recorder.selectedActivityMode.readyDescription)
+                        Text("Track runs, lifts, and routes.")
                             .font(.subheadline)
                             .foregroundStyle(Color.bermsMuted)
                             .multilineTextAlignment(.center)
@@ -398,7 +395,7 @@ struct TrackView: View {
             }
         } label: {
             Label(
-                needsLocationPermission ? "Allow Location" : recorder.selectedActivityMode.startTitle,
+                needsLocationPermission ? "Allow Location" : "Start",
                 systemImage: needsLocationPermission ? "location.fill" : "play.fill"
             )
             .foregroundStyle(Color.bermsOnAccent)
@@ -426,8 +423,7 @@ struct TrackView: View {
         guard !recorder.isRecording, riderResort == nil, let coordinate = currentCoordinate,
             let resort = TrailCatalogRegistry.resort(nearest: coordinate, withinMeters: 5_000)
         else { return nil }
-        return TrailCatalogRegistry.catalog(
-            forResortID: resort.id, season: recorder.activeActivityMode.season)
+        return TrailCatalogRegistry.catalog(forResortID: resort.id)
     }
 
     /// Outside every resort the nearest one previews on the map. Inside a resort
@@ -438,10 +434,8 @@ struct TrackView: View {
     }
 
     private var liveCatalog: TrailCatalogDescriptor? {
-        if riderResort != nil {
-            return TrailCatalogRegistry.catalog(
-                for: recorder.activeActivityMode,
-                coordinate: currentCoordinate)
+        if let riderResort {
+            return TrailCatalogRegistry.catalog(forResortID: riderResort.id)
         }
         return previewCatalog
     }
@@ -558,32 +552,6 @@ struct TrackView: View {
             showingSettings = true
         }
         .accessibilityIdentifier("settingsButton")
-    }
-
-    private var activityModeBinding: Binding<ActivityMode> {
-        Binding(
-            get: { recorder.selectedActivityMode },
-            set: { recorder.setSelectedActivityMode($0) }
-        )
-    }
-
-    private var activityModePicker: some View {
-        Menu {
-            Picker("Activity mode", selection: activityModeBinding) {
-                ForEach(ActivityMode.allCases) { mode in
-                    Label(mode.title, systemImage: mode.systemImage)
-                        .tag(mode)
-                }
-            }
-            .pickerStyle(.inline)
-        } label: {
-            Image(systemName: recorder.selectedActivityMode.systemImage)
-                .font(.headline)
-                .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
-                .frame(width: BermsSpacing.target, height: BermsSpacing.target)
-                .contentShape(.rect)
-        }
-        .accessibilityLabel("Activity mode")
     }
 
     private var gpsEmptyTitle: String {

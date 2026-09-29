@@ -11,7 +11,7 @@ struct BermsLiveActivity: Widget {
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    Label(context.state.activityTitle, systemImage: "mountain.2.fill")
+                    Label("Berms", systemImage: "mountain.2.fill")
                         .font(.headline)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
@@ -33,19 +33,19 @@ struct BermsLiveActivity: Widget {
                                 .frame(width: 44, height: 44)
                                 .contentShape(Rectangle())
                         }
-                        .accessibilityLabel(pauseAccessibilityLabel(for: context))
+                        .accessibilityLabel(context.state.isPaused ? "Resume ride" : "Pause ride")
                     }
                 }
             } compactLeading: {
                 Image(systemName: context.state.isPaused ? "pause.fill" : "mountain.2.fill")
-                    .accessibilityLabel(context.state.isPaused ? "Paused" : context.state.activityTitle)
+                    .accessibilityLabel(context.state.isPaused ? "Paused" : "Berms")
             } compactTrailing: {
                 Text("\(context.state.runCount)")
                     .monospacedDigit()
                     .accessibilityLabel("\(context.state.runCount) runs")
             } minimal: {
                 Image(systemName: context.state.isPaused ? "pause.fill" : "mountain.2.fill")
-                    .accessibilityLabel(context.state.isPaused ? "Paused" : context.state.activityTitle)
+                    .accessibilityLabel(context.state.isPaused ? "Paused" : "Berms ride")
             }
             .widgetURL(URL(string: "berms://track"))
         }
@@ -54,7 +54,7 @@ struct BermsLiveActivity: Widget {
     private func lockScreenView(context: ActivityViewContext<BermsActivityAttributes>) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Label(context.state.activityTitle, systemImage: "mountain.2.fill")
+                Label("Berms", systemImage: "mountain.2.fill")
                     .font(.headline)
                 Spacer()
                 Text(statusText(context))
@@ -107,14 +107,7 @@ struct BermsLiveActivity: Widget {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(pauseAccessibilityLabel(for: context))
-    }
-
-    private func pauseAccessibilityLabel(
-        for context: ActivityViewContext<BermsActivityAttributes>
-    ) -> String {
-        let activity = context.state.isSkiDay ? "ski day" : "ride"
-        return context.state.isPaused ? "Resume \(activity)" : "Pause \(activity)"
+        .accessibilityLabel(context.state.isPaused ? "Resume ride" : "Pause ride")
     }
 
     private func metric(_ label: String, _ value: String) -> some View {

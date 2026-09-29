@@ -5,7 +5,6 @@ import SwiftData
 
 struct TrailCatalogDescriptor: Identifiable, Hashable, Sendable {
     let id: String
-    let season: SeasonBucket
     let resortID: String
     let resortName: String
     let bundledResourceName: String?
@@ -34,7 +33,6 @@ enum TrailCatalogRegistry {
     static let automaticSelectionID = "automatic"
     static let mountainCreekResortID = "mountain-creek"
     static let mountainCreekCatalogID = "mountain-creek-resort"
-    static let mountainCreekWinterCatalogID = "mountain-creek-winter"
 
     private static let manifestResult: Result<ResortCatalogManifest, any Error> = Result {
         try ResortCatalogLoader.load()
@@ -52,22 +50,17 @@ enum TrailCatalogRegistry {
     static let resorts: [ResortDescriptor] = manifest.resorts
     static let allCatalogs: [TrailCatalogDescriptor] = manifest.catalogs
 
-    /// Catalogs with bundled geometry are imported into SwiftData. Seasonal
-    /// placeholders remain resolvable even before their map resource ships.
+    /// Catalogs with bundled geometry are imported into SwiftData. Placeholders
+    /// remain resolvable even before their map resource ships.
     static let catalogs: [TrailCatalogDescriptor] = allCatalogs.filter {
         $0.bundledResourceName != nil
     }
-    static let catalogsBySeason: [SeasonBucket: [TrailCatalogDescriptor]] = Dictionary(
-        grouping: allCatalogs, by: \.season)
 
     static var defaultCatalog: TrailCatalogDescriptor { catalogs.first ?? fallbackCatalog }
 
     // Compatibility accessors for the original single-resort API.
     static var mountainCreek: TrailCatalogDescriptor {
         catalog(withID: mountainCreekCatalogID) ?? fallbackCatalog
-    }
-    static var mountainCreekWinter: TrailCatalogDescriptor {
-        catalog(withID: mountainCreekWinterCatalogID) ?? fallbackCatalog
     }
 
     static func resort(withID id: String?) -> ResortDescriptor? {
@@ -98,16 +91,15 @@ enum TrailCatalogRegistry {
         return allCatalogs.first { $0.id == id }
     }
 
-    /// The catalog a season ships for a resort, ignoring GPS.
-    static func catalog(forResortID id: String, season: SeasonBucket) -> TrailCatalogDescriptor? {
-        (catalogsBySeason[season] ?? []).first { $0.resortID == id }
+    /// The catalog a resort ships, ignoring GPS.
+    static func catalog(forResortID id: String) -> TrailCatalogDescriptor? {
+        allCatalogs.first { $0.resortID == id }
     }
 
     /// Safety net when the manifest resource is missing. Match the original
     /// catalog so callers resolve a sensible default instead of crashing.
     private static let fallbackCatalog = TrailCatalogDescriptor(
         id: mountainCreekCatalogID,
-        season: .summer,
         resortID: mountainCreekResortID,
         resortName: "Mountain Creek Resort",
         bundledResourceName: nil,
@@ -118,31 +110,17 @@ enum TrailCatalogRegistry {
         aliases: [:]
     )
 
-    static func catalog(
-        for mode: ActivityMode,
-        coordinate: Coordinate? = nil
-    ) -> TrailCatalogDescriptor? {
-        let candidates = catalogsBySeason[mode.season] ?? []
-        guard !candidates.isEmpty else { return nil }
-        guard let coordinate else { return candidates.first }
-        return candidates.first {
-            resort(withID: $0.resortID)?.boundary.contains(coordinate) == true
-        }
-    }
-
     /// The catalog a recorded day belongs to. A rider override wins; otherwise
     /// the route votes on resorts, so starting in the parking lot or stopping
     /// outside the boundary still resolves the day the rider actually rode.
     static func resolvedCatalogID(
-        mode: ActivityMode,
         manualSelectionID: String?,
         routePoints: [Coordinate]
     ) -> String? {
-        if let manual = catalog(withID: manualSelectionID), manual.season == mode.season {
+        if let manual = catalog(withID: manualSelectionID) {
             return manual.id
         }
-        let candidates = catalogsBySeason[mode.season] ?? []
-        guard !candidates.isEmpty else { return nil }
+        guard !allCatalogs.isEmpty else { return nil }
         let minimumVotes = max(1, routePoints.count / 20)
         var votes: [String: Int] = [:]
         for point in routePoints {
@@ -152,17 +130,15 @@ enum TrailCatalogRegistry {
         guard let best = votes.max(by: { $0.value < $1.value }), best.value >= minimumVotes else {
             return nil
         }
-        return candidates.first { $0.resortID == best.key }?.id
+        return allCatalogs.first { $0.resortID == best.key }?.id
     }
 
     /// Single-point convenience used where only the start is known.
     static func resolvedCatalogID(
-        mode: ActivityMode,
         manualSelectionID: String?,
         firstPoint: Coordinate?
     ) -> String? {
         resolvedCatalogID(
-            mode: mode,
             manualSelectionID: manualSelectionID,
             routePoints: firstPoint.map { [$0] } ?? [])
     }
@@ -180,12 +156,11 @@ enum TrailCatalogRegistry {
 }
 
 extension TrailCatalogRegistry {
-    /// The catalog a recorded day presents with: the rider's override when its
-    /// season matches, otherwise the resort the ride mostly happened in.
-    /// Nil means the day is not tied to any resort, so nothing is assumed.
+    /// The catalog a recorded day presents with: the rider's override when set,
+    /// otherwise the resort the ride mostly happened in. Nil means the day is
+    /// not tied to any resort, so nothing is assumed.
     static func resolvedCatalog(for day: RideDay) -> TrailCatalogDescriptor? {
         resolvedCatalogID(
-            mode: day.activityMode,
             manualSelectionID: day.catalogID,
             routePoints: day.sampledRouteCoordinates()
         ).flatMap(catalog(withID:))

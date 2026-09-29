@@ -12,7 +12,6 @@ final class RideRecorder: ObservableObject {
     private static let rawMotionLoggingKey = "berms.rawMotionLogging"
     private static let liveActivityMetricKey = "berms.liveActivityMetric"
     private static let liveStatMetricsKey = "berms.liveStatMetrics"
-    static let activityModeKey = "berms.activityMode"
 
     @Published private(set) var activeDay: RideDay?
     @Published private(set) var phase: DetectorPhase = .idle
@@ -24,7 +23,6 @@ final class RideRecorder: ObservableObject {
     @Published private(set) var rawMotionLoggingEnabled: Bool
     @Published private(set) var liveActivityMetric: BermsLiveActivityMetric
     @Published private(set) var liveStatMetrics: [LiveStatMetric]
-    @Published private(set) var selectedActivityMode: ActivityMode
     @Published private(set) var isRestoring = false
     @Published private(set) var needsRecoveryPrompt = false
     @Published var errorMessage: String?
@@ -62,10 +60,6 @@ final class RideRecorder: ObservableObject {
         now: (() -> Date)? = nil,
         uptime: (() -> TimeInterval)? = nil
     ) {
-        selectedActivityMode =
-            ActivityMode(
-                rawValue: UserDefaults.standard.string(forKey: Self.activityModeKey) ?? ""
-            ) ?? .bikePark
         let storedSensitivity =
             JumpSensitivity(rawValue: UserDefaults.standard.string(forKey: "berms.jumpSensitivity") ?? "")
             ?? .standard
@@ -132,16 +126,6 @@ final class RideRecorder: ObservableObject {
 
     var isRecording: Bool { activeDay != nil }
 
-    var activeActivityMode: ActivityMode {
-        activeDay?.activityMode ?? selectedActivityMode
-    }
-
-    func setSelectedActivityMode(_ mode: ActivityMode) {
-        guard !isRecording, mode != selectedActivityMode else { return }
-        selectedActivityMode = mode
-        UserDefaults.standard.set(mode.rawValue, forKey: Self.activityModeKey)
-    }
-
     var effectiveAuthorizationStatus: CLAuthorizationStatus {
         authorizationOverride ?? locationService.authorizationStatus
     }
@@ -155,11 +139,6 @@ final class RideRecorder: ObservableObject {
 
     func clearActiveSession() {
         activeDay = nil
-    }
-
-    func adoptActivityMode(_ mode: ActivityMode) {
-        selectedActivityMode = mode
-        UserDefaults.standard.set(mode.rawValue, forKey: Self.activityModeKey)
     }
 
     func setPhase(_ phase: DetectorPhase) {
@@ -209,8 +188,7 @@ final class RideRecorder: ObservableObject {
             descentMeters: liveDescent,
             speedMetersPerSecond: currentSpeed,
             run: currentRunMetrics,
-            updatedAt: now(),
-            activityModeRawValue: day.activityMode.rawValue
+            updatedAt: now()
         )
     }
 

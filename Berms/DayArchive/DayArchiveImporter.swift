@@ -28,7 +28,6 @@
             day.id = dayID
             day.name = exportedDay.name
             day.notes = exportedDay.notes
-            day.activityModeRawValue = exportedDay.activityMode?.rawValue
             day.catalogID = exportedDay.catalogID
             day.endedAt = exportedDay.endedAt
 
