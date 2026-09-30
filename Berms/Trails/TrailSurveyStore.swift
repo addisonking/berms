@@ -86,6 +86,7 @@
         var replacesGeometry: Bool?
         var contentVersion = 1
         var exportedVersion: Int?
+        var baselineDifficulty: String?
         var pointCount: Int { passes.reduce(0) { $0 + $1.pointCount } }
     }
 
@@ -97,6 +98,40 @@
         private var failure: String?
 
         init(directory: URL) { self.directory = directory }
+
+        func recoverDrafts() -> (drafts: [SurveyDraft], issues: [String]) {
+            var drafts: [SurveyDraft] = []
+            var issues: [String] = []
+            guard FileManager.default.fileExists(atPath: directory.path) else { return (drafts, issues) }
+            do {
+                let urls = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+                for url in urls where url.pathExtension == "json" {
+                    do {
+                        var draft = try SurveyCoding.decoder().decode(SurveyDraft.self, from: Data(contentsOf: url))
+                        for index in draft.passes.indices {
+                            let pass = draft.passes[index]
+                            if pass.pointCount > 0, !FileManager.default.fileExists(atPath: sampleURL(pass.id).path) {
+                                throw CocoaError(.fileNoSuchFile)
+                            }
+                            let samples = try fixes(pass.id)
+                            draft.passes[index].pointCount = samples.count
+                            if let last = samples.last { draft.passes[index].endedAt = last.timestamp }
+                        }
+                        if draft.state == "recording" {
+                            draft.state = "interrupted"
+                            if !draft.passes.isEmpty {
+                                draft.passes[draft.passes.count - 1].interruption = "process interrupted"
+                            }
+                            try save(draft)
+                        }
+                        drafts.append(draft)
+                    } catch {
+                        issues.append("Could not recover \(url.lastPathComponent): \(error.localizedDescription)")
+                    }
+                }
+            } catch { issues.append(error.localizedDescription) }
+            return (drafts.sorted { $0.createdAt > $1.createdAt }, issues)
+        }
 
         func sampleURL(_ id: UUID) -> URL { directory.appendingPathComponent(id.uuidString + ".jsonl") }
 
@@ -164,15 +199,26 @@
 
     @MainActor
     final class TrailSurveyStore: ObservableObject {
-        static let shared = TrailSurveyStore()
+        private static var sharedInstance: TrailSurveyStore?
+        static var shared: TrailSurveyStore {
+            if let sharedInstance { return sharedInstance }
+            let instance = TrailSurveyStore()
+            sharedInstance = instance
+            return instance
+        }
+
+        static func checkpointIfActive() { sharedInstance?.checkpoint() }
+        static func stopCaptureIfActive() { sharedInstance?.locationService.stop() }
         @Published private(set) var drafts: [SurveyDraft] = []
         @Published private(set) var activeID: UUID?
+        @Published private(set) var hasLoadedDrafts = false
         @Published var errorMessage: String?
         let locationService: LocationService
         let files: SurveyFiles
         private let now: () -> Date
         private var previousTimestamp: Date?
         private var exportingIDs = Set<UUID>()
+        private var recoveryTask: Task<(drafts: [SurveyDraft], issues: [String]), Never>?
         var isActive: Bool { activeID != nil }
         var active: SurveyDraft? { drafts.first { $0.id == activeID } }
 
@@ -183,31 +229,25 @@
                 directory: directory
                     ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
                     .appendingPathComponent("Trail surveys", isDirectory: true))
-            do {
-                guard FileManager.default.fileExists(atPath: files.directory.path) else { return }
-                for url in try FileManager.default.contentsOfDirectory(
-                    at: files.directory, includingPropertiesForKeys: nil)
-                where url.pathExtension == "json" {
-                    var draft = try SurveyCoding.decoder().decode(SurveyDraft.self, from: Data(contentsOf: url))
-                    for index in draft.passes.indices {
-                        let fixes = try files.fixes(draft.passes[index].id)
-                        draft.passes[index].pointCount = fixes.count
-                        if let last = fixes.last { draft.passes[index].endedAt = last.timestamp }
-                    }
-                    if draft.state == "recording" {
-                        draft.state = "interrupted"
-                        if !draft.passes.isEmpty {
-                            draft.passes[draft.passes.count - 1].interruption = "process interrupted"
-                        }
-                        try files.save(draft)
-                    }
-                    drafts.append(draft)
-                }
-                drafts.sort { $0.createdAt > $1.createdAt }
-            } catch { errorMessage = "Could not recover survey drafts: \(error.localizedDescription)" }
+        }
+
+        func loadDrafts() async {
+            guard !hasLoadedDrafts else { return }
+            if recoveryTask == nil {
+                let files = files
+                recoveryTask = Task.detached(priority: .utility) { files.recoverDrafts() }
+            }
+            guard let recoveryTask else { return }
+            let result = await recoveryTask.value
+            guard !hasLoadedDrafts else { return }
+            drafts = result.drafts
+            if !result.issues.isEmpty { errorMessage = result.issues.joined(separator: "\n") }
+            hasLoadedDrafts = true
+            self.recoveryTask = nil
         }
 
         func create(catalog: TrailCatalogDescriptor, slug: String?, name: String, difficulty: String) throws -> UUID {
+            guard hasLoadedDrafts else { throw CocoaError(.userCancelled) }
             guard !isActive else { throw CocoaError(.validationMultipleErrors) }
             let snapshot = try CatalogSnapshotStore.shared.snapshot()
             guard let baseline = snapshot.catalogs.first(where: { $0.id == catalog.id }) else {
@@ -225,17 +265,21 @@
             if canonicalSlug != nil, feature == nil { throw CocoaError(.fileReadCorruptFile) }
             let newSlug = canonicalSlug ?? "survey-\(UUID().uuidString.lowercased())"
             let properties = feature?["properties"] as? [String: Any]
+            let baselineJSON = try feature.map {
+                try JSONSerialization.data(withJSONObject: $0, options: [.sortedKeys])
+            }
+            let baselineDifficulty = try baselineJSON.map {
+                try TrailCatalogImporter.difficulty(for: $0, catalog: catalog).rawValue
+            }
             let draft = SurveyDraft(
                 id: UUID(), createdAt: now(), catalogID: catalog.id, baseRevision: snapshot.revision,
                 baseChecksum: baseline.checksum, slug: newSlug,
                 trailID: TrailCatalogImporter.stableID(for: newSlug, catalog: catalog),
                 baselineHash: baseline.trailHashes[newSlug],
-                baselineJSON: try feature.map {
-                    try JSONSerialization.data(withJSONObject: $0, options: [.sortedKeys])
-                },
+                baselineJSON: baselineJSON,
                 name: properties?["name"] as? String ?? name,
-                difficulty: properties?["difficulty"] as? String ?? difficulty,
-                kind: canonicalSlug == nil ? "addTrail" : "corroborateTrail")
+                difficulty: baselineDifficulty ?? difficulty,
+                kind: canonicalSlug == nil ? "addTrail" : "corroborateTrail", baselineDifficulty: baselineDifficulty)
             try files.save(draft)
             drafts.insert(draft, at: 0)
             return draft.id
@@ -353,6 +397,11 @@
             return destination
         }
 
+        func isExportCurrent(_ id: UUID, version: Int) -> Bool {
+            guard let draft = drafts.first(where: { $0.id == id }), activeID != id else { return false }
+            return draft.contentVersion == version && draft.exportedVersion == version
+        }
+
         nonisolated private static func buildArchive(draft: SurveyDraft, files: SurveyFiles) throws -> URL {
             let id = draft.id
             let folder = FileManager.default.temporaryDirectory.appendingPathComponent("Survey-\(UUID().uuidString)")
@@ -361,9 +410,13 @@
             defer { try? FileManager.default.removeItem(at: folder) }
             var passes: [[String: Any]] = []
             var selectedFixes: [SurveyFix] = []
+            var exportedPassIDs: [String] = []
             let selected = draft.selectedPassID
             for pass in draft.passes {
                 let fixes = try files.fixes(pass.id)
+                if pass.pointCount > 0, fixes.isEmpty { throw CocoaError(.fileReadCorruptFile) }
+                guard !fixes.isEmpty else { continue }
+                exportedPassIDs.append(pass.id.uuidString)
                 if pass.id == selected {
                     selectedFixes = fixes.enumerated().filter { !pass.exclusions.contains($0.offset) }.map(\.element)
                 }
@@ -377,7 +430,11 @@
                     "samplesFile": filename, "checksum": CatalogSnapshotStore.checksum(data),
                 ])
             }
-            guard !passes.isEmpty else { throw CocoaError(.fileReadCorruptFile) }
+            guard !passes.isEmpty else {
+                throw NSError(
+                    domain: "Survey", code: 2,
+                    userInfo: [NSLocalizedDescriptionKey: "No GPS evidence to export. Record a pass first."])
+            }
             let baseline: Any = try draft.baselineJSON.map { try JSONSerialization.jsonObject(with: $0) } ?? NSNull()
             var proposed: Any = NSNull()
             if draft.kind != "corroborateTrail" {
@@ -385,7 +442,9 @@
                 var properties = feature["properties"] as? [String: Any] ?? [:]
                 properties["slug"] = draft.slug
                 properties["name"] = draft.name
-                properties["difficulty"] = draft.difficulty
+                if draft.baselineDifficulty == nil || draft.difficulty != draft.baselineDifficulty {
+                    properties["difficulty"] = draft.difficulty
+                }
                 feature["properties"] = properties
                 if draft.kind == "addTrail" || draft.replacesGeometry == true {
                     guard selectedFixes.count >= 2 else { throw CocoaError(.fileReadCorruptFile) }
@@ -399,7 +458,7 @@
                 "kind": draft.kind, "slug": draft.slug, "trailID": draft.trailID.uuidString,
                 "baselineHash": draft.baselineHash as Any? ?? NSNull(), "baseline": baseline,
                 "proposed": proposed, "selectedPassID": selected?.uuidString as Any? ?? NSNull(),
-                "passIDs": draft.passes.map { $0.id.uuidString },
+                "passIDs": exportedPassIDs,
             ]
             let contribution: [String: Any] = [
                 "schemaVersion": 1, "id": draft.id.uuidString, "createdAt": SurveyCoding.date(draft.createdAt),

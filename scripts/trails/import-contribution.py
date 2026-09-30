@@ -71,6 +71,8 @@ def read_archive(path):
         if digest(data) != item['checksum']:
             raise ValueError('sample checksum mismatch')
         samples = json.loads(data)
+        if not isinstance(samples, list) or not samples:
+            raise ValueError('pass contains no GPS evidence')
         start, end = timestamp(item['startedAt']), timestamp(item['endedAt'])
         if end < start or item['direction'] not in ('forward', 'reverse', 'unknown'):
             raise ValueError('invalid pass interval/direction')

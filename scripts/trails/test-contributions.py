@@ -294,6 +294,12 @@ class Contributions(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'missing or inconsistent evidence'):
             self.prepare()
 
+    def test_empty_pass_is_not_accepted_as_supporting_evidence(self):
+        self.samples = []
+        self.contribution['passes'][0]['checksum'] = digest(encoded(self.samples))
+        with self.assertRaisesRegex(ValueError, 'no GPS evidence'):
+            self.prepare()
+
     def test_schema_and_out_of_range_coordinates(self):
         self.contribution['schemaVersion'] = 2
         with self.assertRaisesRegex(ValueError, 'schema'):

@@ -23,6 +23,9 @@
 
         var body: some View {
             Form {
+                if !store.hasLoadedDrafts {
+                    Section { ProgressView("Loading surveys") }
+                }
                 if let error = store.errorMessage {
                     Section { Text(error) }
                 }
@@ -68,7 +71,9 @@
                                 try store.resume(id)
                             }
                         }
-                        .disabled(slug.isEmpty && name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .disabled(
+                            !store.hasLoadedDrafts
+                                || (slug.isEmpty && name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
                     }
                 }
                 Section {
@@ -95,7 +100,10 @@
             }
             .navigationTitle("Trail surveys")
             .navigationBarTitleDisplayMode(.inline)
-            .task(id: catalogID) { loadChoices() }
+            .task(id: catalogID) {
+                await store.loadDrafts()
+                loadChoices()
+            }
             .onChange(of: catalogID) { _, _ in slug = "" }
         }
 
@@ -130,6 +138,7 @@
         @ObservedObject private var store = TrailSurveyStore.shared
         @Environment(\.dismiss) private var dismiss
         @State private var exportURL: URL?
+        @State private var exportVersion: Int?
         @State private var confirmsDiscard = false
         @State private var isExporting = false
 
@@ -206,10 +215,16 @@
                                 store.isActive)
                             Button("Save") { perform { try store.save(id) } }
                             Button(isExporting ? "Preparing export…" : "Prepare export") {
+                                let version = draft.contentVersion
                                 isExporting = true
                                 Task {
                                     defer { isExporting = false }
-                                    do { exportURL = try await store.export(id) } catch {
+                                    do {
+                                        let url = try await store.export(id)
+                                        guard store.isExportCurrent(id, version: version) else { return }
+                                        exportURL = url
+                                        exportVersion = version
+                                    } catch {
                                         store.errorMessage = error.localizedDescription
                                     }
                                 }
@@ -219,11 +234,17 @@
                                     || ((draft.kind == "addTrail" || draft.replacesGeometry == true)
                                         && draft.selectedPassID == nil)
                             )
-                            if let exportURL { ShareLink("Share survey ZIP", item: exportURL) }
+                            if let exportURL, let exportVersion, store.isExportCurrent(id, version: exportVersion) {
+                                ShareLink("Share survey ZIP", item: exportURL)
+                            }
                             Button("Discard", role: .destructive) { confirmsDiscard = true }
                         }
                     }
                 }
+            }
+            .onChange(of: draft?.contentVersion) { _, _ in
+                exportURL = nil
+                exportVersion = nil
             }
             .navigationTitle(draft?.name ?? "Survey")
             .navigationBarTitleDisplayMode(.inline)

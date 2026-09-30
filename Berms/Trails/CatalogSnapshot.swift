@@ -38,11 +38,32 @@ final class CatalogSnapshotStore: @unchecked Sendable {
             directory
             ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Trail catalogs", isDirectory: true)
-        if let data = try? Data(contentsOf: self.directory.appendingPathComponent("active.json")),
-            let revision = try? JSONDecoder().decode(String.self, from: data), Self.isHash(revision)
-        {
-            cachedDirectory = self.directory.appendingPathComponent(revision, isDirectory: true)
+        for pointerName in ["active.json", "previous.json"] {
+            guard let data = try? Data(contentsOf: self.directory.appendingPathComponent(pointerName)),
+                let revision = try? JSONDecoder().decode(String.self, from: data), Self.isHash(revision)
+            else { continue }
+            let candidate = self.directory.appendingPathComponent(revision, isDirectory: true)
+            guard let manifest = try? Data(contentsOf: candidate.appendingPathComponent("catalog-manifest.json")),
+                let snapshot = try? JSONDecoder().decode(CatalogSnapshot.self, from: manifest),
+                snapshot.revision == revision
+            else { continue }
+            var packages: [String: Data] = [:]
+            for catalog in snapshot.catalogs where Self.isIdentifier(catalog.id) {
+                packages[catalog.id] = try? Data(contentsOf: candidate.appendingPathComponent(catalog.id + ".geojson"))
+            }
+            guard (try? Self.validateContents(manifest: manifest, packages: packages)) != nil else { continue }
+            cachedDirectory = candidate
+            cachedRegistry = try? ResortCatalogLoader.decode(manifest)
+            if pointerName == "previous.json" {
+                try? JSONEncoder().encode(revision).write(
+                    to: self.directory.appendingPathComponent("active.json"), options: .atomic)
+            }
+            break
         }
+    }
+
+    private static func isIdentifier(_ value: String) -> Bool {
+        !value.isEmpty && value.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-") }
     }
 
     static func checksum(_ data: Data) -> String {
@@ -98,6 +119,18 @@ final class CatalogSnapshotStore: @unchecked Sendable {
     }
 
     func validate(manifest: Data, packages: [String: Data]) throws -> CatalogSnapshot {
+        let snapshot = try Self.validateContents(manifest: manifest, packages: packages)
+        let previous = try? self.snapshot()
+        for catalog in snapshot.catalogs {
+            guard let prior = previous?.catalogs.first(where: { $0.id == catalog.id }) else { continue }
+            guard prior.stableIDNamespace == catalog.stableIDNamespace,
+                (prior.aliases ?? [:]).allSatisfy({ catalog.aliases?[$0.key] == $0.value })
+            else { throw CocoaError(.fileReadCorruptFile) }
+        }
+        return snapshot
+    }
+
+    private static func validateContents(manifest: Data, packages: [String: Data]) throws -> CatalogSnapshot {
         let snapshot = try JSONDecoder().decode(CatalogSnapshot.self, from: manifest)
         guard snapshot.schemaVersion == 1, Self.isHash(snapshot.revision), !snapshot.catalogs.isEmpty else {
             throw CocoaError(.fileReadCorruptFile)
@@ -106,8 +139,7 @@ final class CatalogSnapshotStore: @unchecked Sendable {
         var ids = Set<String>()
         var namespaces = Set<String>()
         for catalog in snapshot.catalogs {
-            guard catalog.id.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-") }),
-                !catalog.id.isEmpty, ids.insert(catalog.id).inserted,
+            guard Self.isIdentifier(catalog.id), ids.insert(catalog.id).inserted,
                 namespaces.insert(catalog.stableIDNamespace).inserted,
                 let data = packages[catalog.id], Self.checksum(data) == catalog.checksum,
                 let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -133,12 +165,7 @@ final class CatalogSnapshotStore: @unchecked Sendable {
             guard Set(catalog.trailHashes.keys) == slugs.subtracting(Set(catalog.aliases?.keys.map { $0 } ?? [])) else {
                 throw CocoaError(.fileReadCorruptFile)
             }
-            // Existing namespaces and aliases are identity contracts, even across snapshots.
-            if let previous = try? self.snapshot().catalogs.first(where: { $0.id == catalog.id }) {
-                guard previous.stableIDNamespace == catalog.stableIDNamespace,
-                    (previous.aliases ?? [:]).allSatisfy({ catalog.aliases?[$0.key] == $0.value })
-                else { throw CocoaError(.fileReadCorruptFile) }
-            }
+
         }
         return snapshot
     }
@@ -168,19 +195,28 @@ final class CatalogSnapshotStore: @unchecked Sendable {
         let pointer = directory.appendingPathComponent("active.json")
         let previous = try? Data(contentsOf: pointer)
         let previousDirectory = activeDirectory
+        let previousPointer = directory.appendingPathComponent("previous.json")
+        let priorFallback = try? Data(contentsOf: previousPointer)
         try activate(manifest: manifest, packages: packages)
         do {
             try apply()
         } catch {
+            defer {
+                lock.lock()
+                cachedDirectory = previousDirectory
+                cachedRegistry = nil
+                lock.unlock()
+            }
             if let previous {
                 try previous.write(to: pointer, options: .atomic)
             } else {
                 try FileManager.default.removeItem(at: pointer)
             }
-            lock.lock()
-            cachedDirectory = previousDirectory
-            cachedRegistry = nil
-            lock.unlock()
+            if let priorFallback {
+                try priorFallback.write(to: previousPointer, options: .atomic)
+            } else if FileManager.default.fileExists(atPath: previousPointer.path) {
+                try FileManager.default.removeItem(at: previousPointer)
+            }
             throw error
         }
     }
@@ -208,6 +244,10 @@ final class CatalogSnapshotStore: @unchecked Sendable {
                 let data = try Data(contentsOf: destination.appendingPathComponent(catalog.id + ".geojson"))
                 guard Self.checksum(data) == catalog.checksum else { throw CocoaError(.fileReadCorruptFile) }
             }
+        }
+        if let cachedDirectory, cachedDirectory != destination {
+            try JSONEncoder().encode(cachedDirectory.lastPathComponent).write(
+                to: directory.appendingPathComponent("previous.json"), options: .atomic)
         }
         try JSONEncoder().encode(snapshot.revision).write(
             to: directory.appendingPathComponent("active.json"), options: .atomic)

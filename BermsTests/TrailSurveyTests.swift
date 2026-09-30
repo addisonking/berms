@@ -21,6 +21,7 @@ final class TrailSurveyTests: XCTestCase {
         var date = Date(timeIntervalSince1970: 1_800_000_000.125)
         let store = TrailSurveyStore(
             directory: directory, locationService: LocationService(capture: capture), now: { date })
+        await store.loadDrafts()
         let id = try store.create(
             catalog: TrailCatalogRegistry.mountainCreek, slug: nil, name: "Roundtrip", difficulty: "blue")
         try store.resume(id)
@@ -61,9 +62,11 @@ final class TrailSurveyTests: XCTestCase {
             CLLocation(
                 coordinate: .init(latitude: 41.19, longitude: -74.5), altitude: 510,
                 horizontalAccuracy: 7, verticalAccuracy: 3, course: 90, speed: 6, timestamp: date))
+        store.checkpoint()
         store.locationService.stop()
         let recovered = TrailSurveyStore(
             directory: directory, locationService: LocationService(capture: capture), now: { date })
+        await recovered.loadDrafts()
         XCTAssertFalse(recovered.isActive)
         XCTAssertEqual(recovered.drafts.first?.state, "interrupted")
         XCTAssertEqual(recovered.drafts.first?.passes.count, 2)
@@ -98,6 +101,7 @@ final class TrailSurveyTests: XCTestCase {
             })
         let properties = try XCTUnwrap(feature["properties"] as? [String: Any])
         let slug = try XCTUnwrap(properties["slug"] as? String)
+        await store.loadDrafts()
         let id = try store.create(catalog: catalog, slug: slug, name: "", difficulty: "blue")
         try store.resume(id)
         for index in 0..<3 {
@@ -118,7 +122,7 @@ final class TrailSurveyTests: XCTestCase {
         XCTAssertEqual(store.drafts.first?.trailID, TrailCatalogImporter.stableID(for: slug, catalog: catalog))
     }
 
-    func testLocationGapSplitsPassAndErrorsOnlyInterruptSurvey() throws {
+    func testLocationGapSplitsPassAndErrorsOnlyInterruptSurvey() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let capture = LocationCapture(usesHardware: false)
@@ -128,6 +132,7 @@ final class TrailSurveyTests: XCTestCase {
         var date = Date(timeIntervalSince1970: 1_800_000_000)
         let store = TrailSurveyStore(
             directory: directory, locationService: LocationService(capture: capture), now: { date })
+        await store.loadDrafts()
         let id = try store.create(
             catalog: TrailCatalogRegistry.mountainCreek, slug: nil, name: "Gap", difficulty: "blue")
         try store.resume(id)
@@ -150,13 +155,14 @@ final class TrailSurveyTests: XCTestCase {
         XCTAssertEqual(capture.stopCount, 1)
     }
 
-    func testAuthorizationRevocationAndDiscardPreserveOtherLease() throws {
+    func testAuthorizationRevocationAndDiscardPreserveOtherLease() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let capture = LocationCapture(usesHardware: false)
         let ride = LocationService(capture: capture)
         ride.start { _, _ in }
         let survey = TrailSurveyStore(directory: directory, locationService: LocationService(capture: capture))
+        await survey.loadDrafts()
         let id = try survey.create(
             catalog: TrailCatalogRegistry.mountainCreek, slug: nil, name: "Permission", difficulty: "blue")
         try survey.resume(id)
@@ -174,6 +180,126 @@ final class TrailSurveyTests: XCTestCase {
         XCTAssertEqual(capture.startCount, 1)
         ride.stop()
         XCTAssertEqual(capture.stopCount, 1)
+    }
+
+    func testRecoveryIsExplicitAndOneCorruptDraftDoesNotHideHealthyDrafts() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let capture = LocationCapture(usesHardware: false)
+        let original = TrailSurveyStore(directory: directory, locationService: LocationService(capture: capture))
+        await original.loadDrafts()
+        let first = try original.create(
+            catalog: TrailCatalogRegistry.mountainCreek, slug: nil, name: "Healthy 1", difficulty: "blue")
+        let second = try original.create(
+            catalog: TrailCatalogRegistry.mountainCreek, slug: nil, name: "Healthy 2", difficulty: "blue")
+        try Data("broken-json".utf8).write(to: directory.appendingPathComponent("corrupt.json"))
+        let recovered = TrailSurveyStore(directory: directory, locationService: LocationService(capture: capture))
+        XCTAssertFalse(recovered.hasLoadedDrafts)
+        XCTAssertTrue(recovered.drafts.isEmpty)
+        recovered.checkpoint()
+        XCTAssertFalse(recovered.hasLoadedDrafts)
+        await recovered.loadDrafts()
+        XCTAssertEqual(Set(recovered.drafts.map(\.id)), Set([first, second]))
+        XCTAssertTrue(recovered.errorMessage?.contains("corrupt.json") == true)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: directory.appendingPathComponent("corrupt.json").path))
+        XCTAssertEqual(capture.consumerCount, 0)
+        await recovered.loadDrafts()
+        XCTAssertEqual(recovered.drafts.count, 2)
+    }
+
+    func testEmptyCorroborationCannotExportAndPassEditsInvalidateSharing() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let capture = LocationCapture(usesHardware: false)
+        var date = Date(timeIntervalSince1970: 1_800_000_000)
+        let store = TrailSurveyStore(
+            directory: directory, locationService: LocationService(capture: capture), now: { date })
+        await store.loadDrafts()
+        let id = try store.create(
+            catalog: TrailCatalogRegistry.mountainCreek, slug: "lower-greenhorn-gnk897", name: "", difficulty: "blue")
+        try store.resume(id)
+        try store.pause()
+        do {
+            _ = try await store.export(id)
+            XCTFail("Empty capture must not export GPS support")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("No GPS evidence"))
+        }
+        try store.resume(id)
+        date = date.addingTimeInterval(1)
+        capture.deliver(
+            CLLocation(
+                coordinate: .init(latitude: 41.18, longitude: -74.5), altitude: 500,
+                horizontalAccuracy: 5, verticalAccuracy: 5, timestamp: date))
+        try store.pause()
+        let nonemptyExport = try await store.export(id)
+        try Data(contentsOf: nonemptyExport).write(to: URL(fileURLWithPath: "/tmp/berms-nonempty-survey-export.zip"))
+        let version = try XCTUnwrap(store.drafts.first?.contentVersion)
+        XCTAssertTrue(store.isExportCurrent(id, version: version))
+        var draft = try XCTUnwrap(store.drafts.first)
+        draft.passes[draft.passes.count - 1].direction = "reverse"
+        try store.update(draft)
+        XCTAssertFalse(store.isExportCurrent(id, version: version))
+        _ = try await store.export(id)
+        XCTAssertFalse(store.isExportCurrent(id, version: version))
+        XCTAssertTrue(store.isExportCurrent(id, version: try XCTUnwrap(store.drafts.first?.contentVersion)))
+    }
+
+    func testExistingSurveyUsesApprovedDifficultyInsteadOfNewTrailSelection() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let capture = LocationCapture(usesHardware: false)
+        let store = TrailSurveyStore(directory: directory, locationService: LocationService(capture: capture))
+        await store.loadDrafts()
+        let whistler = try XCTUnwrap(TrailCatalogRegistry.catalog(withID: "whistler-resort"))
+        let unrated = try store.create(
+            catalog: whistler, slug: "northwest-passage-3bbqyy", name: "", difficulty: "blue")
+        XCTAssertEqual(store.drafts.first { $0.id == unrated }?.difficulty, "unrated")
+        XCTAssertEqual(store.drafts.first { $0.id == unrated }?.baselineDifficulty, "unrated")
+        try store.resume(unrated)
+        capture.deliver(
+            CLLocation(
+                coordinate: .init(latitude: 50.09, longitude: -122.98), altitude: 500,
+                horizontalAccuracy: 5, verticalAccuracy: 5, timestamp: .now))
+        try store.pause()
+        var renamed = try XCTUnwrap(store.drafts.first { $0.id == unrated })
+        renamed.kind = "editTrail"
+        renamed.name = "Rename without changing rating"
+        try store.update(renamed)
+        let export = try await store.export(unrated)
+        try Data(contentsOf: export).write(to: URL(fileURLWithPath: "/tmp/berms-unrated-survey-export.zip"))
+        let creek = TrailCatalogRegistry.mountainCreek
+        let overridden = try store.create(catalog: creek, slug: "deviant-kg9399", name: "", difficulty: "doubleBlack")
+        XCTAssertEqual(store.drafts.first { $0.id == overridden }?.difficulty, "green")
+    }
+
+    func testCatalogStartupFallsBackToPreviousCompleteRevision() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = CatalogSnapshotStore(directory: directory)
+        let original = try CatalogSnapshotStore.shared.manifestData()
+        let prior = try JSONDecoder().decode(CatalogSnapshot.self, from: original)
+        var packages: [String: Data] = [:]
+        for catalog in TrailCatalogRegistry.catalogs {
+            packages[catalog.id] = try CatalogSnapshotStore.shared.catalogData(catalog)
+        }
+        try store.activate(manifest: original, packages: packages)
+        var next = try XCTUnwrap(JSONSerialization.jsonObject(with: original) as? [String: Any])
+        next["revision"] = String(repeating: "b", count: 64)
+        try store.activate(manifest: JSONSerialization.data(withJSONObject: next), packages: packages)
+        let current = try XCTUnwrap(store.activeDirectory)
+        let catalog = TrailCatalogRegistry.defaultCatalog
+        try FileManager.default.removeItem(at: current.appendingPathComponent(catalog.id + ".geojson"))
+        let restored = CatalogSnapshotStore(directory: directory)
+        XCTAssertEqual(try restored.snapshot().revision, prior.revision)
+        XCTAssertEqual(try restored.catalogData(catalog), packages[catalog.id])
+        XCTAssertEqual(try CatalogSnapshotStore(directory: directory).snapshot().revision, prior.revision)
+        // If both downloaded copies are damaged, use a consistent bundled fallback.
+        let active = try XCTUnwrap(restored.activeDirectory)
+        try FileManager.default.removeItem(at: active.appendingPathComponent("catalog-manifest.json"))
+        let bundled = CatalogSnapshotStore(directory: directory)
+        XCTAssertNil(bundled.activeDirectory)
+        XCTAssertEqual(try bundled.catalogData(catalog), try CatalogSnapshotStore.shared.catalogData(catalog))
     }
 
     func testMalformedApprovedMetadataIsRejectedBeforeAnyMutation() throws {

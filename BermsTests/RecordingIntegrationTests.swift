@@ -189,7 +189,7 @@ final class RecordingIntegrationTests: XCTestCase {
         XCTAssertTrue(ride.watchSink.states.contains { $0.run?.jumpCount == 1 })
     }
 
-    func testSurveyingDoesNotChangeRideSegmentsTotalsOrWatchStates() throws {
+    func testSurveyingDoesNotChangeRideSegmentsTotalsOrWatchStates() async throws {
         let plain = try RecordingHarness()
         defer { plain.cleanup() }
         _ = try plain.start()
@@ -205,6 +205,7 @@ final class RecordingIntegrationTests: XCTestCase {
         let survey = TrailSurveyStore(
             directory: directory, locationService: LocationService(capture: surveyed.capture),
             now: { surveyed.clock.now })
+        await survey.loadDrafts()
         let id = try survey.create(
             catalog: TrailCatalogRegistry.mountainCreek, slug: nil, name: "Test", difficulty: "blue")
         try survey.resume(id)
@@ -237,7 +238,7 @@ final class RecordingIntegrationTests: XCTestCase {
         XCTAssertTrue(try ModelContext(surveyed.container).fetch(FetchDescriptor<Trail>()).isEmpty)
     }
 
-    func testSurveyFirstRidePauseFinishAndBackgroundPreserveSurvey() throws {
+    func testSurveyFirstRidePauseFinishAndBackgroundPreserveSurvey() async throws {
         let ride = try RecordingHarness()
         defer { ride.cleanup() }
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -245,6 +246,7 @@ final class RecordingIntegrationTests: XCTestCase {
         let survey = TrailSurveyStore(
             directory: directory, locationService: LocationService(capture: ride.capture),
             now: { ride.clock.now })
+        await survey.loadDrafts()
         let id = try survey.create(
             catalog: TrailCatalogRegistry.mountainCreek, slug: nil, name: "Test", difficulty: "blue")
         try survey.resume(id)
