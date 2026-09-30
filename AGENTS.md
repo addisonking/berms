@@ -53,10 +53,11 @@ The `BermsTests` XCTest target runs on the iOS Simulator against the app host.
 
 ## Local device workflow
 
+- Prefer Release builds for installs and user validation whenever possible; pass `-configuration Release` explicitly. Use Debug/dev builds only when a test or debugging task requires them, or Release is blocked, and explain the reason when doing so.
 - For physical iPhone builds and installs, use the stable Xcode toolchain at /Applications/Xcode.app/Contents/Developer. The beta toolchain currently rejects Berms's legacy watchkit2-extension target.
 - Use DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun devicectl list devices to find the paired physical iPhone, and use its identifier for device work. Do not use a simulator for physical-device validation.
-- Build for the connected device with DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild -project Berms.xcodeproj -scheme Berms -destination 'id=DEVICE_ID' -derivedDataPath /tmp/berms-device-build -allowProvisioningUpdates build.
-- Install the signed app with DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun devicectl device install app --device DEVICE_ID /tmp/berms-device-build/Build/Products/Debug-iphoneos/Berms.app.
+- Build for the connected device with DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild -project Berms.xcodeproj -scheme Berms -configuration Release -destination 'id=DEVICE_ID' -derivedDataPath /tmp/berms-device-build -allowProvisioningUpdates build.
+- Install the signed app with DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun devicectl device install app --device DEVICE_ID /tmp/berms-device-build/Build/Products/Release-iphoneos/Berms.app.
 - Device installation requires a paired phone, an Apple account available to Xcode, and provisioning profiles that include Berms's HealthKit capability and its Watch targets.
 - To point a fresh clone at another Apple account, run `python3 scripts/configure-signing.py TEAM_ID BUNDLE_ID`; it swaps the team and every bundle id (see docs/building.md).
 
