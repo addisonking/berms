@@ -16,7 +16,7 @@
         @Published private(set) var lastSample: TrackSample?
         @Published private(set) var activeTrailName = ""
         @Published private(set) var activeDifficulty: TrailDifficulty = .blue
-        @Published private(set) var activeStyle: TrailStyle = .freeRide
+        @Published private(set) var activeStyle: TrailStyle = .unknown
         @Published private(set) var activeResort = ""
         @Published private(set) var isSaving = false
         @Published var errorMessage: String?
@@ -46,7 +46,7 @@
         @discardableResult
         func start(
             existingTrail: Trail?, name: String, difficulty: TrailDifficulty,
-            style: TrailStyle = .freeRide, resortOverride: String = ""
+            style: TrailStyle = .unknown, resortOverride: String = ""
         ) -> Bool {
             guard !isRecording else { return false }
             guard !RideRecorder.shared.isRecording else {

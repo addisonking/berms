@@ -189,6 +189,88 @@ final class RecordingIntegrationTests: XCTestCase {
         XCTAssertTrue(ride.watchSink.states.contains { $0.run?.jumpCount == 1 })
     }
 
+    func testSurveyingDoesNotChangeRideSegmentsTotalsOrWatchStates() async throws {
+        let plain = try RecordingHarness()
+        defer { plain.cleanup() }
+        _ = try plain.start()
+        plain.feedParkDay(laps: 2)
+        let original = try plain.stop()
+        let surveyed = try RecordingHarness()
+        defer { surveyed.cleanup() }
+        _ = try surveyed.start()
+        surveyed.idle(5)
+        surveyed.climb(60)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let survey = TrailSurveyStore(
+            directory: directory, locationService: LocationService(capture: surveyed.capture),
+            now: { surveyed.clock.now })
+        await survey.loadDrafts()
+        let id = try survey.create(
+            catalog: TrailCatalogRegistry.mountainCreek, slug: nil, name: "Test", difficulty: "blue")
+        try survey.resume(id)
+        XCTAssertEqual(surveyed.capture.startCount, 1)
+        surveyed.idle(10)
+        surveyed.descend(60)
+        try survey.pause()
+        XCTAssertEqual(surveyed.capture.consumerCount, 1)
+        surveyed.idle(10)
+        surveyed.climb(60)
+        surveyed.idle(10)
+        surveyed.descend(60)
+        surveyed.idle(10)
+        let result = try surveyed.stop()
+        XCTAssertEqual(
+            result.segments.sorted { $0.startedAt < $1.startedAt }.map(\.kind),
+            original.segments.sorted { $0.startedAt < $1.startedAt }.map(\.kind))
+        XCTAssertEqual(result.distanceMeters, original.distanceMeters, accuracy: 0.00001)
+        XCTAssertEqual(result.descentMeters, original.descentMeters, accuracy: 0.00001)
+        XCTAssertEqual(result.liftMeters, original.liftMeters, accuracy: 0.00001)
+        XCTAssertEqual(result.maximumSpeedMetersPerSecond, original.maximumSpeedMetersPerSecond, accuracy: 0.00001)
+        let originalStates = plain.watchSink.states.map {
+            "\($0.status):\($0.phase):\($0.distanceMeters):\($0.descentMeters):\($0.run?.number ?? 0)"
+        }
+        let surveyedStates = surveyed.watchSink.states.map {
+            "\($0.status):\($0.phase):\($0.distanceMeters):\($0.descentMeters):\($0.run?.number ?? 0)"
+        }
+        XCTAssertEqual(surveyedStates, originalStates)
+        XCTAssertEqual(surveyed.capture.stopCount, 1)
+        XCTAssertTrue(try ModelContext(surveyed.container).fetch(FetchDescriptor<Trail>()).isEmpty)
+    }
+
+    func testSurveyFirstRidePauseFinishAndBackgroundPreserveSurvey() async throws {
+        let ride = try RecordingHarness()
+        defer { ride.cleanup() }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let survey = TrailSurveyStore(
+            directory: directory, locationService: LocationService(capture: ride.capture),
+            now: { ride.clock.now })
+        await survey.loadDrafts()
+        let id = try survey.create(
+            catalog: TrailCatalogRegistry.mountainCreek, slug: nil, name: "Test", difficulty: "blue")
+        try survey.resume(id)
+        _ = try ride.start()
+        XCTAssertEqual(ride.capture.startCount, 1)
+        ride.descend(40)
+        XCTAssertTrue(ride.recorder.pause())
+        let before = survey.active?.pointCount ?? 0
+        ride.idle(5)
+        XCTAssertEqual(survey.active?.pointCount, before + 5)
+        XCTAssertEqual(ride.capture.consumerCount, 1)
+        XCTAssertTrue(ride.recorder.resume())
+        ride.climb(40)
+        _ = try ride.stop()
+        XCTAssertEqual(ride.capture.consumerCount, 1)
+        ride.recorder.appDidEnterBackground()
+        XCTAssertEqual(ride.capture.consumerCount, 1)
+        ride.idle(5)
+        try survey.save(id)
+        XCTAssertEqual(ride.capture.consumerCount, 0)
+        XCTAssertEqual(ride.capture.stopCount, 1)
+        XCTAssertEqual(ride.watchSink.states.last?.status, .idle)
+    }
+
     func testDiagnosticLogReplayReproducesTheRecordedDay() throws {
         let ride = try RecordingHarness()
         defer { ride.cleanup() }
@@ -248,6 +330,7 @@ private final class RecordingHarness {
     private static let summaryVersionKey = "berms.diagnosticSummaryVersion"
 
     let container: ModelContainer
+    let capture = LocationCapture(usesHardware: false)
     let clock: RideClock
     let watchSink: WatchStateSpy
     private(set) var recorder: RideRecorder
@@ -285,7 +368,8 @@ private final class RecordingHarness {
             watchStateSink: watchSink,
             authorizationOverride: .authorizedAlways,
             now: { clock.now },
-            uptime: { clock.uptime })
+            uptime: { clock.uptime },
+            locationService: LocationService(capture: capture))
     }
 
     @discardableResult
@@ -306,12 +390,15 @@ private final class RecordingHarness {
     /// would, and restores the unfinished session onto it.
     @discardableResult
     func relaunchRecorder() -> RideRecorder {
+        recorder.locationService.stop()
+        recorder.motionService.stop()
         let relaunched = RideRecorder(
             context: ModelContext(container),
             watchStateSink: watchSink,
             authorizationOverride: .authorizedAlways,
             now: { [clock] in clock.now },
-            uptime: { [clock] in clock.uptime })
+            uptime: { [clock] in clock.uptime },
+            locationService: LocationService(capture: capture))
         relaunched.resumeIfNeeded(autoResume: true)
         XCTAssertNil(relaunched.errorMessage)
         recorder = relaunched
@@ -319,6 +406,8 @@ private final class RecordingHarness {
     }
 
     func cleanup() {
+        recorder.locationService.stop()
+        recorder.motionService.stop()
         UserDefaults.standard.set(previousRecordingActive, forKey: "berms.recordingActive")
         if let previousSummaryVersion {
             UserDefaults.standard.set(previousSummaryVersion, forKey: Self.summaryVersionKey)
@@ -417,7 +506,7 @@ private final class RecordingHarness {
             course: -1,
             speed: speed,
             timestamp: clock.now)
-        recorder.consume(location: location, isStationary: stationary)
+        capture.deliver(location, stationary: stationary)
     }
 
     private func feedMotion(at offset: TimeInterval, forceG: Double) {

@@ -187,7 +187,7 @@ extension RideRecorder {
         if let passes = try? context.fetch(FetchDescriptor<TrailPass>()) {
             let passesByID = Dictionary(passes.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
             for repair in repairedPasses {
-                guard let pass = passesByID[repair.id] else { continue }
+                guard let pass = passesByID[repair.id], pass.trail?.catalogRouteData == nil else { continue }
                 if let trailID = pass.trail?.id {
                     repairedTrailIDs.insert(trailID)
                 }
@@ -202,7 +202,7 @@ extension RideRecorder {
         if !repairedTrailIDs.isEmpty,
             let trails = try? context.fetch(FetchDescriptor<Trail>())
         {
-            for trail in trails where repairedTrailIDs.contains(trail.id) {
+            for trail in trails where repairedTrailIDs.contains(trail.id) && trail.catalogRouteData == nil {
                 trail.recalculateAverage()
             }
         }

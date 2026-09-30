@@ -38,7 +38,12 @@ enum TrailCatalogRegistry {
         try ResortCatalogLoader.load()
     }
 
-    static let manifest: ResortCatalogManifest = (try? manifestResult.get()) ?? .empty
+    static var manifest: ResortCatalogManifest {
+        #if os(iOS)
+            if let downloaded = CatalogSnapshotStore.shared.registryManifest() { return downloaded }
+        #endif
+        return (try? manifestResult.get()) ?? .empty
+    }
 
     /// Set when the bundled manifest could not be read. Surfaced to the rider
     /// instead of silently running with no catalogs.
@@ -47,13 +52,16 @@ enum TrailCatalogRegistry {
         return error.localizedDescription
     }
 
-    static let resorts: [ResortDescriptor] = manifest.resorts
-    static let allCatalogs: [TrailCatalogDescriptor] = manifest.catalogs
+    static var resorts: [ResortDescriptor] { manifest.resorts }
+    static var allCatalogs: [TrailCatalogDescriptor] { manifest.catalogs }
 
     /// Catalogs with bundled geometry are imported into SwiftData. Placeholders
     /// remain resolvable even before their map resource ships.
-    static let catalogs: [TrailCatalogDescriptor] = allCatalogs.filter {
-        $0.bundledResourceName != nil
+    static var catalogs: [TrailCatalogDescriptor] {
+        #if os(iOS)
+            if CatalogSnapshotStore.shared.activeDirectory != nil { return allCatalogs }
+        #endif
+        return allCatalogs.filter { $0.bundledResourceName != nil }
     }
 
     static var defaultCatalog: TrailCatalogDescriptor { catalogs.first ?? fallbackCatalog }
@@ -180,6 +188,7 @@ enum TrailCatalogImporter {
     enum ImportError: LocalizedError {
         case missingResource
         case invalidCollectionType(String)
+        case invalidFeature
 
         var errorDescription: String? {
             switch self {
@@ -187,6 +196,8 @@ enum TrailCatalogImporter {
                 "The selected trail catalog resource is missing."
             case .invalidCollectionType(let type):
                 "Expected a GeoJSON FeatureCollection, received \(type)."
+            case .invalidFeature:
+                "The approved catalog contains an invalid or duplicate trail."
             }
         }
     }
@@ -219,17 +230,18 @@ enum TrailCatalogImporter {
         now: Date = .now
     ) throws -> Summary? {
         guard !isImported(catalog, defaults: defaults) else { return nil }
-        guard let resourceName = catalog.bundledResourceName,
-            let url = bundle.url(
-                forResource: resourceName,
-                withExtension: "geojson")
-        else {
-            return nil
-        }
-        let data = try Data(contentsOf: url)
+        let data: Data
+        #if os(iOS)
+            data = try CatalogSnapshotStore.shared.catalogData(catalog, bundle: bundle)
+        #else
+            guard let resourceName = catalog.bundledResourceName,
+                let url = bundle.url(forResource: resourceName, withExtension: "geojson")
+            else { return nil }
+            data = try Data(contentsOf: url)
+        #endif
         return try `import`(
             data: data, into: context, defaults: defaults,
-            now: now, catalog: catalog)
+            now: now, catalog: catalog, approvedGeometry: true)
     }
 
     static func `import`(
@@ -238,8 +250,11 @@ enum TrailCatalogImporter {
         defaults: UserDefaults = .standard,
         now: Date = .now,
         catalog: TrailCatalogDescriptor = TrailCatalogRegistry.mountainCreek,
-        version: String? = nil
+        version: String? = nil,
+        approvedGeometry: Bool = false,
+        saveChanges: Bool = true
     ) throws -> Summary {
+        if approvedGeometry { try validateApprovedCatalog(data) }
         let collection = try JSONDecoder().decode(GeoJSONFeatureCollection.self, from: data)
         guard collection.type == "FeatureCollection" else {
             throw ImportError.invalidCollectionType(collection.type)
@@ -253,6 +268,7 @@ enum TrailCatalogImporter {
         var passesCreated = 0
         var existingTrailsSkipped = 0
         var invalidFeaturesSkipped = 0
+        var approvedIDs = Set<UUID>()
         let retiredSlugs = retiredTrailSlugs(for: catalog)
 
         for feature in collection.features {
@@ -274,6 +290,7 @@ enum TrailCatalogImporter {
             }
 
             let id = stableID(for: slug, catalog: catalog)
+            approvedIDs.insert(id)
             let trail: Trail
             if let existing = trailsByID[id] {
                 trail = existing
@@ -283,7 +300,7 @@ enum TrailCatalogImporter {
                     existing.difficultyRawValue = difficulty.rawValue
                     existing.updatedAt = now
                 }
-                guard existing.passes.isEmpty else {
+                guard approvedGeometry || existing.passes.isEmpty else {
                     existingTrailsSkipped += 1
                     continue
                 }
@@ -297,6 +314,10 @@ enum TrailCatalogImporter {
                 trailsCreated += 1
             }
 
+            if approvedGeometry, let lines = feature.geometry.routeLines(referenceDate: now) {
+                try trail.setCatalogRoutes(lines, at: now)
+                continue
+            }
             let pass = TrailPass(routePoints: points, recordedAt: now)
             pass.trail = trail
             trail.passes.append(pass)
@@ -305,12 +326,20 @@ enum TrailCatalogImporter {
             passesCreated += 1
         }
 
+        if approvedGeometry {
+            for trail in existingTrails
+            where trail.catalogID == catalog.id && trail.catalogRouteData != nil
+                && !approvedIDs.contains(trail.id)
+            {
+                try trail.setCatalogRoutes([], at: now)
+            }
+        }
         reconcileRetiredTrails(for: catalog, trailsByID: trailsByID, context: context)
-        try context.save()
+        if saveChanges { try context.save() }
         let importVersion = version ?? catalog.importVersion
-        defaults.set(importVersion, forKey: versionKey(for: catalog))
+        if saveChanges { defaults.set(importVersion, forKey: versionKey(for: catalog)) }
         for legacyKey in catalog.legacyImportVersionKeys {
-            defaults.set(importVersion, forKey: legacyKey)
+            if saveChanges { defaults.set(importVersion, forKey: legacyKey) }
         }
         return Summary(
             trailsCreated: trailsCreated,
@@ -318,6 +347,26 @@ enum TrailCatalogImporter {
             existingTrailsSkipped: existingTrailsSkipped,
             invalidFeaturesSkipped: invalidFeaturesSkipped
         )
+    }
+
+    nonisolated static func validateApprovedCatalog(_ data: Data) throws {
+        let collection = try JSONDecoder().decode(ApprovedGeoJSONCollection.self, from: data)
+        guard collection.type == "FeatureCollection" else {
+            throw ImportError.invalidCollectionType(collection.type)
+        }
+        var slugs = Set<String>()
+        for feature in collection.features {
+            guard feature.type == "Feature", let slug = feature.properties.slug,
+                slug.trimmedNonEmpty == slug, slugs.insert(slug).inserted,
+                feature.properties.name?.trimmedNonEmpty != nil, feature.geometry.isValid
+            else { throw ImportError.invalidFeature }
+        }
+    }
+
+    nonisolated static func difficulty(for featureData: Data, catalog: TrailCatalogDescriptor) throws -> TrailDifficulty
+    {
+        let feature = try JSONDecoder().decode(GeoJSONFeature.self, from: featureData)
+        return difficulty(from: feature.properties, catalog: catalog)
     }
 
     /// Unknown ratings become `.unrated` instead of dropping the trail.
@@ -457,6 +506,10 @@ enum TrailCatalogImporter {
         }
     }
 
+    static func markImported(_ catalog: TrailCatalogDescriptor, defaults: UserDefaults) {
+        defaults.set(catalog.importVersion, forKey: versionKey(for: catalog))
+    }
+
     private static func versionKey(for catalog: TrailCatalogDescriptor) -> String {
         "\(versionKeyPrefix).\(catalog.id).version"
     }
@@ -491,6 +544,11 @@ private struct GeoJSONFeatureCollection: Decodable {
     }
 }
 
+private struct ApprovedGeoJSONCollection: Decodable {
+    let type: String
+    let features: [GeoJSONFeature]
+}
+
 private struct LossyFeature: Decodable {
     let feature: GeoJSONFeature?
 
@@ -500,6 +558,7 @@ private struct LossyFeature: Decodable {
 }
 
 private struct GeoJSONFeature: Decodable {
+    let type: String?
     let properties: GeoJSONProperties
     let geometry: GeoJSONGeometry
 }
@@ -530,6 +589,22 @@ private enum GeoJSONGeometry: Decodable {
         default:
             self = .lineString([])
         }
+    }
+
+    var isValid: Bool {
+        let lines: [[[Double]]]
+        switch self {
+        case .lineString(let points): lines = [points]
+        case .multiLineString(let value): lines = value
+        }
+        return !lines.isEmpty
+            && lines.allSatisfy { line in
+                line.count >= 2
+                    && line.allSatisfy { point in
+                        (2...3).contains(point.count) && point.allSatisfy(\.isFinite)
+                            && (-180...180).contains(point[0]) && (-90...90).contains(point[1])
+                    }
+            }
     }
 
     func routePoints(referenceDate: Date) -> [RoutePoint]? {

@@ -494,7 +494,7 @@ import UIKit
 
             trail.name = trimmedName
             trail.difficultyRawValue = difficulty.rawValue
-            trail.styleRawValue = style.rawValue
+            if trail.style != style { trail.setStyle(style) }
             trail.resort = resort.trimmingCharacters(in: .whitespacesAndNewlines)
             trail.updatedAt = .now
 
@@ -575,7 +575,7 @@ import UIKit
         @State private var selectedTrailID: UUID?
         @State private var name = ""
         @State private var difficulty: TrailDifficulty = .blue
-        @State private var style: TrailStyle = .freeRide
+        @State private var style: TrailStyle = .unknown
         @State private var resortOverride = ""
 
         init(trails: [Trail], mapper: TrailMapper, defaultResort: String) {

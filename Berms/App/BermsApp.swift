@@ -25,6 +25,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         RideRecorder.shared.appDidEnterBackground()
         #if DEBUG
             TrailMapper.shared.stopIfIdle()
+            TrailSurveyStore.checkpointIfActive()
         #endif
     }
 
@@ -35,6 +36,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         BermsLiveActivityCoordinator.shared.endAll()
         #if DEBUG
             TrailMapper.shared.locationService.stop()
+            TrailSurveyStore.stopCaptureIfActive()
         #endif
     }
 }

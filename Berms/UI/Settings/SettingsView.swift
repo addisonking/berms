@@ -6,6 +6,8 @@ import UIKit
 struct SettingsView: View {
     @ObservedObject var recorder: RideRecorder
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
+    @ObservedObject private var catalogs = CatalogRefresh.shared
 
     private var sensitivityBinding: Binding<JumpSensitivity> {
         Binding(
@@ -76,9 +78,9 @@ struct SettingsView: View {
         private var developerSection: some View {
             Section {
                 NavigationLink {
-                    TrailLibraryView()
+                    DeveloperView()
                 } label: {
-                    Label("Trail catalog", systemImage: "map")
+                    Label("Developer", systemImage: "hammer")
                 }
             } header: {
                 Text("Developer")
@@ -148,6 +150,12 @@ struct SettingsView: View {
 
     private var dataSection: some View {
         Section {
+            Button("Update trail catalogs") {
+                guard let url = URL(string: CatalogRefresh.discoveryURL) else { return }
+                Task { await catalogs.refresh(from: url, context: modelContext) }
+            }
+            .disabled(catalogs.isRefreshing || catalogs.captureIsBusy)
+            if let message = catalogs.message { Text(message) }
             Toggle("Detailed ride logs", isOn: rawMotionLoggingBinding)
                 .tint(Color.bermsSwitch)
         } header: {
