@@ -43,7 +43,8 @@ extension Trail {
     /// Every consumer must use this order because `TrailMatchSection.routeIndex`
     /// indexes into it.
     var matcherRoutes: [[RoutePoint]] {
-        [points] + orderedPasses.map(\.points)
+        if catalogRouteData != nil { return catalogRoutes }
+        return [points] + orderedPasses.map(\.points)
     }
 }
 

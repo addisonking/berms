@@ -541,6 +541,8 @@ final class Trail {
     var updatedAt: Date
     @Attribute(.externalStorage) var averagedRouteData: Data?
 
+    @Attribute(.externalStorage) var catalogRouteData: Data?
+
     @Transient private var cachedPoints: [RoutePoint]?
 
     @Relationship(deleteRule: .cascade, inverse: \TrailPass.trail)
@@ -573,7 +575,11 @@ final class Trail {
     var points: [RoutePoint] {
         if let cachedPoints { return cachedPoints }
         let resolved: [RoutePoint]
-        if let averagedRouteData,
+        if let catalogRouteData,
+            let lines = try? JSONDecoder().decode([[RoutePoint]].self, from: catalogRouteData)
+        {
+            resolved = lines.flatMap { $0 }
+        } else if let averagedRouteData,
             let points = try? RouteCodec.decode(averagedRouteData),
             !points.isEmpty
         {
@@ -583,6 +589,21 @@ final class Trail {
         }
         cachedPoints = resolved
         return resolved
+    }
+
+    var catalogRoutes: [[RoutePoint]] {
+        if let catalogRouteData,
+            let lines = try? JSONDecoder().decode([[RoutePoint]].self, from: catalogRouteData)
+        {
+            return lines
+        }
+        return [points]
+    }
+
+    func setCatalogRoutes(_ lines: [[RoutePoint]], at date: Date) throws {
+        catalogRouteData = try JSONEncoder().encode(lines)
+        cachedPoints = nil
+        updatedAt = date
     }
 
     var passCount: Int { passes.count }

@@ -12,7 +12,7 @@ enum BackgroundLocationAccess {
 }
 
 @MainActor
-final class LocationService: NSObject, ObservableObject, @preconcurrency CLLocationManagerDelegate {
+final class LocationCaptureDriver: NSObject, ObservableObject, @preconcurrency CLLocationManagerDelegate {
     @Published private(set) var authorizationStatus: CLAuthorizationStatus = .notDetermined
     @Published private(set) var lastLocation: CLLocation?
     @Published private(set) var isRunning = false
@@ -122,6 +122,12 @@ final class LocationService: NSObject, ObservableObject, @preconcurrency CLLocat
         if backgroundAccess == .activitySession {
             backgroundSession = CLBackgroundActivitySession()
         }
+    }
+
+    func requireBackgroundActivitySession() {
+        guard isRunning, backgroundSession == nil else { return }
+        guard UIApplication.shared.applicationState == .active else { return }
+        backgroundSession = CLBackgroundActivitySession()
     }
 
     private func startStream() {

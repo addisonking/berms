@@ -38,7 +38,12 @@ enum TrailCatalogRegistry {
         try ResortCatalogLoader.load()
     }
 
-    static let manifest: ResortCatalogManifest = (try? manifestResult.get()) ?? .empty
+    static var manifest: ResortCatalogManifest {
+        #if os(iOS)
+            if let downloaded = CatalogSnapshotStore.shared.registryManifest() { return downloaded }
+        #endif
+        return (try? manifestResult.get()) ?? .empty
+    }
 
     /// Set when the bundled manifest could not be read. Surfaced to the rider
     /// instead of silently running with no catalogs.
@@ -47,13 +52,16 @@ enum TrailCatalogRegistry {
         return error.localizedDescription
     }
 
-    static let resorts: [ResortDescriptor] = manifest.resorts
-    static let allCatalogs: [TrailCatalogDescriptor] = manifest.catalogs
+    static var resorts: [ResortDescriptor] { manifest.resorts }
+    static var allCatalogs: [TrailCatalogDescriptor] { manifest.catalogs }
 
     /// Catalogs with bundled geometry are imported into SwiftData. Placeholders
     /// remain resolvable even before their map resource ships.
-    static let catalogs: [TrailCatalogDescriptor] = allCatalogs.filter {
-        $0.bundledResourceName != nil
+    static var catalogs: [TrailCatalogDescriptor] {
+        #if os(iOS)
+            if CatalogSnapshotStore.shared.activeDirectory != nil { return allCatalogs }
+        #endif
+        return allCatalogs.filter { $0.bundledResourceName != nil }
     }
 
     static var defaultCatalog: TrailCatalogDescriptor { catalogs.first ?? fallbackCatalog }
@@ -219,17 +227,18 @@ enum TrailCatalogImporter {
         now: Date = .now
     ) throws -> Summary? {
         guard !isImported(catalog, defaults: defaults) else { return nil }
-        guard let resourceName = catalog.bundledResourceName,
-            let url = bundle.url(
-                forResource: resourceName,
-                withExtension: "geojson")
-        else {
-            return nil
-        }
-        let data = try Data(contentsOf: url)
+        let data: Data
+        #if os(iOS)
+            data = try CatalogSnapshotStore.shared.catalogData(catalog, bundle: bundle)
+        #else
+            guard let resourceName = catalog.bundledResourceName,
+                let url = bundle.url(forResource: resourceName, withExtension: "geojson")
+            else { return nil }
+            data = try Data(contentsOf: url)
+        #endif
         return try `import`(
             data: data, into: context, defaults: defaults,
-            now: now, catalog: catalog)
+            now: now, catalog: catalog, approvedGeometry: true)
     }
 
     static func `import`(
@@ -238,7 +247,9 @@ enum TrailCatalogImporter {
         defaults: UserDefaults = .standard,
         now: Date = .now,
         catalog: TrailCatalogDescriptor = TrailCatalogRegistry.mountainCreek,
-        version: String? = nil
+        version: String? = nil,
+        approvedGeometry: Bool = false,
+        saveChanges: Bool = true
     ) throws -> Summary {
         let collection = try JSONDecoder().decode(GeoJSONFeatureCollection.self, from: data)
         guard collection.type == "FeatureCollection" else {
@@ -253,6 +264,7 @@ enum TrailCatalogImporter {
         var passesCreated = 0
         var existingTrailsSkipped = 0
         var invalidFeaturesSkipped = 0
+        var approvedIDs = Set<UUID>()
         let retiredSlugs = retiredTrailSlugs(for: catalog)
 
         for feature in collection.features {
@@ -274,6 +286,7 @@ enum TrailCatalogImporter {
             }
 
             let id = stableID(for: slug, catalog: catalog)
+            approvedIDs.insert(id)
             let trail: Trail
             if let existing = trailsByID[id] {
                 trail = existing
@@ -283,7 +296,7 @@ enum TrailCatalogImporter {
                     existing.difficultyRawValue = difficulty.rawValue
                     existing.updatedAt = now
                 }
-                guard existing.passes.isEmpty else {
+                guard approvedGeometry || existing.passes.isEmpty else {
                     existingTrailsSkipped += 1
                     continue
                 }
@@ -297,6 +310,10 @@ enum TrailCatalogImporter {
                 trailsCreated += 1
             }
 
+            if approvedGeometry, let lines = feature.geometry.routeLines(referenceDate: now) {
+                try trail.setCatalogRoutes(lines, at: now)
+                continue
+            }
             let pass = TrailPass(routePoints: points, recordedAt: now)
             pass.trail = trail
             trail.passes.append(pass)
@@ -305,12 +322,20 @@ enum TrailCatalogImporter {
             passesCreated += 1
         }
 
+        if approvedGeometry {
+            for trail in existingTrails
+            where trail.catalogID == catalog.id && trail.catalogRouteData != nil
+                && !approvedIDs.contains(trail.id)
+            {
+                try trail.setCatalogRoutes([], at: now)
+            }
+        }
         reconcileRetiredTrails(for: catalog, trailsByID: trailsByID, context: context)
-        try context.save()
+        if saveChanges { try context.save() }
         let importVersion = version ?? catalog.importVersion
-        defaults.set(importVersion, forKey: versionKey(for: catalog))
+        if saveChanges { defaults.set(importVersion, forKey: versionKey(for: catalog)) }
         for legacyKey in catalog.legacyImportVersionKeys {
-            defaults.set(importVersion, forKey: legacyKey)
+            if saveChanges { defaults.set(importVersion, forKey: legacyKey) }
         }
         return Summary(
             trailsCreated: trailsCreated,
@@ -455,6 +480,10 @@ enum TrailCatalogImporter {
                     routes: routes)
             }
         }
+    }
+
+    static func markImported(_ catalog: TrailCatalogDescriptor, defaults: UserDefaults) {
+        defaults.set(catalog.importVersion, forKey: versionKey(for: catalog))
     }
 
     private static func versionKey(for catalog: TrailCatalogDescriptor) -> String {

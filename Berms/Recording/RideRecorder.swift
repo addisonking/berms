@@ -27,7 +27,7 @@ final class RideRecorder: ObservableObject {
     @Published private(set) var needsRecoveryPrompt = false
     @Published var errorMessage: String?
 
-    let locationService = LocationService()
+    let locationService: LocationService
     let motionService = MotionService()
 
     let context: ModelContext
@@ -58,8 +58,10 @@ final class RideRecorder: ObservableObject {
         watchStateSink: WatchRideStateSink? = WatchConnectivityCoordinator.shared,
         authorizationOverride: CLAuthorizationStatus? = nil,
         now: (() -> Date)? = nil,
-        uptime: (() -> TimeInterval)? = nil
+        uptime: (() -> TimeInterval)? = nil,
+        locationService: LocationService? = nil
     ) {
+        self.locationService = locationService ?? LocationService()
         let storedSensitivity =
             JumpSensitivity(rawValue: UserDefaults.standard.string(forKey: "berms.jumpSensitivity") ?? "")
             ?? .standard
@@ -79,8 +81,8 @@ final class RideRecorder: ObservableObject {
         if let lifts = try? self.context.fetch(FetchDescriptor<LearnedLift>()) {
             detector.setLearnedLifts(lifts.map(\.profile))
         }
-        locationAuthorization = authorizationOverride ?? locationService.authorizationStatus
-        authorizationSubscription = locationService.$authorizationStatus.sink { [weak self] status in
+        locationAuthorization = authorizationOverride ?? self.locationService.authorizationStatus
+        authorizationSubscription = self.locationService.$authorizationStatus.sink { [weak self] status in
             self?.locationAuthorization = self?.authorizationOverride ?? status
         }
         liveActivityNotificationObserver = NotificationCenter.default.addObserver(

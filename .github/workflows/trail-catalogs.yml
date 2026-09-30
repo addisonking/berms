@@ -1,0 +1,44 @@
+name: Publish trail catalogs
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: trail-catalog-publication
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Validate contribution tooling
+        run: python3 scripts/trails/test-contributions.py
+      - name: Package immutable catalogs
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          revision=$(python3 scripts/trails/package-catalogs.py --output /tmp/catalog-draft)
+          tag="trail-catalog-$revision"
+          python3 scripts/trails/package-catalogs.py --output /tmp/catalog-assets \
+            --base-url "https://github.com/$REPOSITORY/releases/download/$tag"
+          printf '%s\n' "$tag" > /tmp/catalog-tag
+      - name: Publish packages, then discovery manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          tag=$(cat /tmp/catalog-tag)
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            gh release create "$tag" /tmp/catalog-assets/*.geojson /tmp/catalog-assets/catalog-manifest.json \
+              --target "$GITHUB_SHA" --title "Trail catalogs $tag" --notes 'Approved trail catalog snapshot.' --latest=false
+          fi
+          if ! gh release view trail-catalog-latest >/dev/null 2>&1; then
+            gh release create trail-catalog-latest --target "$GITHUB_SHA" \
+              --title 'Latest trail catalog manifest' --notes 'Discovery manifest; packages use immutable snapshot URLs.' --latest=false
+          fi
+          gh release upload trail-catalog-latest /tmp/catalog-assets/catalog-manifest.json --clobber
