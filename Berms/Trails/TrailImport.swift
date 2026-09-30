@@ -188,6 +188,7 @@ enum TrailCatalogImporter {
     enum ImportError: LocalizedError {
         case missingResource
         case invalidCollectionType(String)
+        case invalidFeature
 
         var errorDescription: String? {
             switch self {
@@ -195,6 +196,8 @@ enum TrailCatalogImporter {
                 "The selected trail catalog resource is missing."
             case .invalidCollectionType(let type):
                 "Expected a GeoJSON FeatureCollection, received \(type)."
+            case .invalidFeature:
+                "The approved catalog contains an invalid or duplicate trail."
             }
         }
     }
@@ -251,6 +254,7 @@ enum TrailCatalogImporter {
         approvedGeometry: Bool = false,
         saveChanges: Bool = true
     ) throws -> Summary {
+        if approvedGeometry { try validateApprovedCatalog(data) }
         let collection = try JSONDecoder().decode(GeoJSONFeatureCollection.self, from: data)
         guard collection.type == "FeatureCollection" else {
             throw ImportError.invalidCollectionType(collection.type)
@@ -343,6 +347,26 @@ enum TrailCatalogImporter {
             existingTrailsSkipped: existingTrailsSkipped,
             invalidFeaturesSkipped: invalidFeaturesSkipped
         )
+    }
+
+    nonisolated static func validateApprovedCatalog(_ data: Data) throws {
+        let collection = try JSONDecoder().decode(ApprovedGeoJSONCollection.self, from: data)
+        guard collection.type == "FeatureCollection" else {
+            throw ImportError.invalidCollectionType(collection.type)
+        }
+        var slugs = Set<String>()
+        for feature in collection.features {
+            guard feature.type == "Feature", let slug = feature.properties.slug,
+                slug.trimmedNonEmpty == slug, slugs.insert(slug).inserted,
+                feature.properties.name?.trimmedNonEmpty != nil, feature.geometry.isValid
+            else { throw ImportError.invalidFeature }
+        }
+    }
+
+    nonisolated static func difficulty(for featureData: Data, catalog: TrailCatalogDescriptor) throws -> TrailDifficulty
+    {
+        let feature = try JSONDecoder().decode(GeoJSONFeature.self, from: featureData)
+        return difficulty(from: feature.properties, catalog: catalog)
     }
 
     /// Unknown ratings become `.unrated` instead of dropping the trail.
@@ -520,6 +544,11 @@ private struct GeoJSONFeatureCollection: Decodable {
     }
 }
 
+private struct ApprovedGeoJSONCollection: Decodable {
+    let type: String
+    let features: [GeoJSONFeature]
+}
+
 private struct LossyFeature: Decodable {
     let feature: GeoJSONFeature?
 
@@ -529,6 +558,7 @@ private struct LossyFeature: Decodable {
 }
 
 private struct GeoJSONFeature: Decodable {
+    let type: String?
     let properties: GeoJSONProperties
     let geometry: GeoJSONGeometry
 }
@@ -559,6 +589,22 @@ private enum GeoJSONGeometry: Decodable {
         default:
             self = .lineString([])
         }
+    }
+
+    var isValid: Bool {
+        let lines: [[[Double]]]
+        switch self {
+        case .lineString(let points): lines = [points]
+        case .multiLineString(let value): lines = value
+        }
+        return !lines.isEmpty
+            && lines.allSatisfy { line in
+                line.count >= 2
+                    && line.allSatisfy { point in
+                        (2...3).contains(point.count) && point.allSatisfy(\.isFinite)
+                            && (-180...180).contains(point[0]) && (-90...90).contains(point[1])
+                    }
+            }
     }
 
     func routePoints(referenceDate: Date) -> [RoutePoint]? {

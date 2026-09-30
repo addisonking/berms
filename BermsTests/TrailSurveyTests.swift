@@ -176,6 +176,38 @@ final class TrailSurveyTests: XCTestCase {
         XCTAssertEqual(capture.stopCount, 1)
     }
 
+    func testMalformedApprovedMetadataIsRejectedBeforeAnyMutation() throws {
+        let schema = Schema([Trail.self, TrailPass.self])
+        let container = try ModelContainer(for: schema, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let context = container.mainContext
+        let catalog = TrailCatalogRegistry.mountainCreek
+        let feature: [String: Any] = [
+            "type": "Feature", "properties": ["slug": "validation-fixture", "name": "Original", "difficulty": "blue"],
+            "geometry": ["type": "LineString", "coordinates": [[-74.0, 41.0], [-74.001, 41.001]]],
+        ]
+        let valid = try JSONSerialization.data(withJSONObject: ["type": "FeatureCollection", "features": [feature]])
+        _ = try TrailCatalogImporter.import(
+            data: valid, into: context, catalog: catalog, approvedGeometry: true, saveChanges: false)
+        try context.save()
+        let trail = try XCTUnwrap(context.fetch(FetchDescriptor<Trail>()).first)
+        let original = trail.catalogRouteData
+        for (key, value) in [("name", "   " as Any), ("difficulty", 42 as Any), ("difficultyLabel", true as Any)] {
+            var invalidFeature = feature
+            var properties = try XCTUnwrap(feature["properties"] as? [String: Any])
+            properties[key] = value
+            invalidFeature["properties"] = properties
+            let invalid = try JSONSerialization.data(withJSONObject: [
+                "type": "FeatureCollection", "features": [invalidFeature],
+            ])
+            XCTAssertThrowsError(try TrailCatalogImporter.validateApprovedCatalog(invalid))
+            XCTAssertThrowsError(
+                try TrailCatalogImporter.import(
+                    data: invalid, into: context, catalog: catalog, approvedGeometry: true, saveChanges: false))
+            XCTAssertEqual(trail.catalogRouteData, original)
+            XCTAssertEqual(trail.name, "Original")
+        }
+    }
+
     func testApprovedCatalogUpdatePreservesLegacyPassesAndMultilineRoutes() throws {
         let schema = Schema([RideDay.self, RideSegment.self, Trail.self, TrailPass.self, LearnedLift.self])
         let container = try ModelContainer(for: schema, configurations: ModelConfiguration(isStoredInMemoryOnly: true))

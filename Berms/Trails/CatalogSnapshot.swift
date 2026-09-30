@@ -114,6 +114,7 @@ final class CatalogSnapshotStore: @unchecked Sendable {
                 object["type"] as? String == "FeatureCollection",
                 let features = object["features"] as? [[String: Any]]
             else { throw CocoaError(.fileReadCorruptFile) }
+            try TrailCatalogImporter.validateApprovedCatalog(data)
             var slugs = Set<String>()
             for feature in features {
                 guard let properties = feature["properties"] as? [String: Any],

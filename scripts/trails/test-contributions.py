@@ -2,6 +2,7 @@
 import copy
 import importlib.util
 import json
+import os
 import shutil
 import tempfile
 import unittest
@@ -221,6 +222,77 @@ class Contributions(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     self.prepare()
                 self.samples = samples
+
+    def test_invalid_proposed_metadata_leaves_sources_untouched(self):
+        self.operation('editTrail')
+        before = self.source.read_bytes()
+        for key, value in [('name', '   '), ('name', 3), ('difficulty', 42), ('difficultyLabel', True)]:
+            with self.subTest(key=key):
+                proposal = copy.deepcopy(self.contribution['operations'][0]['proposed'])
+                self.contribution['operations'][0]['proposed']['properties'][key] = value
+                with self.assertRaises(ValueError):
+                    self.prepare()
+                self.contribution['operations'][0]['proposed'] = proposal
+        self.assertEqual(self.source.read_bytes(), before)
+
+    def test_abrupt_exit_at_each_replace_recovers_without_false_duplicate(self):
+        self.operation('addTrail')
+        original = self.source.read_bytes()
+        for stop_at in (1, 2, 3):
+            summary, writes = self.prepare()
+            self.assertEqual(summary['status'], 'ready')
+            child = os.fork()
+            if child == 0:
+                real_replace = importer.os.replace
+                calls = 0
+                def interrupted_replace(source, destination):
+                    nonlocal calls
+                    real_replace(source, destination)
+                    calls += 1
+                    if calls == stop_at:
+                        os._exit(77)
+                importer.os.replace = interrupted_replace
+                importer.apply(writes)
+                os._exit(0)
+            _, status = os.waitpid(child, 0)
+            self.assertEqual(os.waitstatus_to_exitcode(status), 77)
+            with self.assertRaisesRegex(ValueError, 'pending import'):
+                self.prepare()
+            importer.recover_pending(self.root)
+            if stop_at < 3:
+                self.assertEqual(self.source.read_bytes(), original)
+                self.assertEqual(self.prepare()[0]['status'], 'ready')
+                self.assertFalse((self.root / 'trail-data/ledger.json').exists())
+            else:
+                self.assertEqual(self.prepare()[0]['status'], 'duplicate')
+                self.assertNotEqual(self.source.read_bytes(), original)
+            self.assertFalse((self.root / 'trail-data' / importer.JOURNAL_NAME).exists())
+
+    def test_recovery_does_not_overwrite_manual_changes(self):
+        self.operation('addTrail')
+        _, writes = self.prepare()
+        child = os.fork()
+        if child == 0:
+            real_replace = importer.os.replace
+            def interrupted_replace(source, destination):
+                real_replace(source, destination)
+                os._exit(77)
+            importer.os.replace = interrupted_replace
+            importer.apply(writes)
+            os._exit(0)
+        os.waitpid(child, 0)
+        edited = self.source.read_bytes() + b'\n'
+        self.source.write_bytes(edited)
+        with self.assertRaisesRegex(ValueError, 'manual change'):
+            importer.recover_pending(self.root)
+        self.assertEqual(self.source.read_bytes(), edited)
+
+    def test_missing_evidence_is_not_reported_as_successful_duplicate(self):
+        _, writes = self.prepare()
+        importer.apply(writes)
+        (self.root / f'trail-data/evidence/{self.cid}.json').unlink()
+        with self.assertRaisesRegex(ValueError, 'missing or inconsistent evidence'):
+            self.prepare()
 
     def test_schema_and_out_of_range_coordinates(self):
         self.contribution['schemaVersion'] = 2

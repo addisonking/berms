@@ -65,6 +65,23 @@ def geometry(value):
                 raise ValueError('coordinate outside earth')
 
 
+def validate_feature(value):
+    if not isinstance(value, dict) or value.get('type') != 'Feature':
+        raise ValueError('invalid feature type')
+    properties = value.get('properties')
+    if not isinstance(properties, dict):
+        raise ValueError('invalid feature properties')
+    slug = identifier(properties.get('slug'))
+    name = properties.get('name')
+    if not isinstance(name, str) or not name.strip():
+        raise ValueError('missing trail name')
+    for key in ('difficulty', 'difficultyLabel'):
+        if properties.get(key) is not None and not isinstance(properties[key], str):
+            raise ValueError('invalid difficulty metadata')
+    geometry(value['geometry'])
+    return slug
+
+
 def source_catalogs(root=ROOT):
     manifest = json.loads((root / 'Berms/Resources/resorts.json').read_bytes())
     result = {}
@@ -81,11 +98,10 @@ def source_catalogs(root=ROOT):
                 raise ValueError('invalid source collection')
             slugs = set()
             for feature in collection['features']:
-                slug = identifier(feature['properties']['slug'])
+                slug = validate_feature(feature)
                 if slug in slugs:
                     raise ValueError('ambiguous duplicate source trail')
                 slugs.add(slug)
-                geometry(feature['geometry'])
             aliases = catalog.get('aliases', {})
             if any(target not in slugs or target in aliases for target in aliases.values()):
                 raise ValueError('missing or ambiguous canonical alias target')

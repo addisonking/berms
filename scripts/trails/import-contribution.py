@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Validate everything before producing reviewable source changes."""
 import argparse
+import base64
+import fcntl
 import copy
 import datetime
 import html
@@ -11,7 +13,7 @@ import tempfile
 import uuid
 import zipfile
 from pathlib import Path, PurePosixPath
-from catalog import ROOT, baseline, digest, encoded, geometry, identifier, source_catalogs, stable_id
+from catalog import ROOT, baseline, digest, encoded, geometry, identifier, source_catalogs, stable_id, validate_feature
 
 
 def timestamp(value):
@@ -105,6 +107,8 @@ def read_archive(path):
 
 
 def prepare(path, root):
+    if (root / 'trail-data' / JOURNAL_NAME).exists():
+        raise ValueError('pending import requires recovery; rerun with --apply')
     contribution, passes = read_archive(path)
     _, catalogs = source_catalogs(root)
     catalog, source, collection = catalogs[contribution['catalogID']]
@@ -115,6 +119,9 @@ def prepare(path, root):
     if cid in ledger:
         if ledger[cid] != fingerprint:
             raise ValueError('contribution ID already applied with different content; create an explicit superseding contribution')
+        evidence_path = root / 'trail-data/evidence' / (cid + '.json')
+        if not evidence_path.exists() or digest(encoded(json.loads(evidence_path.read_bytes()))) != fingerprint:
+            raise ValueError('contribution ledger has missing or inconsistent evidence; restore the reviewed files')
         return {'status': 'duplicate', 'contributionID': cid}, {}
     features = {f['properties']['slug']: f for f in collection['features']}
     conflicts, changes, seen, used = [], [], set(), set()
@@ -159,9 +166,7 @@ def prepare(path, root):
         else:
             if not proposal or proposal.get('type') != 'Feature' or proposal['properties']['slug'] != canonical_slug:
                 raise ValueError('invalid proposed feature or slug rename')
-            if not proposal['properties'].get('name'):
-                raise ValueError('missing name')
-            geometry(proposal['geometry'])
+            validate_feature(proposal)
             if kind == 'addTrail':
                 selected = operation.get('selectedPassID')
                 if selected not in pids:
@@ -203,11 +208,11 @@ def prepare(path, root):
     if conflicts:
         return summary, {}
     ledger[cid] = fingerprint
-    writes = {ledger_path: encoded(ledger),
-              root / 'trail-data/evidence' / (cid + '.json'): encoded(
+    writes = {root / 'trail-data/evidence' / (cid + '.json'): encoded(
                   {'contribution': contribution, 'samples': {k: v[1] for k, v in passes.items()}})}
     if any(c['kind'] != 'corroborateTrail' for c in changes):
         writes[source] = encoded(collection)
+    writes[ledger_path] = encoded(ledger)
     return summary, writes
 
 
@@ -259,27 +264,130 @@ def preview(summary, directory):
     (directory / 'index.html').write_text('\n'.join(output))
 
 
-def apply(writes):
-    # Stage all bytes first. Roll back replaced files if any replace fails.
-    staged, backups = {}, {}
+JOURNAL_NAME = '.pending-import.json'
+
+
+def sync_directory(path):
+    fd = os.open(path, os.O_RDONLY)
     try:
-        for path, data in writes.items():
-            path.parent.mkdir(parents=True, exist_ok=True)
-            backups[path] = path.read_bytes() if path.exists() else None
-            fd, name = tempfile.mkstemp(dir=path.parent, prefix='.survey-')
-            with os.fdopen(fd, 'wb') as stream:
-                stream.write(data)
-            staged[path] = Path(name)
-        for path, temp in staged.items():
-            os.replace(temp, path)
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def write_staged(path, data):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, name = tempfile.mkstemp(dir=path.parent, prefix='.survey-')
+    try:
+        with os.fdopen(fd, 'wb') as stream:
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
     except BaseException:
-        for path, data in backups.items():
-            if data is None:
+        Path(name).unlink(missing_ok=True)
+        raise
+    return Path(name)
+
+
+def recover_transaction(root, journal, entries):
+    changes = []
+    for entry in entries:
+        relative = PurePosixPath(entry['path'])
+        if relative.is_absolute() or '..' in relative.parts:
+            raise ValueError('invalid import recovery path')
+        allowed = str(relative) == 'trail-data/ledger.json' or (
+            str(relative).startswith('trail-data/evidence/') and relative.suffix == '.json') or (
+            str(relative).startswith('Berms/Resources/') and relative.suffix == '.geojson')
+        if not allowed:
+            raise ValueError('invalid import recovery target')
+        path = root / str(relative)
+        before = base64.b64decode(entry['before'], validate=True) if entry['before'] is not None else None
+        current = path.read_bytes() if path.exists() else None
+        current_hash = digest(current) if current is not None else None
+        before_hash = digest(before) if before is not None else None
+        if current_hash not in (before_hash, entry['afterHash']):
+            raise ValueError(f'pending import overlaps a manual change: {relative}')
+        changes.append((path, before, current_hash == entry['afterHash']))
+    complete = all(item[2] for item in changes)
+    if not complete:
+        for path, before, _ in changes:
+            if before is None:
                 path.unlink(missing_ok=True)
             else:
-                path.write_bytes(data)
+                temp = write_staged(path, before)
+                try:
+                    os.replace(temp, path)
+                finally:
+                    temp.unlink(missing_ok=True)
+            sync_directory(path.parent)
+    for entry in entries:
+        staged = entry.get('staged')
+        if staged:
+            temp = root / staged
+            if temp.parent == (root / entry['path']).parent and temp.name.startswith('.survey-'):
+                temp.unlink(missing_ok=True)
+    journal.unlink()
+    sync_directory(journal.parent)
+
+
+def recover_pending(root):
+    root = root.resolve()
+    journal = root / 'trail-data' / JOURNAL_NAME
+    if not journal.exists():
+        return
+    with journal.open('rb') as stream:
+        try:
+            fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise ValueError('another contribution import is still running') from None
+        record = json.load(stream)
+        if record.get('schemaVersion') != 1:
+            raise ValueError('unsupported import recovery format')
+        recover_transaction(root, journal, record['entries'])
+
+
+def apply(writes):
+    if not writes:
+        return
+    ledger = next(path for path in writes if path.name == 'ledger.json' and path.parent.name == 'trail-data')
+    root = ledger.parent.parent.resolve()
+    journal = root / 'trail-data' / JOURNAL_NAME
+    staged, entries = {}, []
+    journal_stream = None
+    linked = False
+    try:
+        for path, data in writes.items():
+            path = path.resolve()
+            before = path.read_bytes() if path.exists() else None
+            temp = write_staged(path, data)
+            staged[path] = temp
+            entries.append({'path': str(path.relative_to(root)), 'before': base64.b64encode(before).decode() if before is not None else None,
+                            'afterHash': digest(data), 'staged': str(temp.relative_to(root))})
+        journal_temp = write_staged(journal, encoded({'schemaVersion': 1, 'entries': entries}))
+        try:
+            journal_stream = journal_temp.open('rb')
+            fcntl.flock(journal_stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            try:
+                os.link(journal_temp, journal)
+            except FileExistsError:
+                raise ValueError('pending import requires recovery; rerun with --apply') from None
+            linked = True
+            sync_directory(journal.parent)
+        finally:
+            journal_temp.unlink(missing_ok=True)
+        for path, temp in staged.items():
+            os.replace(temp, path)
+            sync_directory(path.parent)
+        journal.unlink()
+        linked = False
+        sync_directory(journal.parent)
+    except BaseException:
+        if linked:
+            recover_transaction(root, journal, entries)
         raise
     finally:
+        if journal_stream:
+            journal_stream.close()
         for temp in staged.values():
             temp.unlink(missing_ok=True)
 
@@ -293,6 +401,8 @@ if __name__ == '__main__':
     group.add_argument('--apply', action='store_true', help='Accept all validated proposals after reviewing preview')
     args = parser.parse_args()
     try:
+        if args.apply:
+            recover_pending(args.root)
         summary, writes = prepare(args.archive, args.root)
         if args.preview:
             preview(summary, args.preview)
