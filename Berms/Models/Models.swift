@@ -480,6 +480,7 @@ enum TrailDifficulty: String, Codable, CaseIterable, Identifiable, Sendable {
 }
 
 enum TrailStyle: String, Codable, CaseIterable, Identifiable, Sendable {
+    case unknown
     case freeRide
     case tech
 
@@ -487,6 +488,7 @@ enum TrailStyle: String, Codable, CaseIterable, Identifiable, Sendable {
 
     var title: String {
         switch self {
+        case .unknown: "Unknown"
         case .freeRide: "Free Ride"
         case .tech: "Tech"
         }
@@ -535,6 +537,7 @@ final class Trail {
     var name: String
     var difficultyRawValue: String
     var styleRawValue: String?
+    var styleIsConfirmed: Bool?
     var resort: String
     var catalogID: String?
     var createdAt: Date
@@ -549,13 +552,14 @@ final class Trail {
     var passes: [TrailPass]
 
     init(
-        name: String, difficulty: TrailDifficulty, style: TrailStyle = .freeRide,
+        name: String, difficulty: TrailDifficulty, style: TrailStyle = .unknown,
         resort: String, catalogID: String? = nil, createdAt: Date = .now
     ) {
         self.id = UUID()
         self.name = name
         self.difficultyRawValue = difficulty.rawValue
         self.styleRawValue = style.rawValue
+        self.styleIsConfirmed = style != .unknown
         self.resort = resort
         self.catalogID = catalogID
         self.createdAt = createdAt
@@ -569,7 +573,16 @@ final class Trail {
     }
 
     var style: TrailStyle {
-        TrailStyle(rawValue: styleRawValue ?? "") ?? .freeRide
+        let style = TrailStyle(rawValue: styleRawValue ?? "") ?? .unknown
+        // Older imports stored the Free Ride default without recording a choice.
+        if style == .freeRide, styleIsConfirmed != true { return .unknown }
+        return style
+    }
+
+    func setStyle(_ style: TrailStyle) {
+        styleRawValue = style.rawValue
+        styleIsConfirmed = true
+        updatedAt = .now
     }
 
     var points: [RoutePoint] {

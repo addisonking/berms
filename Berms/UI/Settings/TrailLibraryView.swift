@@ -295,6 +295,8 @@
 
         let trail: Trail
         @State private var mapPosition: MapCameraPosition = .automatic
+        @State private var saveIssue: String?
+        @Environment(\.modelContext) private var modelContext
 
         private var metrics: TrailGeometryStore.Metrics {
             TrailGeometryStore.shared.metrics(for: trail)
@@ -328,11 +330,20 @@
                     }
                 }
 
-                Section("Trail") {
+                Section {
                     LabeledContent("Difficulty", value: trail.difficulty.title)
-                    LabeledContent("Style", value: trail.style.title)
+                    Picker("Style", selection: styleBinding) {
+                        ForEach(TrailStyle.allCases) { style in
+                            Text(style.title).tag(style)
+                        }
+                    }
+                    .pickerStyle(.menu)
                     LabeledContent("Length", value: BermsFormat.distance(metrics.distanceMeters))
                     LabeledContent("Points", value: "\(metrics.pointCount)")
+                } header: {
+                    Text("Trail")
+                } footer: {
+                    Text("Set the style when you know it. This choice is saved on this device.")
                 }
 
                 Section("Record") {
@@ -351,6 +362,35 @@
             }
             .navigationTitle(trail.name)
             .navigationBarTitleDisplayMode(.inline)
+            .alert(
+                "Could not save style",
+                isPresented: Binding(
+                    get: { saveIssue != nil }, set: { if !$0 { saveIssue = nil } }
+                )
+            ) {
+                Button("OK", role: .cancel) { saveIssue = nil }
+            } message: {
+                Text(saveIssue ?? "")
+            }
+        }
+
+        private var styleBinding: Binding<TrailStyle> {
+            Binding(
+                get: { trail.style },
+                set: { style in
+                    let previousRawValue = trail.styleRawValue
+                    let previousConfirmation = trail.styleIsConfirmed
+                    let previousUpdatedAt = trail.updatedAt
+                    trail.setStyle(style)
+                    do {
+                        try modelContext.save()
+                    } catch {
+                        trail.styleRawValue = previousRawValue
+                        trail.styleIsConfirmed = previousConfirmation
+                        trail.updatedAt = previousUpdatedAt
+                        saveIssue = error.localizedDescription
+                    }
+                })
         }
     }
 #endif

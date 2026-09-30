@@ -186,6 +186,61 @@ final class BermsTests: XCTestCase {
     }
 
     @MainActor
+    func testUnclassifiedTrailStylesStayUnknown() {
+        let trail = Trail(name: "Unclassified", difficulty: .blue, resort: "Test")
+        XCTAssertEqual(trail.style, .unknown)
+        trail.styleRawValue = nil
+        XCTAssertEqual(trail.style, .unknown)
+        trail.styleRawValue = "unsupported"
+        XCTAssertEqual(trail.style, .unknown)
+    }
+
+    @MainActor
+    func testLegacyTrailStylesPreserveStoredValuesAndRequireFreeRideConfirmation() {
+        let trail = Trail(name: "Legacy", difficulty: .blue, resort: "Test", catalogID: "test")
+        trail.styleRawValue = "freeRide"
+        trail.styleIsConfirmed = nil
+        XCTAssertEqual(trail.style, .unknown)
+        XCTAssertEqual(trail.styleRawValue, "freeRide")
+        trail.styleRawValue = "tech"
+        XCTAssertEqual(trail.style, .tech)
+        trail.setStyle(.freeRide)
+        XCTAssertEqual(trail.style, .freeRide)
+        XCTAssertEqual(trail.styleIsConfirmed, true)
+    }
+
+    @MainActor
+    func testConfirmedTrailStylesSurvivePersistenceAndCatalogRefresh() throws {
+        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try ModelContainer(for: Trail.self, TrailPass.self, configurations: configuration)
+        let context = container.mainContext
+        let catalog = TrailCatalogRegistry.mountainCreek
+        let trail = Trail(
+            name: "Confirmed", difficulty: .blue, style: .freeRide, resort: catalog.resortName,
+            catalogID: catalog.id)
+        trail.id = TrailCatalogImporter.stableID(for: "style-fixture", catalog: catalog)
+        context.insert(trail)
+        try context.save()
+        let reader = ModelContext(container)
+        let saved = try XCTUnwrap(reader.fetch(FetchDescriptor<Trail>()).first)
+        XCTAssertEqual(saved.style, .freeRide)
+        saved.setStyle(.tech)
+        try reader.save()
+        let data = Data(
+            """
+            {"type":"FeatureCollection","features":[{"type":"Feature","properties":{"name":"Updated","slug":"style-fixture","difficulty":"blue"},"geometry":{"type":"LineString","coordinates":[[-74,41],[-74.001,41.001]]}}]}
+            """.utf8)
+        _ = try TrailCatalogImporter.import(
+            data: data, into: reader, catalog: catalog,
+            approvedGeometry: true, saveChanges: false)
+        try reader.save()
+        let refreshed = try XCTUnwrap(ModelContext(container).fetch(FetchDescriptor<Trail>()).first)
+        XCTAssertEqual(refreshed.style, .tech)
+        XCTAssertEqual(refreshed.styleIsConfirmed, true)
+        XCTAssertEqual(refreshed.id, trail.id)
+    }
+
+    @MainActor
     func testTrailCatalogImportIsIdempotentAndNamespacesIDs() throws {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
         let container = try ModelContainer(
@@ -221,6 +276,7 @@ final class BermsTests: XCTestCase {
             defaults: defaults, catalog: firstCatalog)
         XCTAssertEqual(first.trailsCreated, 1)
         XCTAssertEqual(first.passesCreated, 1)
+        XCTAssertEqual(try context.fetch(FetchDescriptor<Trail>()).first?.style, .unknown)
         XCTAssertEqual(second.trailsCreated, 0)
         XCTAssertEqual(second.passesCreated, 0)
 
