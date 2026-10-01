@@ -17,6 +17,7 @@ struct DayDetailView: View {
     @State private var nameDraft = ""
     @State private var notesDraft = ""
     @State private var showingDeleteConfirmation = false
+    @State private var resolvedCatalog: TrailCatalogDescriptor?
     @State private var detailBase: SessionDetailBase?
     @State private var trailDetails: SessionDetailTrailDetails?
     @State private var notesSaveTask: Task<Void, Never>?
@@ -79,14 +80,8 @@ struct DayDetailView: View {
     }
 
     private var preparationTaskKey: String {
-        "\(day.id.uuidString)|\(catalogSelectionID)|\(presentationCache.revision)|"
+        "\(day.id.uuidString)|\(catalogSelectionID)|\(presentationCache.invalidationRevision)|"
             + SessionDetailPresentationPreheater.trailRevision(for: trails)
-    }
-
-    /// The catalog the day presents with: the rider's override when set, else
-    /// the resort the ride mostly happened in. Nil means no resort matched.
-    private var resolvedCatalog: TrailCatalogDescriptor? {
-        TrailCatalogRegistry.resolvedCatalog(for: day)
     }
 
     private var dayCatalogID: String? {
@@ -94,7 +89,7 @@ struct DayDetailView: View {
     }
 
     private var catalogSelectionID: String {
-        dayCatalogID ?? TrailCatalogRegistry.automaticSelectionID
+        day.catalogID ?? TrailCatalogRegistry.automaticSelectionID
     }
 
     private func preparationCacheKey(for trails: [Trail]) -> String {
@@ -381,7 +376,9 @@ struct DayDetailView: View {
     }
 
     private var runsSection: some View {
-        Section("Runs") {
+        let routeTitles = runRouteTitles
+        let corrections = correctionsBySegment
+        return Section("Runs") {
             if runs.isEmpty {
                 Text("No runs recorded during this session.")
                     .foregroundStyle(.secondary)
@@ -403,9 +400,9 @@ struct DayDetailView: View {
                             segment: segment,
                             detail: detailBase?.segmentsByID[segment.id]
                                 ?? preheatedRun?.detail,
-                            routeTitle: runRouteTitles[segment.id],
-                            isPreparingDetails: trailDetails == nil && preheatedRun == nil,
-                            correction: correctionsBySegment[segment.id])
+                            routeTitle: routeTitles[segment.id],
+                            isPreparingDetails: trailDetails == nil && preheatedRun == nil && !prepareFailed,
+                            correction: corrections[segment.id])
                     }
                     .swipeActions(edge: .trailing) {
                         Button {
@@ -538,18 +535,25 @@ struct DayDetailView: View {
 
         let cacheKey = preparationCacheKey(for: trails)
         if let cached = SessionDetailPresentationCache.shared.entry(for: cacheKey) {
+            resolvedCatalog = cached.resolvedCatalog
             detailBase = cached.base
             trailDetails = cached.trailDetails
             return
         }
 
+        resolvedCatalog = await SessionDetailPresentationPreheater.resolvedCatalog(
+            dayID: day.id, container: modelContext.container)
+        guard !Task.isCancelled else { return }
         guard
             let input = await SessionDetailPresentationPreheater.makeInput(
                 dayID: day.id,
                 manualCatalogID: dayCatalogID,
                 container: modelContext.container
             )
-        else { return }
+        else {
+            prepareFailed = true
+            return
+        }
         guard !Task.isCancelled else { return }
 
         do {
@@ -576,7 +580,7 @@ struct DayDetailView: View {
             guard !Task.isCancelled else { return }
             trailDetails = details
             SessionDetailPresentationCache.shared.store(
-                .init(base: base, trailDetails: details),
+                .init(resolvedCatalog: resolvedCatalog, base: base, trailDetails: details),
                 for: cacheKey
             )
         } catch is CancellationError {

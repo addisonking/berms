@@ -50,6 +50,7 @@ final class SessionDetailPresentationCache: ObservableObject {
     static let shared = SessionDetailPresentationCache()
 
     struct Entry: Sendable {
+        var resolvedCatalog: TrailCatalogDescriptor? = nil
         let base: SessionDetailBase
         let trailDetails: SessionDetailTrailDetails
     }
@@ -65,6 +66,7 @@ final class SessionDetailPresentationCache: ObservableObject {
     private var runEntries: [String: RunEntry] = [:]
     private var runOrder: [String] = []
     @Published private(set) var revision = 0
+    @Published private(set) var invalidationRevision = 0
 
     func entry(for key: String) -> Entry? {
         entries[key]
@@ -94,9 +96,8 @@ final class SessionDetailPresentationCache: ObservableObject {
         let staleRuns = runEntries.keys.filter { $0.hasPrefix(prefix) }
         for key in staleRuns { runEntries[key] = nil }
         runOrder.removeAll { $0.hasPrefix(prefix) }
-        if !(stale.isEmpty && staleRuns.isEmpty) {
-            revision &+= 1
-        }
+        invalidationRevision &+= 1
+        revision &+= 1
     }
 
     func storeRun(_ entry: RunEntry, for key: String) {
@@ -112,6 +113,18 @@ final class SessionDetailPresentationCache: ObservableObject {
 
 @MainActor
 enum SessionDetailPresentationPreheater {
+    static func resolvedCatalog(dayID: UUID, container: ModelContainer) async -> TrailCatalogDescriptor? {
+        await Task.detached(priority: .userInitiated) {
+            let context = ModelContext(container)
+            guard
+                let day = try? context.fetch(
+                    FetchDescriptor<RideDay>(predicate: #Predicate { $0.id == dayID })
+                ).first
+            else { return nil }
+            return TrailCatalogRegistry.resolvedCatalog(for: day)
+        }.value
+    }
+
     static func latestCompletedRun(in days: [RideDay]) -> (day: RideDay, run: RideSegment)? {
         days.filter { $0.isFinished }.compactMap { day in
             guard
