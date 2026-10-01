@@ -270,9 +270,7 @@ struct RunMapView: View {
     private func prepareIfNeeded(force: Bool = false) async {
         guard preparedDetail == nil, activeDetail == nil, !isPreparing || force else { return }
         if force { prepareFailed = false }
-        let catalogID =
-            segment.day.flatMap(TrailCatalogRegistry.resolvedCatalog(for:))?.id
-        let selectionID = catalogID ?? TrailCatalogRegistry.automaticSelectionID
+        let selectionID = segment.day?.catalogID ?? TrailCatalogRegistry.automaticSelectionID
         var runKey: String?
         if let dayID = segment.day?.id {
             runKey = SessionDetailPresentationPreheater.runCacheKey(
@@ -300,6 +298,14 @@ struct RunMapView: View {
         }
         isPreparing = true
         defer { isPreparing = false }
+        let catalogID: String?
+        if let dayID = segment.day?.id {
+            catalogID = await SessionDetailPresentationPreheater.resolvedCatalog(
+                dayID: dayID, container: modelContext.container)?.id
+        } else {
+            catalogID = nil
+        }
+        guard !Task.isCancelled else { return }
         do {
             guard
                 let entry = try await SessionDetailPresentationPreheater.prepareRun(

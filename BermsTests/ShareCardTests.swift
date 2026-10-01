@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 import XCTest
 
 @testable import Berms
@@ -215,5 +216,63 @@ final class ShareCardTests: XCTestCase {
         day.segments.append(segment)
         day.recalculateTotals()
         return day
+    }
+}
+
+final class SessionLoadingTests: XCTestCase {
+    @MainActor
+    func testCompletedPreparationsDoNotInvalidateActiveLoading() {
+        let cache = SessionDetailPresentationCache()
+        let base = SessionDetailBase(runs: [], mapSegments: [], jumpMarkers: [], segmentsByID: [:])
+        let details = SessionDetailTrailDetails(overlays: [], sequenceBySegmentID: [:])
+        let dayID = UUID()
+        cache.store(.init(base: base, trailDetails: details), for: dayID.uuidString)
+        let detail = SessionDetailSegment(
+            id: UUID(), kind: .run, startedAt: .now, endedAt: .now,
+            distanceMeters: 0, verticalMeters: 0, maximumSpeedMetersPerSecond: 0,
+            routePoints: [], jumps: [], resortID: nil, activeResort: "")
+        cache.storeRun(.init(base: base, detail: detail, trailDetails: details), for: "other-run")
+        XCTAssertEqual(cache.invalidationRevision, 0)
+        cache.invalidate(dayID: dayID)
+        XCTAssertEqual(cache.invalidationRevision, 1)
+        XCTAssertNil(cache.entry(for: dayID.uuidString))
+        // Corrections during a cold load must restart it even before anything is cached.
+        cache.invalidate(dayID: dayID)
+        XCTAssertEqual(cache.invalidationRevision, 2)
+    }
+
+    @MainActor
+    func testBackgroundCatalogResolutionReadsSavedDayAndHonorsOverride() async throws {
+        let container = try ModelContainer(
+            for: RideDay.self, RideSegment.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let context = ModelContext(container)
+        let day = RideDay()
+        let startedAt = day.startedAt
+        let points: [RoutePoint] = (0..<120).map { index in
+            return RoutePoint(
+                latitude: index == 0 ? 0 : 41.1844,
+                longitude: index == 0 ? 0 : -74.5033,
+                altitude: 100, speed: 8,
+                timestamp: startedAt.addingTimeInterval(Double(index)))
+        }
+        let segment = RideSegment(
+            kind: .run, startedAt: day.startedAt, endedAt: day.startedAt.addingTimeInterval(120),
+            routeData: try RouteCodec.encode(points))
+        segment.day = day
+        day.segments = [segment]
+        context.insert(day)
+        try context.save()
+        let automatic = await SessionDetailPresentationPreheater.resolvedCatalog(
+            dayID: day.id, container: container)
+        XCTAssertEqual(automatic?.id, TrailCatalogRegistry.mountainCreekCatalogID)
+        day.catalogID = TrailCatalogRegistry.defaultCatalog.id
+        try context.save()
+        let catalog = await SessionDetailPresentationPreheater.resolvedCatalog(
+            dayID: day.id, container: container)
+        XCTAssertEqual(catalog?.id, day.catalogID)
+        let missing = await SessionDetailPresentationPreheater.resolvedCatalog(
+            dayID: UUID(), container: container)
+        XCTAssertNil(missing)
     }
 }
