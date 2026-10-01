@@ -122,8 +122,7 @@ struct DayTimeBreakdownView: View {
     private enum Part: String, Identifiable {
         case riding
         case lifts
-        case stopped
-        case paused
+        case downtime
 
         var id: String { rawValue }
 
@@ -131,8 +130,7 @@ struct DayTimeBreakdownView: View {
             switch self {
             case .riding: "Riding"
             case .lifts: "Lifts"
-            case .stopped: "Other time"
-            case .paused: "Paused"
+            case .downtime: "Downtime"
             }
         }
 
@@ -140,8 +138,7 @@ struct DayTimeBreakdownView: View {
             switch self {
             case .riding: AnyShapeStyle(.primary)
             case .lifts: AnyShapeStyle(.secondary)
-            case .stopped: AnyShapeStyle(.tertiary)
-            case .paused: AnyShapeStyle(.quaternary)
+            case .downtime: AnyShapeStyle(.tertiary)
             }
         }
     }
@@ -150,8 +147,7 @@ struct DayTimeBreakdownView: View {
         let all: [(Part, TimeInterval)] = [
             (.riding, breakdown.riding),
             (.lifts, breakdown.lifts),
-            (.stopped, breakdown.stopped),
-            (.paused, breakdown.paused),
+            (.downtime, breakdown.stopped + breakdown.paused),
         ]
         return all.filter { $0.1 > 0 }.map { (part: $0.0, seconds: $0.1) }
     }
