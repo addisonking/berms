@@ -186,6 +186,17 @@ private struct AboutView: View {
                     .accessibilityElement(children: .combine)
 
                     VStack(alignment: .leading, spacing: BermsSpacing.tight) {
+                        Text("Git worktree")
+                        Text(verbatim: identity.worktreeName)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                        Text(identity.worktreeKind)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                    .accessibilityElement(children: .combine)
+
+                    VStack(alignment: .leading, spacing: BermsSpacing.tight) {
                         Text("Built")
                         Text(identity.builtAt, format: .dateTime.year().month().day().hour().minute().second())
                             .foregroundStyle(.secondary)

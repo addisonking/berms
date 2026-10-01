@@ -49,6 +49,8 @@ class BuildIdentityTests(unittest.TestCase):
         self.assertEqual(first["commit"], self.git("rev-parse", "HEAD"))
         self.assertFalse(first["hasLocalChanges"])
         self.assertIsInstance(first["builtAt"], datetime.datetime)
+        self.assertEqual(first["worktreeName"], "repo")
+        self.assertFalse(first["isLinkedWorktree"])
         second = self.stamp()
         self.assertEqual(second["commit"], first["commit"])
         self.assertGreaterEqual(second["builtAt"], first["builtAt"])
@@ -72,6 +74,8 @@ class BuildIdentityTests(unittest.TestCase):
         (worktree / "source.txt").write_text("feature\n")
         self.git("commit", "-am", "feature", source=worktree)
         identity = self.stamp(worktree)
+        self.assertEqual(identity["worktreeName"], "feature worktree")
+        self.assertTrue(identity["isLinkedWorktree"])
         self.assertEqual(identity["commit"], self.git("rev-parse", "HEAD", source=worktree))
         self.assertNotEqual(identity["commit"], self.git("rev-parse", "main"))
         self.assertFalse(identity["hasLocalChanges"])
@@ -80,6 +84,20 @@ class BuildIdentityTests(unittest.TestCase):
         (worktree / "untracked.txt").write_text("local\n")
         self.assertTrue(self.stamp(worktree)["hasLocalChanges"])
 
+    def test_detached_worktree_and_subdirectory_identify_worktree_root(self):
+        worktree = self.root / "detached worktree"
+        self.git("worktree", "add", "--detach", str(worktree))
+        nested = worktree / "nested"
+        nested.mkdir()
+        identity = self.stamp(nested)
+        self.assertEqual(identity["worktreeName"], "detached worktree")
+        self.assertTrue(identity["isLinkedWorktree"])
+        self.assertEqual(identity["commit"], self.git("rev-parse", "HEAD", source=worktree))
+
+        moved = self.root / "renamed worktree"
+        self.git("worktree", "move", str(worktree), str(moved))
+        self.assertEqual(self.stamp(moved)["worktreeName"], "renamed worktree")
+
     def test_shallow_detached_checkout(self):
         clone = self.root / "shallow"
         subprocess.run(
@@ -87,7 +105,10 @@ class BuildIdentityTests(unittest.TestCase):
             check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
         self.git("checkout", "--detach", source=clone)
-        self.assertEqual(self.stamp(clone)["commit"], self.git("rev-parse", "HEAD"))
+        identity = self.stamp(clone)
+        self.assertEqual(identity["commit"], self.git("rev-parse", "HEAD"))
+        self.assertEqual(identity["worktreeName"], "shallow")
+        self.assertFalse(identity["isLinkedWorktree"])
 
     def test_squash_merge_stamps_new_main_commit(self):
         self.git("checkout", "-b", "feature")

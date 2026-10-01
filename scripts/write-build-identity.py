@@ -18,10 +18,15 @@ def write_identity(source, output):
     # Never use main/origin/main here: they may describe different source code.
     commit = git(source, "rev-parse", "--verify", "HEAD")
     local_changes = bool(git(source, "status", "--porcelain", "--untracked-files=normal"))
+    worktree = pathlib.Path(git(source, "rev-parse", "--show-toplevel"))
+    git_dir = pathlib.Path(git(source, "rev-parse", "--absolute-git-dir")).resolve()
+    common_dir = pathlib.Path(git(source, "rev-parse", "--path-format=absolute", "--git-common-dir")).resolve()
     identity = {
         "commit": commit,
         "hasLocalChanges": local_changes,
         "builtAt": datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None),
+        "worktreeName": worktree.name,
+        "isLinkedWorktree": git_dir != common_dir,
     }
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_bytes(plistlib.dumps(identity))
