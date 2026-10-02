@@ -8,8 +8,6 @@ struct DaysView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \RideDay.startedAt, order: .reverse) private var days: [RideDay]
     @Query(sort: \Trail.updatedAt, order: .reverse) private var trails: [Trail]
-    @Binding private var pendingDayID: UUID?
-    @Binding private var pendingRecapDayID: UUID?
     let onStartTracking: () -> Void
     @State private var deleteError: String?
     @State private var dayToDelete: RideDay?
@@ -17,15 +15,10 @@ struct DaysView: View {
     @State private var showingCalendar = false
     @State private var calendarSelection = Date()
     @State private var pendingScrollID: UUID?
-    @State private var recapDayID: UUID?
 
     init(
-        pendingDayID: Binding<UUID?> = .constant(nil),
-        pendingRecapDayID: Binding<UUID?> = .constant(nil),
         onStartTracking: @escaping () -> Void = {}
     ) {
-        self._pendingDayID = pendingDayID
-        self._pendingRecapDayID = pendingRecapDayID
         self.onStartTracking = onStartTracking
     }
 
@@ -56,7 +49,7 @@ struct DaysView: View {
             }
             .navigationDestination(for: UUID.self) { dayID in
                 if let day = days.first(where: { $0.id == dayID }) {
-                    DayDetailView(day: day, initiallyShowsRecap: recapDayID == dayID) { destination in
+                    DayDetailView(day: day) { destination in
                         navigationPath.append(destination)
                     }
                 }
@@ -82,9 +75,7 @@ struct DaysView: View {
                         preparedTrailDetails: preheatedRun?.trailDetails)
                 }
             }
-            .onAppear { openPendingDayIfNeeded() }
-            .onChange(of: pendingDayID) { _, _ in openPendingDayIfNeeded() }
-            .onChange(of: finishedDays.map(\.id)) { _, _ in openPendingDayIfNeeded() }
+
         }
         .task(id: latestRunPreheatKey) {
             await preheatLatestRun()
@@ -345,13 +336,4 @@ struct DaysView: View {
         }
     }
 
-    private func openPendingDayIfNeeded() {
-        guard let pendingDayID,
-            finishedDays.contains(where: { $0.id == pendingDayID })
-        else { return }
-        recapDayID = pendingRecapDayID == pendingDayID ? pendingDayID : nil
-        navigationPath = NavigationPath([pendingDayID])
-        self.pendingDayID = nil
-        pendingRecapDayID = nil
-    }
 }

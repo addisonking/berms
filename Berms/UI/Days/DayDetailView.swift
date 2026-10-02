@@ -6,7 +6,6 @@ import UIKit
 
 struct DayDetailView: View {
     let day: RideDay
-    let initiallyShowsRecap: Bool
     let onRunSelected: (RunMapDestination) -> Void
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
@@ -26,19 +25,16 @@ struct DayDetailView: View {
     @State private var diagnosticLogURLs: [URL] = []
     @State private var isExportingDay = false
     @State private var showingShareCard = false
-    @State private var showingRecap = false
-    @State private var hasShownRecap = false
     @State private var correctionError: String?
 
     private static let mapPreviewHeight: CGFloat = 280
     private static let journalMinimumHeight: CGFloat = 140
 
     init(
-        day: RideDay, initiallyShowsRecap: Bool = false,
+        day: RideDay,
         onRunSelected: @escaping (RunMapDestination) -> Void = { _ in }
     ) {
         self.day = day
-        self.initiallyShowsRecap = initiallyShowsRecap
         self.onRunSelected = onRunSelected
     }
 
@@ -133,11 +129,6 @@ struct DayDetailView: View {
                         Label("Share image", systemImage: "photo.on.rectangle.angled")
                     }
                     Button {
-                        showingRecap = true
-                    } label: {
-                        Label("Day recap", systemImage: "sparkles")
-                    }
-                    Button {
                         exportDay()
                     } label: {
                         Label("Export day", systemImage: "square.and.arrow.up")
@@ -192,10 +183,6 @@ struct DayDetailView: View {
         }
         .onAppear {
             notesDraft = day.notes ?? ""
-            if initiallyShowsRecap, !hasShownRecap {
-                hasShownRecap = true
-                showingRecap = true
-            }
         }
         .sheet(isPresented: $showingShareCard) {
             ShareCardSheet(
@@ -203,14 +190,6 @@ struct DayDetailView: View {
                 base: detailBase,
                 trailDetails: trailDetails,
                 manualCatalogID: dayCatalogID)
-        }
-        .sheet(isPresented: $showingRecap) {
-            DayRecapSheet(day: day, runs: runs, lifts: lifts) {
-                Task { @MainActor in
-                    try? await Task.sleep(for: .milliseconds(350))
-                    showingShareCard = true
-                }
-            }
         }
         .alert(
             "Couldn't apply correction",

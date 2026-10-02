@@ -98,7 +98,7 @@
 		100000000000000000000095 /* DayArchiveImporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000081 /* DayArchiveImporter.swift */; };
 		100000000000000000000096 /* DayArchiveImportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000082 /* DayArchiveImportView.swift */; };
 		100000000000000000000097 /* SegmentEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000083 /* SegmentEditor.swift */; };
-		100000000000000000000098 /* DayRecapSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000084 /* DayRecapSheet.swift */; };
+		100000000000000000000098 /* DaySummaryPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000084 /* DaySummaryPresentation.swift */; };
 		100000000000000000000099 /* RecordingIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000085 /* RecordingIntegrationTests.swift */; };
 		100000000000000000000100 /* RideMapPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000086 /* RideMapPresentation.swift */; };
 		100000000000000000000101 /* RouteCleaner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000087 /* RouteCleaner.swift */; };
@@ -215,7 +215,7 @@
 		200000000000000000000081 /* DayArchiveImporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayArchiveImporter.swift; sourceTree = "<group>"; };
 		200000000000000000000082 /* DayArchiveImportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayArchiveImportView.swift; sourceTree = "<group>"; };
 		200000000000000000000083 /* SegmentEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SegmentEditor.swift; sourceTree = "<group>"; };
-		200000000000000000000084 /* DayRecapSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayRecapSheet.swift; sourceTree = "<group>"; };
+		200000000000000000000084 /* DaySummaryPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DaySummaryPresentation.swift; sourceTree = "<group>"; };
 		200000000000000000000085 /* RecordingIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingIntegrationTests.swift; sourceTree = "<group>"; };
 		200000000000000000000086 /* RideMapPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RideMapPresentation.swift; sourceTree = "<group>"; };
 		200000000000000000000087 /* RouteCleaner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteCleaner.swift; sourceTree = "<group>"; };
@@ -300,7 +300,7 @@
 		500000000000000000000024 /* Root */ = {isa = PBXGroup; children = (200000000000000000000041 /* RootView.swift */); path = Root; sourceTree = "<group>"; };
 		500000000000000000000025 /* Track */ = {isa = PBXGroup; children = (200000000000000000000042 /* TrackView.swift */); path = Track; sourceTree = "<group>"; };
 		500000000000000000000026 /* Days */ = {isa = PBXGroup; children = (
-				200000000000000000000084 /* DayRecapSheet.swift */,200000000000000000000043 /* DaysView.swift */, 200000000000000000000044 /* DayRow.swift */, 200000000000000000000045 /* DayDetailView.swift */, 200000000000000000000075 /* MonthCalendarView.swift */); path = Days; sourceTree = "<group>"; };
+				200000000000000000000084 /* DaySummaryPresentation.swift */,200000000000000000000043 /* DaysView.swift */, 200000000000000000000044 /* DayRow.swift */, 200000000000000000000045 /* DayDetailView.swift */, 200000000000000000000075 /* MonthCalendarView.swift */); path = Days; sourceTree = "<group>"; };
 		500000000000000000000027 /* Run */ = {isa = PBXGroup; children = (200000000000000000000046 /* RunMapView.swift */); path = Run; sourceTree = "<group>"; };
 		500000000000000000000028 /* Settings */ = {isa = PBXGroup; children = (200000000000000000000047 /* SettingsView.swift */, 200000000000000000000048 /* TrailLibraryView.swift */); path = Settings; sourceTree = "<group>"; };
 		500000000000000000000029 /* DevMapping */ = {isa = PBXGroup; children = (2F0000000000000000000005, 200000000000000000000049 /* TrailMappingView.swift */, 200000000000000000000082 /* DayArchiveImportView.swift */); path = DevMapping; sourceTree = "<group>"; };

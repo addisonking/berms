@@ -23,7 +23,8 @@ struct TrackView: View {
     }
     @State private var showingStopConfirmation = false
     @State private var showingSettings = false
-    let onDayFinished: (RideDay) -> Void
+    @State private var finishedDay: RideDay?
+    @State private var selectedRun: RunMapDestination?
 
     var body: some View {
         NavigationStack {
@@ -51,7 +52,17 @@ struct TrackView: View {
                     settingsButton
                 }
             }
-            .animation(reduceMotion ? nil : BermsMotion.content, value: recorder.isRecording)
+            .animation(reduceMotion || finishedDay != nil ? nil : BermsMotion.content, value: recorder.isRecording)
+            .navigationDestination(item: $finishedDay) { day in
+                DayDetailView(day: day) { destination in
+                    selectedRun = destination
+                }
+                .navigationDestination(item: $selectedRun) { destination in
+                    if let run = day.segments.first(where: { $0.id == destination.runID && $0.kind == .run }) {
+                        RunMapView(number: destination.number, segment: run)
+                    }
+                }
+            }
         }
         .sheet(isPresented: $showingSettings) {
             SettingsView(recorder: recorder)
@@ -61,7 +72,9 @@ struct TrackView: View {
             Button("Finish") {
                 guard let finishedDay = recorder.stop() else { return }
                 BermsMotion.recordingFeedback()
-                onDayFinished(finishedDay)
+                withAnimation(reduceMotion ? nil : .default) {
+                    self.finishedDay = finishedDay
+                }
             }
         }
         .alert(
