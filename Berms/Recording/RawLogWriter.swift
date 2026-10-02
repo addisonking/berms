@@ -25,11 +25,10 @@ final class RawLogWriter: @unchecked Sendable {
     }
 
     func append(_ record: RawDiagnosticRecord) {
-        guard let encoded = try? encoder.encode(record) else { return }
-        var lineData = encoded
-        lineData.append(0x0A)
-        queue.async { [weak self, lineData] in
-            guard let self, let handle = self.handle else { return }
+        queue.async { [self] in
+            guard let handle, let encoded = try? encoder.encode(record) else { return }
+            var lineData = encoded
+            lineData.append(0x0A)
             try? handle.write(contentsOf: lineData)
         }
     }

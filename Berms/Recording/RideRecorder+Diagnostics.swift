@@ -70,18 +70,17 @@ extension RideRecorder {
     }
 
     func startDiagnosticMigrationIfNeeded() {
-        guard
+        guard migrationTask == nil else { return }
+        let repairsStoredRoutes =
             UserDefaults.standard.string(forKey: Self.diagnosticSummaryVersionKey)
-                != Self.diagnosticSummaryVersion,
-            migrationTask == nil
-        else { return }
+            != Self.diagnosticSummaryVersion
 
         let dayInputs: [RepairDayInput]
         let segmentInputs: [SegmentRepairInput]
         let passInputs: [CatalogPassRepairInput]
         do {
             let days = try context.fetch(FetchDescriptor<RideDay>()).filter(\.isFinished)
-            dayInputs = days.map {
+            dayInputs = days.filter { $0.diagnosticSummaryVersion != Self.diagnosticSummaryVersion }.map {
                 RepairDayInput(
                     id: $0.id,
                     startedAt: $0.startedAt,
@@ -89,10 +88,12 @@ extension RideRecorder {
                     segmentKinds: $0.segments.sorted { $0.startedAt < $1.startedAt }.map(\.kind)
                 )
             }
-            segmentInputs = try context.fetch(FetchDescriptor<RideSegment>()).map {
+            guard repairsStoredRoutes || !dayInputs.isEmpty else { return }
+            segmentInputs = try (repairsStoredRoutes ? context.fetch(FetchDescriptor<RideSegment>()) : []).map {
                 SegmentRepairInput(id: $0.id, kind: $0.kind, routeData: $0.routeData)
             }
-            passInputs = try context.fetch(FetchDescriptor<TrailPass>()).compactMap { pass in
+            passInputs = try (repairsStoredRoutes ? context.fetch(FetchDescriptor<TrailPass>()) : []).compactMap {
+                pass in
                 guard let trail = pass.trail else { return nil }
                 return CatalogPassRepairInput(
                     id: pass.id, trailID: trail.id,
@@ -158,7 +159,8 @@ extension RideRecorder {
             self.applyDiagnosticMigration(
                 rebuiltDays: work.0,
                 repairedSegments: work.1,
-                repairedPasses: work.2)
+                repairedPasses: work.2,
+                repairsStoredRoutes: repairsStoredRoutes)
         }
         setMigrationTask(task)
     }
@@ -166,58 +168,67 @@ extension RideRecorder {
     private func applyDiagnosticMigration(
         rebuiltDays: [RebuiltDaySummary],
         repairedSegments: [RepairedRoute],
-        repairedPasses: [RepairedRoute]
+        repairedPasses: [RepairedRoute],
+        repairsStoredRoutes: Bool
     ) {
         defer { setMigrationTask(nil) }
 
-        if let segments = try? context.fetch(FetchDescriptor<RideSegment>()) {
-            let segmentsByID = Dictionary(
-                segments.map { ($0.id, $0) },
-                uniquingKeysWith: { first, _ in first })
-            for repair in repairedSegments {
-                guard let segment = segmentsByID[repair.id] else { continue }
-                segment.routeData = repair.routeData
-                segment.distanceMeters = repair.distanceMeters
-                segment.verticalMeters = repair.verticalMeters
-                segment.maximumSpeedMetersPerSecond = repair.maximumSpeedMetersPerSecond
-            }
+        let segments: [RideSegment]
+        let passes: [TrailPass]
+        let trails: [Trail]
+        let days: [RideDay]
+        do {
+            segments = try repairsStoredRoutes ? context.fetch(FetchDescriptor<RideSegment>()) : []
+            passes = try repairsStoredRoutes ? context.fetch(FetchDescriptor<TrailPass>()) : []
+            trails = try repairsStoredRoutes ? context.fetch(FetchDescriptor<Trail>()) : []
+            days = try context.fetch(FetchDescriptor<RideDay>())
+        } catch {
+            errorMessage = "Could not update saved session summaries. Please try again."
+            return
+        }
+
+        let segmentsByID = Dictionary(
+            segments.map { ($0.id, $0) },
+            uniquingKeysWith: { first, _ in first })
+        for repair in repairedSegments {
+            guard let segment = segmentsByID[repair.id] else { continue }
+            segment.routeData = repair.routeData
+            segment.distanceMeters = repair.distanceMeters
+            segment.verticalMeters = repair.verticalMeters
+            segment.maximumSpeedMetersPerSecond = repair.maximumSpeedMetersPerSecond
         }
 
         var repairedTrailIDs = Set<UUID>()
-        if let passes = try? context.fetch(FetchDescriptor<TrailPass>()) {
-            let passesByID = Dictionary(passes.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-            for repair in repairedPasses {
-                guard let pass = passesByID[repair.id], pass.trail?.catalogRouteData == nil else { continue }
-                if let trailID = pass.trail?.id {
-                    repairedTrailIDs.insert(trailID)
-                }
-                pass.routeData = repair.routeData
-                pass.distanceMeters = repair.distanceMeters
+        let passesByID = Dictionary(passes.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        for repair in repairedPasses {
+            guard let pass = passesByID[repair.id], pass.trail?.catalogRouteData == nil else { continue }
+            if let trailID = pass.trail?.id {
+                repairedTrailIDs.insert(trailID)
             }
+            pass.routeData = repair.routeData
+            pass.distanceMeters = repair.distanceMeters
         }
 
         // Trail.points prefers the cached average over its passes. Rebuilding a
         // repaired pass without rebuilding that average leaves the old, thinned
         // centerline on every map that reads Trail.points.
-        if !repairedTrailIDs.isEmpty,
-            let trails = try? context.fetch(FetchDescriptor<Trail>())
-        {
-            for trail in trails where repairedTrailIDs.contains(trail.id) && trail.catalogRouteData == nil {
-                trail.recalculateAverage()
-            }
+        for trail in trails where repairedTrailIDs.contains(trail.id) && trail.catalogRouteData == nil {
+            trail.recalculateAverage()
         }
 
-        if let days = try? context.fetch(FetchDescriptor<RideDay>()) {
-            let daysByID = Dictionary(
-                days.map { ($0.id, $0) },
-                uniquingKeysWith: { first, _ in first })
-            for summary in rebuiltDays {
-                guard let day = daysByID[summary.dayID] else { continue }
-                _ = reconcile(summary, to: day)
-            }
+        let daysByID = Dictionary(
+            days.map { ($0.id, $0) },
+            uniquingKeysWith: { first, _ in first })
+        var completedDays: [(day: RideDay, previousVersion: String?)] = []
+        for summary in rebuiltDays {
+            guard let day = daysByID[summary.dayID], day.isFinished,
+                reconcile(summary, to: day)
+            else { continue }
+            completedDays.append((day, day.diagnosticSummaryVersion))
+            day.diagnosticSummaryVersion = Self.diagnosticSummaryVersion
         }
 
-        if let days = try? context.fetch(FetchDescriptor<RideDay>()) {
+        if repairsStoredRoutes {
             for day in days where day.isFinished {
                 day.recalculateTotals()
                 for segment in day.segments where segment.kind == .lift {
@@ -226,7 +237,13 @@ extension RideRecorder {
             }
         }
 
-        guard saveContext(detail: "diagnostic_summary_migration") else { return }
+        guard saveContext(detail: "diagnostic_summary_migration") else {
+            for completion in completedDays {
+                completion.day.diagnosticSummaryVersion = completion.previousVersion
+            }
+            return
+        }
+        guard repairsStoredRoutes else { return }
         UserDefaults.standard.set(
             Self.diagnosticSummaryVersion,
             forKey: Self.diagnosticSummaryVersionKey)

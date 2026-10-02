@@ -141,6 +141,7 @@ final class RecordingIntegrationTests: XCTestCase {
         // A fresh recorder over the same store is a relaunch: restoring has to
         // bring the open run back instead of dropping it.
         let relaunched = ride.relaunchRecorder()
+        XCTAssertNil(relaunched.errorMessage)
         XCTAssertEqual(relaunched.phase, .run)
         XCTAssertEqual(relaunched.activePoints.count, checkpoint.points.count)
         XCTAssertEqual(relaunched.lastSample?.timestamp, checkpoint.points.last?.timestamp)
@@ -152,6 +153,219 @@ final class RecordingIntegrationTests: XCTestCase {
         let run = try XCTUnwrap(finished.segments.first { $0.kind == .run })
         XCTAssertGreaterThan(run.points.count, checkpoint.points.count)
         XCTAssertGreaterThan(run.distanceMeters, 0)
+    }
+
+    func testRawMotionLoggingCanBeEnabledAndDisabledWithoutRestartingSensors() throws {
+        let ride = try RecordingHarness()
+        defer { ride.cleanup() }
+        let previous = UserDefaults.standard.object(forKey: "berms.rawMotionLogging")
+        defer {
+            if let previous {
+                UserDefaults.standard.set(previous, forKey: "berms.rawMotionLogging")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "berms.rawMotionLogging")
+            }
+        }
+        ride.recorder.setRawMotionLoggingEnabled(false)
+        let day = try ride.start()
+        ride.feedMotion(at: 0, forceG: 1)
+        ride.recorder.setRawMotionLoggingEnabled(true)
+        ride.feedMotion(at: 0.04, forceG: 1)
+        ride.recorder.setRawMotionLoggingEnabled(false)
+        ride.feedMotion(at: 0.08, forceG: 1)
+        _ = try ride.stop()
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let records = try ride.diagnosticLog(for: day).split(whereSeparator: \.isNewline).map {
+            try decoder.decode(RawDiagnosticRecord.self, from: Data($0.utf8))
+        }
+        let motion = records.filter { $0.kind == "device_motion_raw" }
+        XCTAssertEqual(motion.count, 1)
+        XCTAssertEqual(try XCTUnwrap(motion.first?.monotonicSeconds), 5_000.04, accuracy: 0.001)
+    }
+
+    func testFailedDiagnosticRebuildRetriesAfterGlobalMigrationCompletes() async throws {
+        let ride = try RecordingHarness()
+        defer { ride.cleanup() }
+        let day = try ride.start()
+        ride.feedParkDay(laps: 1)
+        _ = try ride.stop()
+        let url = RideRecorder.debugLogURL(for: day.id)
+        let original = try Data(contentsOf: url)
+        try Data("unreadable log".utf8).write(to: url)
+        UserDefaults.standard.set("old", forKey: RideRecorder.diagnosticSummaryVersionKey)
+
+        ride.recorder.startDiagnosticMigrationIfNeeded()
+        await ride.recorder.migrationTask?.value
+        XCTAssertNil(day.diagnosticSummaryVersion)
+        XCTAssertEqual(
+            UserDefaults.standard.string(forKey: RideRecorder.diagnosticSummaryVersionKey),
+            RideRecorder.diagnosticSummaryVersion)
+        let liftCount = try ride.recorder.context.fetch(FetchDescriptor<LearnedLift>()).first?.observationCount
+
+        try original.write(to: url)
+        ride.recorder.startDiagnosticMigrationIfNeeded()
+        await ride.recorder.migrationTask?.value
+        XCTAssertEqual(day.diagnosticSummaryVersion, RideRecorder.diagnosticSummaryVersion)
+        let saved = try XCTUnwrap(ModelContext(ride.container).fetch(FetchDescriptor<RideDay>()).first)
+        XCTAssertEqual(saved.diagnosticSummaryVersion, RideRecorder.diagnosticSummaryVersion)
+        XCTAssertEqual(
+            try ride.recorder.context.fetch(FetchDescriptor<LearnedLift>()).first?.observationCount,
+            liftCount)
+
+        ride.recorder.startDiagnosticMigrationIfNeeded()
+        XCTAssertNil(ride.recorder.migrationTask)
+    }
+
+    func testMigrationRetriesWhenSegmentsChangeBeforeReconciliation() async throws {
+        let ride = try RecordingHarness()
+        defer { ride.cleanup() }
+        let day = try ride.start()
+        ride.descend(40)
+        _ = try ride.stop()
+        let segment = try XCTUnwrap(day.segments.first)
+        XCTAssertEqual(segment.kind, .run)
+
+        ride.recorder.startDiagnosticMigrationIfNeeded()
+        segment.kindRawValue = SegmentKind.lift.rawValue
+        await ride.recorder.migrationTask?.value
+        XCTAssertNil(day.diagnosticSummaryVersion)
+
+        segment.kindRawValue = SegmentKind.run.rawValue
+        ride.recorder.startDiagnosticMigrationIfNeeded()
+        await ride.recorder.migrationTask?.value
+        XCTAssertEqual(day.diagnosticSummaryVersion, RideRecorder.diagnosticSummaryVersion)
+    }
+
+    func testTrailNamesAreResolvedOnExportInsteadOfRunCompletion() throws {
+        let ride = try RecordingHarness()
+        defer { ride.cleanup() }
+        let day = try ride.start()
+        ride.descend(40)
+        let trail = Trail(name: "Test run", difficulty: .blue, resort: "Test")
+        trail.averagedRouteData = try RouteCodec.encode(ride.recorder.currentMapPoints)
+        ride.recorder.context.insert(trail)
+        let finished = try ride.stop()
+
+        XCTAssertFalse(try ride.diagnosticLog(for: day).contains("trailSequence"))
+        let export = BermsDataExport(day: finished, trails: [trail])
+        XCTAssertEqual(export.parsed.runs.first?.trails, ["Test run"])
+    }
+
+    func testInvalidCheckpointIsArchivedBeforeNewSamplesOverwriteIt() throws {
+        let ride = try RecordingHarness()
+        defer { ride.cleanup() }
+        let day = try ride.start()
+        ride.climb(60)
+        ride.descend(40)
+        let completedCount = day.segments.count
+        let invalid = Data("invalid checkpoint".utf8)
+        day.checkpointData = invalid
+        try ride.recorder.context.save()
+
+        let restored = ride.relaunchRecorder()
+        XCTAssertNotNil(restored.errorMessage)
+        XCTAssertTrue(restored.isRecording)
+        XCTAssertEqual(restored.phase, .idle)
+        let backup = RideRecorder.failedCheckpointURL(for: day.id)
+        XCTAssertEqual(try Data(contentsOf: backup), invalid)
+        ride.descend(40)
+        XCTAssertNotEqual(restored.activeDay?.checkpointData, invalid)
+        XCTAssertEqual(try Data(contentsOf: backup), invalid)
+        let finished = try ride.stop()
+        XCTAssertGreaterThan(finished.segments.count, completedCount)
+        XCTAssertTrue(try ride.diagnosticLog(for: day).contains("checkpoint_recovery_failed"))
+    }
+
+    func testCheckpointArchiveFailureKeepsRecoveryPending() throws {
+        let ride = try RecordingHarness()
+        defer { ride.cleanup() }
+        let day = try ride.start()
+        let invalid = Data("invalid checkpoint".utf8)
+        day.checkpointKind = "run"
+        day.checkpointData = invalid
+        try ride.recorder.context.save()
+        let backup = RideRecorder.failedCheckpointURL(for: day.id)
+        try FileManager.default.createDirectory(at: backup, withIntermediateDirectories: true)
+
+        let restored = ride.relaunchRecorder()
+        XCTAssertNotNil(restored.errorMessage)
+        XCTAssertFalse(restored.isRecording)
+        XCTAssertTrue(restored.needsRecoveryPrompt)
+        XCTAssertEqual(restored.pendingRecoveryDay?.checkpointData, invalid)
+        XCTAssertEqual(ride.capture.consumerCount, 0)
+
+        try FileManager.default.removeItem(at: backup)
+        restored.resumePendingSession()
+        XCTAssertTrue(restored.isRecording)
+        XCTAssertEqual(try Data(contentsOf: backup), invalid)
+        _ = try ride.stop()
+    }
+
+    func testLiftLearningOnlyUpdatesTheObservedLiftTimestamp() throws {
+        let ride = try RecordingHarness()
+        defer { ride.cleanup() }
+        _ = try ride.start()
+        ride.climb(60)
+        let finished = try ride.stop()
+        let segment = try XCTUnwrap(finished.segments.first)
+        let context = ride.recorder.context
+        let matched = try XCTUnwrap(context.fetch(FetchDescriptor<LearnedLift>()).first)
+        let oldDate = segment.startedAt.addingTimeInterval(-100)
+        let unrelated = LearnedLift(
+            profile: LearnedLiftProfile(
+                id: UUID(), bottom: Coordinate(latitude: 45, longitude: -105),
+                top: Coordinate(latitude: 45.01, longitude: -105),
+                bottomRadius: 70, topRadius: 70, observationCount: 1, confidence: 0.3),
+            lastObservedAt: oldDate)
+        context.insert(unrelated)
+        matched.lastObservedAt = oldDate
+        let unrelatedProfile = unrelated.profile
+
+        ride.recorder.learnLiftProfile(from: segment)
+        XCTAssertEqual(matched.lastObservedAt, segment.endedAt)
+        XCTAssertEqual(unrelated.lastObservedAt, oldDate)
+        XCTAssertEqual(unrelated.profile, unrelatedProfile)
+
+        matched.lastObservedAt = segment.endedAt.addingTimeInterval(100)
+        ride.recorder.learnLiftProfile(from: segment)
+        XCTAssertEqual(matched.lastObservedAt, segment.endedAt.addingTimeInterval(100))
+    }
+
+    func testJumpHeightCapAppliesAfterTheLandingElevation() throws {
+        let base = Date(timeIntervalSince1970: 40_000)
+        for (drop, expected) in [(30.0, 25.0), (-12.0, 23.67428474626434), (-20.0, 25.0)] {
+            let points = [
+                RoutePoint(latitude: 40, longitude: -105, altitude: 100, speed: 9, timestamp: base),
+                RoutePoint(
+                    latitude: 40, longitude: -105, altitude: 100 - drop, speed: 9,
+                    timestamp: base.addingTimeInterval(0.5)),
+            ]
+            let metrics = try XCTUnwrap(
+                JumpMetrics.resolve(
+                    takeoffTimestamp: base, landingTimestamp: base.addingTimeInterval(0.5),
+                    airtime: 0.5, positions: points))
+            XCTAssertEqual(metrics.heightMeters, expected, accuracy: 0.001)
+            XCTAssertEqual(metrics.dropMeters, drop, accuracy: 0.001)
+        }
+    }
+
+    func testRawLogWriterDrainsConcurrentAppendsOnClose() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).jsonl")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let writer = RawLogWriter(url: url)
+        DispatchQueue.concurrentPerform(iterations: 1_000) { index in
+            writer.append(RawDiagnosticRecord(kind: "probe", runNumber: index))
+        }
+        writer.close()
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let records = try String(contentsOf: url, encoding: .utf8).split(whereSeparator: \.isNewline).map {
+            try decoder.decode(RawDiagnosticRecord.self, from: Data($0.utf8))
+        }
+        XCTAssertEqual(records.count, 1_000)
+        XCTAssertEqual(Set(records.compactMap(\.runNumber)), Set(0..<1_000))
     }
 
     func testDeviceMotionJumpIsPersistedWithMeasuredSize() throws {
@@ -392,6 +606,7 @@ private final class RecordingHarness {
     func relaunchRecorder() -> RideRecorder {
         recorder.locationService.stop()
         recorder.motionService.stop()
+        recorder.diagnosticLogger?.close()
         let relaunched = RideRecorder(
             context: ModelContext(container),
             watchStateSink: watchSink,
@@ -400,7 +615,6 @@ private final class RecordingHarness {
             uptime: { [clock] in clock.uptime },
             locationService: LocationService(capture: capture))
         relaunched.resumeIfNeeded(autoResume: true)
-        XCTAssertNil(relaunched.errorMessage)
         recorder = relaunched
         return relaunched
     }
@@ -421,6 +635,9 @@ private final class RecordingHarness {
         }
         for url in diagnosticLogURLs {
             try? FileManager.default.removeItem(at: url)
+            let backup = url.deletingLastPathComponent().appendingPathComponent(
+                "\(url.deletingPathExtension().lastPathComponent)-checkpoint.json")
+            try? FileManager.default.removeItem(at: backup)
         }
     }
 
@@ -509,7 +726,7 @@ private final class RecordingHarness {
         capture.deliver(location, stationary: stationary)
     }
 
-    private func feedMotion(at offset: TimeInterval, forceG: Double) {
+    func feedMotion(at offset: TimeInterval, forceG: Double) {
         let sample = DeviceMotionSample(
             recordedAt: Self.sessionStart.addingTimeInterval(offset),
             monotonicSeconds: Self.baseUptime + offset,
