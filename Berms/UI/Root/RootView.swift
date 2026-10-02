@@ -14,8 +14,6 @@ struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var mapLayerPreferences = MapLayerPreferences()
     @State private var selectedTab: AppTab = .track
-    @State private var pendingDayID: UUID?
-    @State private var pendingRecapDayID: UUID?
     @State private var startupIssue: StartupIssue? = RootView.initialStartupIssue()
 
     private struct StartupIssue: Identifiable {
@@ -42,14 +40,10 @@ struct RootView: View {
     var body: some View {
         TabView(selection: $selectedTab) {
             Tab("Track", systemImage: "location.fill", value: AppTab.track) {
-                TrackView(recorder: recorder) { day in
-                    pendingDayID = day.id
-                    pendingRecapDayID = day.id
-                    selectedTab = .days
-                }
+                TrackView(recorder: recorder)
             }
             Tab("Days", systemImage: "calendar", value: AppTab.days) {
-                DaysView(pendingDayID: $pendingDayID, pendingRecapDayID: $pendingRecapDayID) {
+                DaysView {
                     selectedTab = .track
                 }
             }

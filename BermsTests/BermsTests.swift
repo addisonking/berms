@@ -3545,12 +3545,6 @@ final class BermsTests: XCTestCase {
         let breakdown = DayTimeBreakdown(day: day)
 
         XCTAssertTrue(DaySummaryPresentation.detailMetrics(day: day, runCount: 0, liftCount: 0).isEmpty)
-        XCTAssertEqual(
-            DaySummaryPresentation.recapHighlights(day: day),
-            [
-                DaySummaryMetric(label: "Time", value: "00:04")
-            ])
-        XCTAssertTrue(DaySummaryPresentation.recapDayMetrics(day: day, runCount: 0, liftCount: 0).isEmpty)
         XCTAssertFalse(DaySummaryPresentation.showsTimeBreakdown(day: day, breakdown: breakdown))
 
         day.accumulatedPausedSeconds = 2
