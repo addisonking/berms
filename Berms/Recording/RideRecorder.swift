@@ -106,6 +106,10 @@ final class RideRecorder: ObservableObject {
         diagnosticsDirectory.appendingPathComponent("Berms-\(dayID.uuidString).jsonl")
     }
 
+    nonisolated static func failedCheckpointURL(for dayID: UUID) -> URL {
+        diagnosticsDirectory.appendingPathComponent("Berms-\(dayID.uuidString)-checkpoint.json")
+    }
+
     func debugLogURL(for day: RideDay) -> URL? {
         let url = Self.debugLogURL(for: day.id)
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }

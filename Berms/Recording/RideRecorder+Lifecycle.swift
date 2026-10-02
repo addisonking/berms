@@ -240,6 +240,32 @@ extension RideRecorder {
     }
 
     private func restore(day: RideDay) {
+        var checkpoint: RecorderCheckpoint?
+        let checkpointKind = day.checkpointKind.flatMap(SegmentKind.init(rawValue:))
+        if !day.isPaused, let data = day.checkpointData {
+            let decoder = JSONDecoder()
+            if checkpointKind != nil {
+                checkpoint =
+                    (try? decoder.decode(RecorderCheckpoint.self, from: data))
+                    ?? (try? decoder.decode([TrackSample].self, from: data)).map {
+                        RecorderCheckpoint(points: $0)
+                    }
+            }
+            if checkpoint == nil {
+                do {
+                    try FileManager.default.createDirectory(
+                        at: Self.diagnosticsDirectory, withIntermediateDirectories: true)
+                    try data.write(to: Self.failedCheckpointURL(for: day.id), options: .atomic)
+                } catch {
+                    errorMessage = "Could not preserve the session recovery data. Please try Resume again."
+                    pendingRecoveryDay = day
+                    setNeedsRecoveryPrompt(true)
+                    return
+                }
+                errorMessage =
+                    "Could not restore the in-progress segment. Completed runs are safe, and recovery data has been saved."
+            }
+        }
         adoptSession(day)
         setLastSample(nil)
         lastSampleTimestamp = nil
@@ -255,6 +281,12 @@ extension RideRecorder {
                 detail: day.isPaused
                     ? "Recovered paused day after relaunch"
                     : "Recovered active day after relaunch"))
+        if !day.isPaused, day.checkpointData != nil, checkpoint == nil {
+            diagnosticLogger?.append(
+                RawDiagnosticRecord(
+                    kind: "checkpoint_recovery_failed", accepted: false,
+                    detail: "Saved recovery data to \(Self.failedCheckpointURL(for: day.id).lastPathComponent)"))
+        }
         BermsLiveActivityCoordinator.shared.start(
             rideID: day.id,
             startedAt: day.startedAt,
@@ -270,25 +302,15 @@ extension RideRecorder {
                 kind: "jump_detector_config",
                 detectorVersion: jumpDetector.detectorVersion,
                 detail: jumpDetector.configurationSummary))
-        if let data = day.checkpointData,
-            let kind = day.checkpointKind.flatMap(SegmentKind.init(rawValue:))
-        {
-            let decoder = JSONDecoder()
-            let checkpoint =
-                (try? decoder.decode(RecorderCheckpoint.self, from: data))
-                ?? (try? decoder.decode([TrackSample].self, from: data)).map {
-                    RecorderCheckpoint(points: $0)
-                }
-            if let checkpoint {
-                detector.restore(kind: kind, points: checkpoint.points)
-                normalizer.seed(with: checkpoint.points.last)
-                jumpsForCurrentRun = kind == .run ? checkpoint.jumps : []
-                setActivePoints(checkpoint.points)
-                setLastSample(checkpoint.points.last)
-                lastSampleTimestamp = checkpoint.points.last?.timestamp
-                lastCheckpointDate = checkpoint.points.last?.timestamp
-                setPhase(detector.phase)
-            }
+        if let checkpoint, let kind = checkpointKind {
+            detector.restore(kind: kind, points: checkpoint.points)
+            normalizer.seed(with: checkpoint.points.last)
+            jumpsForCurrentRun = kind == .run ? checkpoint.jumps : []
+            setActivePoints(checkpoint.points)
+            setLastSample(checkpoint.points.last)
+            lastSampleTimestamp = checkpoint.points.last?.timestamp
+            lastCheckpointDate = checkpoint.points.last?.timestamp
+            setPhase(detector.phase)
         }
         jumpDetector.reset()
         latestTrackContext = nil

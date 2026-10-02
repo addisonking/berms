@@ -13,7 +13,6 @@ extension RideRecorder {
                 RawDiagnosticRecord(
                     kind: "detector_finished", timestamp: draft.endedAt,
                     runNumber: draft.kind == .run ? completedRunCount + 1 : nil,
-                    trailSequence: trailSequence(for: draft),
                     phaseBefore: draft.kind.rawValue, detail: reason))
             save(draft, to: day)
         }
@@ -108,7 +107,6 @@ extension RideRecorder {
                 RawDiagnosticRecord(
                     kind: "detector_finished", timestamp: draft.endedAt,
                     runNumber: runNumber,
-                    trailSequence: trailSequence(for: draft),
                     phaseBefore: draft.kind.rawValue, detail: draft.kind.title))
             save(draft, to: day)
             updateTotals(for: day)
@@ -175,6 +173,7 @@ extension RideRecorder {
         let storedByID = Dictionary(uniqueKeysWithValues: storedLifts.map { ($0.id, $0) })
         for profile in profiles {
             if let stored = storedByID[profile.id] {
+                guard stored.profile != profile else { continue }
                 stored.bottomLatitude = profile.bottom.latitude
                 stored.bottomLongitude = profile.bottom.longitude
                 stored.topLatitude = profile.top.latitude
@@ -183,33 +182,12 @@ extension RideRecorder {
                 stored.topRadius = profile.topRadius
                 stored.observationCount = profile.observationCount
                 stored.confidence = profile.confidence
-                stored.lastObservedAt = now()
+                stored.lastObservedAt = max(stored.lastObservedAt, segment.endedAt)
             } else {
-                context.insert(LearnedLift(profile: profile))
+                context.insert(LearnedLift(profile: profile, lastObservedAt: segment.endedAt))
             }
         }
         detector.setLearnedLifts(profiles)
-    }
-
-    private func trailSequence(for draft: SegmentDraft) -> [String]? {
-        guard draft.kind == .run else { return nil }
-        guard let trails = try? context.fetch(FetchDescriptor<Trail>()), !trails.isEmpty else {
-            return nil
-        }
-        let candidates = trails.map {
-            TrailRouteCandidate(
-                id: $0.id, name: $0.name, difficulty: $0.difficulty,
-                routes: $0.matcherRoutes)
-        }
-        let route = RouteCleaner().clean(draft.points).map(\.routePoint)
-        let result = TrailRouteMatcher().matchResult(for: route, candidates: candidates)
-        var names: [String] = []
-        for name in result.sections.compactMap({ section in
-            candidates.first(where: { $0.id == section.trailID })?.name
-        }) where names.last != name {
-            names.append(name)
-        }
-        return names.isEmpty ? nil : names
     }
 
     func updateTotals(for day: RideDay) {

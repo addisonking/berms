@@ -64,7 +64,7 @@ struct JumpMetrics: Hashable, Sendable {
         // the size of the drop or booter they hit. On a pure drop-off the arc
         // adds almost nothing and the height is the drop itself; a step-up
         // lands above the takeoff, so the climb subtracts from the arc.
-        let height = max(0, airHeight(airtime: airtime, dropMeters: drop) + drop)
+        let height = min(maximumHeightMeters, max(0, airHeight(airtime: airtime, dropMeters: drop) + drop))
         return JumpMetrics(
             takeoffCoordinate: takeoffCoordinate,
             landingCoordinate: landingCoordinate,
@@ -95,7 +95,7 @@ struct JumpMetrics: Hashable, Sendable {
         let launchVelocity = (gravity * airtime * airtime / 2 - dropMeters) / airtime
         guard launchVelocity > 0 else { return 0 }
         let height = launchVelocity * launchVelocity / (2 * gravity)
-        return min(height, maximumHeightMeters)
+        return height
     }
 
     static func interpolatedPoint(at date: Date, in points: [RoutePoint]) -> RoutePoint? {

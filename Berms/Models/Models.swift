@@ -15,6 +15,7 @@ final class RideDay {
     var activeSeconds: Double
     var liftSeconds: Double
     var maximumSpeedMetersPerSecond: Double
+    var diagnosticSummaryVersion: String?
     var checkpointKind: String?
     var checkpointStartedAt: Date?
     @Attribute(.externalStorage) var checkpointData: Data?

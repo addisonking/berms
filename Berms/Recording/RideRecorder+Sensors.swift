@@ -49,31 +49,10 @@ extension RideRecorder {
             }
         }
         let logger = diagnosticLogger
-        let logsRawMotion = rawMotionLoggingEnabled
         motionService.rawDeviceMotionHandler = { [weak self] sample in
-            if logsRawMotion {
-                logger?.append(
-                    RawDiagnosticRecord(
-                        kind: "device_motion_raw",
-                        timestamp: sample.recordedAt,
-                        monotonicSeconds: sample.monotonicSeconds,
-                        userAccelerationX: sample.userAccelerationX,
-                        userAccelerationY: sample.userAccelerationY,
-                        userAccelerationZ: sample.userAccelerationZ,
-                        rotationRateX: sample.rotationRateX,
-                        rotationRateY: sample.rotationRateY,
-                        rotationRateZ: sample.rotationRateZ,
-                        gravityX: sample.gravityX,
-                        gravityY: sample.gravityY,
-                        gravityZ: sample.gravityZ,
-                        quaternionW: sample.quaternionW,
-                        quaternionX: sample.quaternionX,
-                        quaternionY: sample.quaternionY,
-                        quaternionZ: sample.quaternionZ
-                    ))
-            }
             Task { @MainActor [weak self] in
-                self?.consume(deviceMotion: sample)
+                guard let self, self.diagnosticLogger === logger else { return }
+                self.consume(deviceMotion: sample)
             }
         }
         motionService.start()
@@ -280,8 +259,29 @@ extension RideRecorder {
     /// One device-motion sample, straight from Core Motion. Internal for the
     /// same reason as `consume(location:isStationary:)`.
     func consume(deviceMotion sample: DeviceMotionSample) {
-        guard activeDay != nil, !isPaused, let context = latestTrackContext else { return }
+        guard activeDay != nil, !isPaused else { return }
         if let trackingBoundaryDate, sample.recordedAt < trackingBoundaryDate { return }
+        if rawMotionLoggingEnabled {
+            diagnosticLogger?.append(
+                RawDiagnosticRecord(
+                    kind: "device_motion_raw",
+                    timestamp: sample.recordedAt,
+                    monotonicSeconds: sample.monotonicSeconds,
+                    userAccelerationX: sample.userAccelerationX,
+                    userAccelerationY: sample.userAccelerationY,
+                    userAccelerationZ: sample.userAccelerationZ,
+                    rotationRateX: sample.rotationRateX,
+                    rotationRateY: sample.rotationRateY,
+                    rotationRateZ: sample.rotationRateZ,
+                    gravityX: sample.gravityX,
+                    gravityY: sample.gravityY,
+                    gravityZ: sample.gravityZ,
+                    quaternionW: sample.quaternionW,
+                    quaternionX: sample.quaternionX,
+                    quaternionY: sample.quaternionY,
+                    quaternionZ: sample.quaternionZ))
+        }
+        guard let context = latestTrackContext else { return }
         for event in jumpDetector.process(sample, context: context) {
             handleJumpEvent(event)
         }
